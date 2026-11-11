@@ -1,6 +1,6 @@
 # HTTP API reference
 
-The local Fastify server exposes the following JSON API for one user and one shared setup. Hash-based browser routes do not alter API paths. There is no authentication layer or remote-access configuration. Live provider/runtime connections and execution APIs are not implemented.
+The local Fastify server exposes the following JSON API for one user and one shared setup. Hash-based browser routes do not alter API paths. There is no authentication layer or remote-access configuration. Saved provider connections, model discovery, and Codex authentication are available. Inference and agent execution APIs are not implemented.
 
 ## Records and requests
 
@@ -35,7 +35,7 @@ The first migration creates one Default workspace. Deleting all workspaces does 
 `POST /api/model-presets` returns a created preset with status 201. Required fields:
 
 | Field | Values |
-| --- | --- |
+| ----------------- | ----------------------------------------------- |
 | `name` | Nonempty name, up to 120 characters |
 | `integrationKind` | `provider` or `runtime` |
 | `provider` | Provider/runtime key listed below |
@@ -44,14 +44,14 @@ The first migration creates one Default workspace. Deleting all workspaces does 
 Optional fields and defaults:
 
 | Field | Value / default |
-| --- | --- |
+| -------------------- | -------------------------------------------------------------------------------- |
 | `customProviderName` | Required nonempty string (up to 120 characters) for `custom`; otherwise null |
 | `contextWindow` | Positive safe integer token count, or null (unknown); defaults to null |
 | `maxOutputTokens` | Positive safe integer token count, or null (unknown); defaults to null |
-| `notes` | Text up to 4000 characters; defaults to an empty string |
+| `connectionId`       | Saved connection UUID matching provider/integration kind, or null (default)      |
 | `compaction` | `{ "mode": "percentage", "value": 80 }` by default; mode may instead be `tokens` |
 
-Known `provider` integrations are `openai`, `anthropic`, `google`, `ollama`, `openai-compatible`, and `custom`. Known `runtime` integrations are `codex` and `custom`. Non-custom options must match their integration kind. These identifiers describe configuration, not live connections, model availability, authentication, or subscription access.
+Known `provider` integrations are `openai`, `anthropic`, `google`, `openrouter`, `xai`, `deepseek`, `mistral`, `groq`, `together`, `openai-compatible`, and legacy `ollama`/`custom`. Known `runtime` integrations are `codex` and `custom`. Non-custom options must match their integration kind. The editor offers API and Subscription categories, backed by the existing `provider`/`runtime` integration kinds. New presets do not offer legacy integrations. Connection binding is optional; a manual model ID remains valid without credentials. An identifier alone does not establish model availability or subscription access. `notes` has been removed and is rejected as an unknown field.
 
 Compaction percentage values must be integers from 1–100. Absolute token thresholds must be positive safe integers. When context is known, maximum output tokens and absolute compaction thresholds cannot exceed it. Omitted context is unknown; no provider-derived value is invented. An explicitly null compaction object is invalid. String fields are trimmed.
 
@@ -61,7 +61,28 @@ Responses contain all normalized fields plus `id`, `createdAt`, and `updatedAt`.
 
 - `PATCH /api/model-presets/:id`: accepts a partial preset input, validates the merged record, and returns the full updated record with status 200. A supplied `compaction` replaces that object and must contain both mode and value. Changing context revalidates existing limits. Validation failure leaves the saved record unchanged.
 - `DELETE /api/model-presets/:id`: permanently deletes the record and returns 204 with no body.
-- Unknown fields and client-supplied IDs/timestamps are rejected. There are no credential fields.
+- Unknown fields and client-supplied IDs/timestamps are rejected. There are no credential fields on presets. If changing provider/kind on a linked preset, clear or replace `connectionId` to maintain a matching binding. Deleting a connection sets this field to null without changing other preset fields or timestamps.
+
+### Provider connections
+
+Connections are installation-wide metadata plus backend-only credentials. Public responses are `{ id, provider, name, endpoint, isDefault, hasCredential, createdAt, updatedAt }`; API keys, encrypted credentials, and OAuth tokens are never returned.
+
+- `GET /api/connections`: paginated `{ items, total }`, using the list bounds below. At most 100 connections may be saved.
+- `POST /api/connections`: accepts `{ provider, name, apiKey?, endpoint?, isDefault? }`, returns public metadata with 201. Providers are the non-legacy API choices above or `codex`. Names are trimmed, nonempty, at most 120 characters. API keys are required except for Codex (which rejects keys) and custom compatible endpoints (which may be unauthenticated).
+- `PATCH /api/connections/:id`: accepts the same mutable fields except that provider cannot change; returns metadata with 200. Omitted keys are preserved, and a supplied API key replaces the saved key. Empty, newline-containing, or over-8,192-character keys are invalid. Unknown/protected fields are rejected.
+- `endpoint` applies only to `openai-compatible` and is a required API base URL, including its API prefix where needed. It accepts HTTPS or loopback HTTP, with no user info, query, or fragment. Replacing a keyed endpoint requires supplying the key again. Named providers use fixed endpoints.
+- The first connection per provider is automatically default. Setting another default clears the previous default atomically. A nonempty provider group always has one default; clearing the only default retains it or selects another saved connection. Defaults only guide new selections, not existing bindings.
+- `DELETE /api/connections/:id`: returns 204, unlinks presets, and selects the oldest remaining default when needed. For Codex, also stops the runtime and removes that connection's local credentials. It does not revoke an API key at the upstream provider. Editing/deleting a connection during model discovery returns 409 for retry.
+- `GET /api/connections/:id/models`: returns `{ items: [{ id, name, contextWindow, maxOutputTokens }] }`. Unknown limits are null. Fetched catalogs do not validate inference entitlement; manual preset IDs remain accepted. Discovery coalesces identical in-flight requests and has concurrency, time, response-byte, model-count, and pagination bounds. Failures return sanitized errors with retry/manual-entry guidance.
+
+Codex authentication routes only accept saved `codex` connections:
+
+- `GET /api/connections/:id/login`: returns `{ status }`, where status is `disconnected`, `pending`, `connected`, or `error`. Pending status may include `authUrl` and `userCode`; errors may include a sanitized `error` message.
+- `POST /api/connections/:id/login`: accepts `{ deviceCode?: boolean }` (default false), starts ChatGPT OAuth or device-code sign-in, and returns the same status shape. The UI presents a Continue link and polls completion. No OAuth tokens pass through browser responses.
+- `DELETE /api/connections/:id/login`: cancels a pending sign-in and returns 204.
+- `POST /api/connections/:id/logout`: signs that runtime connection out and returns 204; presets retain their model configuration and connection binding.
+
+Missing connections return 404. Invalid provider bindings or input return 400 with field errors. Connection routes reject unexpected browser origins/cross-site requests and non-local hosts with 403; command-line requests without Origin remain usable on local hosts. See [credential storage and process limits](architecture.md#provider-connections-and-discovery).
 
 ### Themes
 
@@ -89,6 +110,9 @@ Lists are not snapshot-isolated across multiple requests. Concurrent clients can
 - **403:** Attempt to edit or delete a built-in theme; `{ "error": "..." }`.
 - **404:** Missing record/mutation target or unknown route; `{ "error": "..." }`.
 - **413:** Request exceeds the 32 KiB body limit.
+- **409:** Connection is busy or the saved connection limit was reached.
+- **429:** Provider rate limit or local discovery/runtime concurrency limit.
+- **502/503/504:** Upstream model discovery, runtime availability, or timeout failure, with sanitized messages.
 - **500:** Unexpected server/storage failure; a generic retryable message is returned and details are logged on the server.
 
 The unchanged `GET /api/health` returns `{ "status": "ok" }`. It checks HTTP handling, not a database query or an integration. See [architecture](architecture.md#persistence) for migration and storage boundaries and the [platform guide](platform.md) for UI behavior.

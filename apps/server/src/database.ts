@@ -18,7 +18,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 4)
+    if (version > 5)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -83,6 +83,23 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
           "ALTER TABLE workspaces ADD COLUMN description TEXT NOT NULL DEFAULT ''",
         );
         database.pragma("user_version = 4");
+      })();
+    if (version < 5)
+      database.transaction(() => {
+        database.exec(`
+          CREATE TABLE connections (
+            id TEXT PRIMARY KEY, provider TEXT NOT NULL, name TEXT NOT NULL,
+            endpoint TEXT, credential TEXT,
+            isDefault INTEGER NOT NULL CHECK (isDefault IN (0, 1)),
+            createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX connections_default ON connections(provider) WHERE isDefault = 1;
+          CREATE INDEX connections_provider ON connections(provider, createdAt, id);
+          ALTER TABLE model_presets DROP COLUMN notes;
+          ALTER TABLE model_presets ADD COLUMN connectionId TEXT REFERENCES connections(id) ON DELETE SET NULL;
+          CREATE INDEX model_presets_connection ON model_presets(connectionId);
+        `);
+        database.pragma("user_version = 5");
       })();
   } catch (error) {
     database.close();

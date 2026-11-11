@@ -104,6 +104,7 @@ test("paginated loads preserve selection and unrelated record identities", async
 test("preset state changes only after a successful server response", async (t) => {
   const input = draftToInput({
     ...draftFromPreset(),
+    provider: "openai" as const,
     name: "Test",
     modelId: "model",
   });

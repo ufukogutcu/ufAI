@@ -1,26 +1,31 @@
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from "react";
-import {
-  ArrowDownToLine,
   ArrowLeft,
   ArrowRight,
   Bot,
-  Check,
   ChevronRight,
   Cpu,
-  Info,
   Plus,
   Save,
   SlidersHorizontal,
   Trash2,
 } from "lucide-react";
-import { errorMessage, RequestError, type ModelPreset } from "../api";
+import {
+  errorMessage,
+  RequestError,
+  type ModelPreset,
+  type ConnectionProvider,
+  type DiscoveredModel,
+} from "../api";
+import {
+  createConnectionStore,
+  ConnectionContext,
+  useConnections,
+} from "../connection-store";
+import { refreshOnFocus } from "../focus-refresh";
+import { Field } from "../components/FormField";
+import { PresetModelPicker } from "../components/PresetModelPicker";
+import { PresetConnectionDialog } from "../components/PresetConnectionDialog";
 import { useDashboard } from "../store";
 import {
   changeCompactionMode,
@@ -30,44 +35,13 @@ import {
   providerLabel,
   providerOptions,
   validateDraft,
+  selectProvider,
+  selectModel,
   type PresetDraft,
 } from "../preset-form";
 import { Dialog } from "../components/Dialog";
 import { useNavigationGuard, useUnsavedChanges } from "../navigation-guard";
 import styles from "./Presets.module.scss";
-
-function Field({
-  label,
-  error,
-  hint,
-  children,
-}: {
-  label: string;
-  error?: string;
-  hint?: string;
-  children: (props: {
-    id: string;
-    "aria-invalid": boolean;
-    "aria-describedby"?: string;
-  }) => ReactNode;
-}) {
-  const id = useId();
-  return (
-    <div className="field">
-      <label htmlFor={id}>{label}</label>
-      {children({
-        id,
-        "aria-invalid": !!error,
-        "aria-describedby": error || hint ? `${id}-help` : undefined,
-      })}
-      {(error || hint) && (
-        <span id={`${id}-help`} className={error ? "fieldError" : "fieldHint"}>
-          {error ?? hint}
-        </span>
-      )}
-    </div>
-  );
-}
 
 function PresetEditor({
   preset,
@@ -94,30 +68,75 @@ function PresetEditor({
     setErrors({});
     setError("");
   }
+  const connections = useConnections((state) => state.connections);
+  const connectionStatus = useConnections((state) => state.status);
+  const connectionError = useConnections((state) => state.error);
+  const loadConnections = useConnections((state) => state.load);
+  const [connectionDialog, setConnectionDialog] = useState<{
+    provider: ConnectionProvider;
+    edit: boolean;
+  } | null>(null);
+  const [modelRevision, setModelRevision] = useState(0);
+  const pendingDefault = useRef<string | null>(null);
+  const selectedConnection = connections.find(
+    (connection) => connection.id === draft.connectionId,
+  );
+  const providerConnections = connections.filter(
+    (connection) => connection.provider === draft.provider,
+  );
+  const connectable = providerOptions.some(
+    (option) => option.id === draft.provider,
+  );
+  useEffect(() => {
+    if (
+      connectionStatus !== "ready" ||
+      pendingDefault.current !== draft.provider
+    )
+      return;
+    pendingDefault.current = null;
+    const selected = connections.find(
+      (connection) =>
+        connection.provider === draft.provider && connection.isDefault,
+    );
+    if (selected)
+      setDraft((current) =>
+        current.provider === selected.provider && !current.connectionId
+          ? { ...current, connectionId: selected.id }
+          : current,
+      );
+  }, [connectionStatus, connections, draft.provider]);
   function handleKind(kind: PresetDraft["integrationKind"]) {
-    setDraft((current) => ({
-      ...current,
-      integrationKind: kind,
-      provider: kind === "runtime" ? "codex" : "openai",
-      customProviderName: "",
-      modelId: "",
-      contextWindow: "",
-      maxOutputTokens: "",
-    }));
+    pendingDefault.current = null;
+    setDraft((current) => selectProvider(current, "", kind, connections));
     setErrors({});
     setError("");
   }
   function handleProvider(value: string) {
-    setDraft((current) => ({
-      ...current,
-      provider: value as PresetDraft["provider"],
-      customProviderName: "",
-      modelId: "",
-      contextWindow: "",
-      maxOutputTokens: "",
-    }));
+    pendingDefault.current = connectionStatus === "ready" ? null : value;
+    setDraft((current) =>
+      selectProvider(
+        current,
+        value as PresetDraft["provider"],
+        current.integrationKind,
+        connections,
+      ),
+    );
     setErrors({});
     setError("");
+  }
+  function handleConnection(id: string | null) {
+    pendingDefault.current = null;
+    update("connectionId", id);
+    setModelRevision((revision) => revision + 1);
+  }
+  function handleModel(id: string, models: DiscoveredModel[]) {
+    setDraft((current) => selectModel(current, id, models));
+    setErrors({});
+    setError("");
+  }
+  function handleConnectionClose() {
+    setConnectionDialog(null);
+    setModelRevision((revision) => revision + 1);
   }
   function handleMode(mode: PresetDraft["compactionMode"]) {
     setDraft((current) => changeCompactionMode(current, mode));
@@ -156,289 +175,274 @@ function PresetEditor({
   const input = draftToInput(draft);
   const threshold = compactionThreshold(input.contextWindow, input.compaction);
   return (
-    <form
-      ref={formRef}
-      className={styles.editor}
-      onSubmit={handleSave}
-      noValidate
-      aria-label="Model preset editor"
-    >
-      <div className={styles.editorHeading}>
-        <div className={styles.editorTitle}>
-          <div className={styles.presetIcon}>
-            <SlidersHorizontal size={20} />
-          </div>
-          <div>
-            <h2>{preset ? preset.name : "New model preset"}</h2>
-            <p>
-              {preset
-                ? "Fine-tune your model configuration."
-                : "A reusable starting point for your agents."}
-            </p>
-          </div>
+    <>
+      <form
+        ref={formRef}
+        className={styles.editor}
+        onSubmit={handleSave}
+        noValidate
+        aria-label="Model preset editor"
+      >
+        <div className={styles.editorHeading}>
+          <h2>{preset ? "Edit preset" : "New preset"}</h2>
+          <span className={dirty ? styles.unsaved : styles.saved}>
+            <span />
+            {dirty ? "Unsaved changes" : preset ? "Saved locally" : "Draft"}
+          </span>
         </div>
-        <span className={dirty ? styles.unsaved : styles.saved}>
-          <span />
-          {dirty ? "Unsaved changes" : preset ? "Saved locally" : "Draft"}
-        </span>
-      </div>
-      <fieldset disabled={busy} className={styles.fields}>
-        <section className={styles.formSection} aria-labelledby="preset-basics">
-          <div className={styles.sectionHeading}>
-            <span>01</span>
-            <div>
-              <h3 id="preset-basics">The basics</h3>
-              <p>Give this configuration a name you’ll recognize.</p>
-            </div>
-          </div>
-          <Field label="Preset name" error={errors.name}>
-            {(props) => (
-              <input
-                {...props}
-                name="name"
-                value={draft.name}
-                onChange={(event) => update("name", event.target.value)}
-                maxLength={120}
-                placeholder="e.g. Everyday coding"
-                autoComplete="off"
-              />
-            )}
-          </Field>
-        </section>
-        <section className={styles.formSection} aria-labelledby="preset-model">
-          <div className={styles.sectionHeading}>
-            <span>02</span>
-            <div>
-              <h3 id="preset-model">Provider & model</h3>
-              <p>Choose where the intelligence comes from.</p>
-            </div>
-          </div>
-          <div
-            className={styles.kindPicker}
-            role="group"
-            aria-label="Integration kind"
-          >
-            <button
-              type="button"
-              aria-pressed={draft.integrationKind === "provider"}
-              className={
-                draft.integrationKind === "provider" ? styles.kindActive : ""
-              }
-              onClick={() => {
-                if (draft.integrationKind !== "provider")
-                  handleKind("provider");
-              }}
-            >
-              <Cpu size={17} />
-              <span>
-                Model provider<small>APIs & local endpoints</small>
-              </span>
-              {draft.integrationKind === "provider" && <Check size={15} />}
-            </button>
-            <button
-              type="button"
-              aria-pressed={draft.integrationKind === "runtime"}
-              className={
-                draft.integrationKind === "runtime" ? styles.kindActive : ""
-              }
-              onClick={() => {
-                if (draft.integrationKind !== "runtime") handleKind("runtime");
-              }}
-            >
-              <Bot size={17} />
-              <span>
-                Agent runtime<small>Existing agent systems</small>
-              </span>
-              {draft.integrationKind === "runtime" && <Check size={15} />}
-            </button>
-          </div>
-          {errors.integrationKind && (
-            <p className="fieldError">{errors.integrationKind}</p>
-          )}
-          <div className={styles.twoColumns}>
-            <Field
-              label={
-                draft.integrationKind === "provider" ? "Provider" : "Runtime"
-              }
-              error={errors.provider}
-            >
-              {(props) => (
-                <select
-                  {...props}
-                  value={draft.provider}
-                  onChange={(event) => handleProvider(event.target.value)}
-                >
-                  {providerOptions
-                    .filter((option) => option.kind === draft.integrationKind)
-                    .map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                </select>
-              )}
-            </Field>
-            <Field
-              label="Model identifier"
-              error={errors.modelId}
-              hint="Enter the identifier used by your integration."
-            >
+        <fieldset disabled={busy} className={styles.fields}>
+          <section className={styles.formSection} aria-label="Preset details">
+            <Field label="Preset name" error={errors.name}>
               {(props) => (
                 <input
                   {...props}
-                  name="modelId"
-                  value={draft.modelId}
-                  onChange={(event) => update("modelId", event.target.value)}
-                  maxLength={200}
-                  placeholder="Enter model ID"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              )}
-            </Field>
-          </div>
-          {draft.provider === "custom" && (
-            <Field
-              label="Custom integration name"
-              error={errors.customProviderName}
-            >
-              {(props) => (
-                <input
-                  {...props}
-                  value={draft.customProviderName}
-                  onChange={(event) =>
-                    update("customProviderName", event.target.value)
-                  }
+                  name="name"
+                  value={draft.name}
+                  onChange={(event) => update("name", event.target.value)}
                   maxLength={120}
-                  placeholder="Name your provider or runtime"
+                  placeholder="e.g. Everyday coding"
+                  autoComplete="off"
                 />
               )}
             </Field>
-          )}
-          <div className={styles.notice}>
-            <Info size={15} />
-            <p>
-              {draft.integrationKind === "runtime"
-                ? "Runtime connection and sign-in are coming later. "
-                : "Provider connections and automatic model discovery are coming later. "}
-              Enter model details manually for now.
-            </p>
-          </div>
-        </section>
-        <section
-          className={styles.formSection}
-          aria-labelledby="preset-context"
-        >
-          <div className={styles.sectionHeading}>
-            <span>03</span>
-            <div>
-              <h3 id="preset-context">Context & compaction</h3>
-              <p>Define the model’s limits and when to compact.</p>
-            </div>
-          </div>
-          <div className={styles.twoColumns}>
-            <Field
-              label="Context window"
-              error={errors.contextWindow ?? liveErrors.contextWindow}
-              hint="Total tokens. Leave empty if unknown."
-            >
-              {(props) => (
-                <div className="inputWithUnit">
-                  <input
-                    {...props}
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    max={Number.MAX_SAFE_INTEGER}
-                    step={1}
-                    value={draft.contextWindow}
-                    onChange={(event) =>
-                      update("contextWindow", event.target.value)
-                    }
-                    placeholder="Unknown"
-                  />
-                  <span>tokens</span>
-                </div>
-              )}
-            </Field>
-            <Field
-              label="Maximum output"
-              error={errors.maxOutputTokens ?? liveErrors.maxOutputTokens}
-              hint="Optional maximum response length."
-            >
-              {(props) => (
-                <div className="inputWithUnit">
-                  <input
-                    {...props}
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    max={Number.MAX_SAFE_INTEGER}
-                    step={1}
-                    value={draft.maxOutputTokens}
-                    onChange={(event) =>
-                      update("maxOutputTokens", event.target.value)
-                    }
-                    placeholder="Unknown"
-                  />
-                  <span>tokens</span>
-                </div>
-              )}
-            </Field>
-          </div>
-          <div className={styles.compaction}>
-            <div className={styles.compactionHeading}>
-              <div>
-                <h4>
-                  <ArrowDownToLine size={14} />
-                  Auto-compaction threshold
-                </h4>
-                <p>Keep a little room for what comes next.</p>
-              </div>
-              <span className={styles.configBadge}>CONFIGURATION ONLY</span>
-            </div>
-            <div className={styles.compactionControls}>
+          </section>
+          <section
+            className={styles.formSection}
+            aria-label="Provider and model"
+          >
+            <div className={styles.providerCategory}>
               <div
                 className={styles.segmented}
                 role="group"
-                aria-label="Compaction mode"
+                aria-label="Provider category"
               >
                 <button
                   type="button"
-                  aria-pressed={draft.compactionMode === "percentage"}
+                  aria-pressed={draft.integrationKind === "provider"}
                   className={
-                    draft.compactionMode === "percentage"
+                    draft.integrationKind === "provider"
                       ? styles.segmentActive
                       : ""
                   }
                   onClick={() => {
-                    if (draft.compactionMode !== "percentage")
-                      handleMode("percentage");
+                    if (draft.integrationKind !== "provider")
+                      handleKind("provider");
                   }}
                 >
-                  Percentage
+                  API
                 </button>
                 <button
                   type="button"
-                  aria-pressed={draft.compactionMode === "tokens"}
+                  aria-pressed={draft.integrationKind === "runtime"}
                   className={
-                    draft.compactionMode === "tokens"
+                    draft.integrationKind === "runtime"
                       ? styles.segmentActive
                       : ""
                   }
                   onClick={() => {
-                    if (draft.compactionMode !== "tokens") handleMode("tokens");
+                    if (draft.integrationKind !== "runtime")
+                      handleKind("runtime");
                   }}
                 >
-                  Token limit
+                  Subscription
                 </button>
               </div>
+            </div>
+            <div className={styles.providerRow}>
               <Field
-                label={
-                  draft.compactionMode === "percentage"
-                    ? "Context percentage"
-                    : "Token threshold"
-                }
+                label="Provider"
+                error={errors.provider ?? errors.integrationKind}
+              >
+                {(props) => (
+                  <select
+                    {...props}
+                    value={draft.provider}
+                    onChange={(event) => handleProvider(event.target.value)}
+                  >
+                    <option value="">Choose a provider…</option>
+                    {providerOptions
+                      .filter((option) => option.kind === draft.integrationKind)
+                      .map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    {preset &&
+                      draft.provider === preset.provider &&
+                      !connectable && (
+                        <option value={preset.provider}>
+                          {providerLabel(preset)} (legacy)
+                        </option>
+                      )}
+                  </select>
+                )}
+              </Field>
+              {draft.provider && connectable && (
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() =>
+                    setConnectionDialog({
+                      provider: draft.provider as ConnectionProvider,
+                      edit: !!selectedConnection,
+                    })
+                  }
+                >
+                  {selectedConnection ? "Manage" : "Connect"}
+                </button>
+              )}
+            </div>
+            {draft.provider === "custom" && (
+              <Field
+                label="Custom integration name"
+                error={errors.customProviderName}
+              >
+                {(props) => (
+                  <input
+                    {...props}
+                    value={draft.customProviderName}
+                    onChange={(event) =>
+                      update("customProviderName", event.target.value)
+                    }
+                    maxLength={120}
+                  />
+                )}
+              </Field>
+            )}
+            {draft.provider && connectable && (
+              <div className={styles.connectionSummary}>
+                <span>
+                  {selectedConnection
+                    ? selectedConnection.name
+                    : "No saved connection selected"}
+                </span>
+                <details className={styles.connectionOptions}>
+                  <summary>Connection options</summary>
+                  <Field label="Saved connection" error={errors.connectionId}>
+                    {(props) => (
+                      <select
+                        {...props}
+                        value={draft.connectionId ?? ""}
+                        onChange={(event) =>
+                          handleConnection(event.target.value || null)
+                        }
+                      >
+                        <option value="">Unlinked · manual model ID</option>
+                        {draft.connectionId && !selectedConnection && (
+                          <option value={draft.connectionId}>
+                            Unavailable connection · choose another or unlink
+                          </option>
+                        )}
+                        {providerConnections.map((connection) => (
+                          <option key={connection.id} value={connection.id}>
+                            {connection.name}
+                            {connection.isDefault ? " (default)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </Field>
+                  <button
+                    type="button"
+                    className="textButton"
+                    onClick={() =>
+                      setConnectionDialog({
+                        provider: draft.provider as ConnectionProvider,
+                        edit: false,
+                      })
+                    }
+                  >
+                    Add another connection
+                  </button>
+                </details>
+              </div>
+            )}
+            {errors.connectionId && (
+              <p className="fieldError" role="alert">
+                {errors.connectionId}
+              </p>
+            )}
+            {connectionError && (
+              <p className="fieldError" role="status">
+                {connectionError}{" "}
+                <button
+                  type="button"
+                  className="textButton"
+                  onClick={() => void loadConnections()}
+                >
+                  Retry connections
+                </button>
+              </p>
+            )}
+            {draft.provider && (
+              <PresetModelPicker
+                key={`${draft.integrationKind}-${draft.provider}`}
+                connectionId={selectedConnection?.id ?? null}
+                value={draft.modelId}
+                error={errors.modelId}
+                onSelect={handleModel}
+                refreshKey={modelRevision}
+              />
+            )}
+          </section>
+          <section
+            className={styles.formSection}
+            aria-labelledby="preset-context"
+          >
+            <h3 id="preset-context" className={styles.sectionTitle}>
+              Context & compaction
+            </h3>
+            <div className={styles.twoColumns}>
+              <Field
+                label="Context window"
+                error={errors.contextWindow ?? liveErrors.contextWindow}
+              >
+                {(props) => (
+                  <div className="inputWithUnit">
+                    <input
+                      {...props}
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={Number.MAX_SAFE_INTEGER}
+                      step={1}
+                      value={draft.contextWindow}
+                      onChange={(event) =>
+                        update("contextWindow", event.target.value)
+                      }
+                      placeholder="Unknown"
+                    />
+                    <span>tokens</span>
+                  </div>
+                )}
+              </Field>
+              <Field
+                label="Maximum output"
+                error={errors.maxOutputTokens ?? liveErrors.maxOutputTokens}
+              >
+                {(props) => (
+                  <div className="inputWithUnit">
+                    <input
+                      {...props}
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={Number.MAX_SAFE_INTEGER}
+                      step={1}
+                      value={draft.maxOutputTokens}
+                      onChange={(event) =>
+                        update("maxOutputTokens", event.target.value)
+                      }
+                      placeholder="Unknown"
+                    />
+                    <span>tokens</span>
+                  </div>
+                )}
+              </Field>
+            </div>
+            <div className={styles.compactionControls}>
+              <Field
+                label="Compact at"
                 error={
                   errors["compaction.value"] ??
                   errors.compaction ??
@@ -470,83 +474,83 @@ function PresetEditor({
                   </div>
                 )}
               </Field>
+              <Field label="Threshold unit">
+                {(props) => (
+                  <select
+                    {...props}
+                    value={draft.compactionMode}
+                    onChange={(event) =>
+                      handleMode(
+                        event.target.value as PresetDraft["compactionMode"],
+                      )
+                    }
+                  >
+                    <option value="percentage">Percentage of context</option>
+                    <option value="tokens">Token limit</option>
+                  </select>
+                )}
+              </Field>
             </div>
-            <div className={styles.threshold}>
-              <span>Effective threshold</span>
+            <p className={styles.threshold}>
+              Effective threshold{" "}
               <strong>
                 {threshold === null
                   ? "Unknown"
                   : `${threshold.toLocaleString()} tokens`}
               </strong>
-            </div>
-            <p className={styles.compactionHelp}>
-              Defaults to 80% of the context window. Compaction is not executed
-              yet.
             </p>
-          </div>
-        </section>
-        <section className={styles.formSection} aria-labelledby="preset-notes">
-          <div className={styles.sectionHeading}>
-            <span>04</span>
-            <div>
-              <h3 id="preset-notes">
-                Notes <small>OPTIONAL</small>
-              </h3>
-              <p>Anything useful to remember about this preset.</p>
-            </div>
-          </div>
-          <Field label="Notes" error={errors.notes}>
-            {(props) => (
-              <textarea
-                {...props}
-                rows={3}
-                maxLength={4000}
-                value={draft.notes}
-                onChange={(event) => update("notes", event.target.value)}
-                placeholder="Best for, things to keep in mind…"
-              />
+            <p className={styles.compactionHelp}>
+              Configuration only. Compaction is not executed yet.
+            </p>
+          </section>
+        </fieldset>
+        <footer className={styles.editorFooter}>
+          {error && (
+            <p role="alert" className="error">
+              {error}
+            </p>
+          )}
+          <div className={styles.footerActions}>
+            {preset && (
+              <button
+                type="button"
+                className="button deleteButton"
+                disabled={busy}
+                onClick={handleDelete}
+              >
+                <Trash2 size={15} />
+                <span>Delete</span>
+              </button>
             )}
-          </Field>
-        </section>
-      </fieldset>
-      <footer className={styles.editorFooter}>
-        {error && (
-          <p role="alert" className="error">
-            {error}
-          </p>
-        )}
-        <div className={styles.footerActions}>
-          {preset && (
+            <div />
             <button
               type="button"
-              className="button deleteButton"
+              className="button secondary"
               disabled={busy}
-              onClick={handleDelete}
+              onClick={onCancel}
             >
-              <Trash2 size={15} />
-              <span>Delete</span>
+              Cancel
             </button>
-          )}
-          <div />
-          <button
-            type="button"
-            className="button secondary"
-            disabled={busy}
-            onClick={onCancel}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="button primary"
-            disabled={busy || (!!preset && !dirty)}
-          >
-            <Save size={14} />
-            {busy ? "Saving…" : "Save preset"}
-          </button>
-        </div>
-      </footer>
-    </form>
+            <button
+              type="submit"
+              className="button primary"
+              disabled={busy || (!!preset && !dirty)}
+            >
+              <Save size={14} />
+              {busy ? "Saving…" : "Save preset"}
+            </button>
+          </div>
+        </footer>
+      </form>
+      {connectionDialog && (
+        <PresetConnectionDialog
+          provider={connectionDialog.provider}
+          connection={connectionDialog.edit ? selectedConnection : undefined}
+          onSelected={handleConnection}
+          onClose={handleConnectionClose}
+        />
+      )}
+    </>
   );
 }
 
@@ -601,6 +605,19 @@ function DeletePresetDialog({
 }
 
 export default function Presets() {
+  const [connections] = useState(createConnectionStore);
+  useEffect(() => {
+    void connections.getState().load();
+    return refreshOnFocus(() => connections.getState().load());
+  }, [connections]);
+  return (
+    <ConnectionContext.Provider value={connections}>
+      <PresetLibrary />
+    </ConnectionContext.Provider>
+  );
+}
+
+function PresetLibrary() {
   const presets = useDashboard((state) => state.presets);
   const status = useDashboard((state) => state.presetStatus);
   const error = useDashboard((state) => state.presetError);

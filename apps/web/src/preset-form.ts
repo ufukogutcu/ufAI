@@ -4,6 +4,8 @@ import type {
   ModelPreset,
   PresetInput,
   ProviderId,
+  ProviderConnection,
+  DiscoveredModel,
 } from "./api";
 export const providerOptions: {
   id: ProviderId;
@@ -12,16 +14,19 @@ export const providerOptions: {
 }[] = [
   { id: "openai", label: "OpenAI", kind: "provider" },
   { id: "anthropic", label: "Anthropic", kind: "provider" },
-  { id: "google", label: "Google", kind: "provider" },
-  { id: "ollama", label: "Ollama · local", kind: "provider" },
+  { id: "google", label: "Google Gemini", kind: "provider" },
+  { id: "openrouter", label: "OpenRouter", kind: "provider" },
+  { id: "xai", label: "xAI", kind: "provider" },
+  { id: "deepseek", label: "DeepSeek", kind: "provider" },
+  { id: "mistral", label: "Mistral", kind: "provider" },
+  { id: "groq", label: "Groq", kind: "provider" },
+  { id: "together", label: "Together", kind: "provider" },
   {
     id: "openai-compatible",
-    label: "OpenAI-compatible endpoint",
+    label: "Custom OpenAI-compatible",
     kind: "provider",
   },
-  { id: "custom", label: "Custom model provider", kind: "provider" },
   { id: "codex", label: "Codex", kind: "runtime" },
-  { id: "custom", label: "Custom agent runtime", kind: "runtime" },
 ];
 export function providerLabel(
   preset: Pick<ModelPreset, "provider" | "customProviderName">,
@@ -35,12 +40,12 @@ export function providerLabel(
 export interface PresetDraft {
   name: string;
   integrationKind: IntegrationKind;
-  provider: ProviderId;
+  provider: ProviderId | "";
   customProviderName: string;
   modelId: string;
   contextWindow: string;
   maxOutputTokens: string;
-  notes: string;
+  connectionId: string | null;
   compactionMode: Compaction["mode"];
   compactionValue: string;
 }
@@ -48,12 +53,12 @@ export function draftFromPreset(preset?: ModelPreset): PresetDraft {
   return {
     name: preset?.name ?? "",
     integrationKind: preset?.integrationKind ?? "provider",
-    provider: preset?.provider ?? "openai",
+    provider: preset?.provider ?? "",
     customProviderName: preset?.customProviderName ?? "",
     modelId: preset?.modelId ?? "",
     contextWindow: preset?.contextWindow?.toString() ?? "",
     maxOutputTokens: preset?.maxOutputTokens?.toString() ?? "",
-    notes: preset?.notes ?? "",
+    connectionId: preset?.connectionId ?? null,
     compactionMode: preset?.compaction.mode ?? "percentage",
     compactionValue: preset?.compaction.value.toString() ?? "80",
   };
@@ -62,7 +67,7 @@ export function draftToInput(draft: PresetDraft): PresetInput {
   return {
     name: draft.name.trim(),
     integrationKind: draft.integrationKind,
-    provider: draft.provider,
+    provider: draft.provider as ProviderId,
     customProviderName:
       draft.provider === "custom" ? draft.customProviderName.trim() : null,
     modelId: draft.modelId.trim(),
@@ -70,7 +75,7 @@ export function draftToInput(draft: PresetDraft): PresetInput {
       draft.contextWindow === "" ? null : Number(draft.contextWindow),
     maxOutputTokens:
       draft.maxOutputTokens === "" ? null : Number(draft.maxOutputTokens),
-    notes: draft.notes.trim(),
+    connectionId: draft.connectionId,
     compaction: {
       mode: draft.compactionMode,
       value: Number(draft.compactionValue),
@@ -95,7 +100,7 @@ export function validateDraft(draft: PresetDraft): Record<string, string> {
     if (value !== null && (!Number.isSafeInteger(value) || value < 1))
       errors[field] = "Enter a positive safe integer, or leave empty.";
   }
-  if (input.notes.length > 4000) errors.notes = "Use at most 4000 characters.";
+  if (!draft.provider) errors.provider = "Choose a provider.";
   if (
     input.contextWindow &&
     input.maxOutputTokens &&
@@ -151,5 +156,41 @@ export function changeCompactionMode(
     compactionMode: mode,
     compactionValue:
       mode === "percentage" ? "80" : (threshold?.toString() ?? ""),
+  };
+}
+
+export function selectProvider(
+  draft: PresetDraft,
+  provider: PresetDraft["provider"],
+  kind: IntegrationKind,
+  connections: ProviderConnection[],
+): PresetDraft {
+  return {
+    ...draft,
+    integrationKind: kind,
+    provider,
+    customProviderName: "",
+    connectionId:
+      connections.find(
+        (connection) =>
+          connection.provider === provider && connection.isDefault,
+      )?.id ?? null,
+    modelId: "",
+    contextWindow: "",
+    maxOutputTokens: "",
+  };
+}
+export function selectModel(
+  draft: PresetDraft,
+  id: string,
+  models: DiscoveredModel[],
+): PresetDraft {
+  if (draft.modelId === id) return draft;
+  const model = models.find((item) => item.id === id);
+  return {
+    ...draft,
+    modelId: id,
+    contextWindow: model?.contextWindow?.toString() ?? "",
+    maxOutputTokens: model?.maxOutputTokens?.toString() ?? "",
   };
 }

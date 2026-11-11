@@ -6,6 +6,12 @@ export type ProviderId =
   | "openai"
   | "anthropic"
   | "google"
+  | "openrouter"
+  | "xai"
+  | "deepseek"
+  | "mistral"
+  | "groq"
+  | "together"
   | "ollama"
   | "openai-compatible"
   | "codex"
@@ -31,7 +37,7 @@ export interface PresetInput {
   modelId: string;
   contextWindow: number | null;
   maxOutputTokens: number | null;
-  notes: string;
+  connectionId: string | null;
   compaction: Compaction;
 }
 
@@ -39,6 +45,37 @@ export interface ModelPreset extends PresetInput {
   id: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export type ConnectionProvider = Exclude<ProviderId, "ollama" | "custom">;
+export interface ConnectionInput {
+  provider: ConnectionProvider;
+  name: string;
+  endpoint?: string | null;
+  apiKey?: string;
+  isDefault?: boolean;
+}
+export interface ProviderConnection {
+  id: string;
+  provider: ConnectionProvider;
+  name: string;
+  endpoint: string | null;
+  isDefault: boolean;
+  hasCredential: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface DiscoveredModel {
+  id: string;
+  name: string;
+  contextWindow: number | null;
+  maxOutputTokens: number | null;
+}
+export interface CodexLoginStatus {
+  status: "disconnected" | "pending" | "connected" | "error";
+  authUrl?: string;
+  userCode?: string;
+  error?: string;
 }
 
 export interface Page<T> {

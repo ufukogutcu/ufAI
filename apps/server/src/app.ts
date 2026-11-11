@@ -6,6 +6,8 @@ import fastifyStatic from "@fastify/static";
 import { registerSettings } from "./settings.js";
 import { registerThemes } from "./themes.js";
 import { openDatabase } from "./database.js";
+import { registerConnections, type ConnectionOptions } from "./connections.js";
+import { ConnectionError } from "./model-providers.js";
 import type { ModelPreset, Workspace, PresetInput } from "./contracts.js";
 import {
   InputError,
@@ -39,6 +41,7 @@ export function createApp(
     databasePath?: string;
     logger?: boolean;
     serveStatic?: boolean;
+    connections?: ConnectionOptions;
   } = {},
 ) {
   const app = Fastify({
@@ -46,10 +49,9 @@ export function createApp(
     bodyLimit: 32 * 1024,
   });
   const database = openDatabase(options.databasePath);
-  app.addHook("onClose", async () => {
-    database.close();
-  });
   app.setErrorHandler((error, request, reply) => {
+    if (error instanceof ConnectionError)
+      return reply.code(error.statusCode).send({ error: error.message });
     if (error instanceof InputError)
       return reply
         .code(400)
@@ -72,6 +74,15 @@ export function createApp(
     reply.code(404).send({ error: "Not found." }),
   );
   app.get("/api/health", async () => ({ status: "ok" }));
+  // Registered first: Fastify closes hooks in reverse order, after connection work finishes.
+  app.addHook("onClose", async () => {
+    database.close();
+  });
+  const validatePresetConnection = registerConnections(
+    app,
+    database,
+    options.connections,
+  );
 
   const workspaceList = database.prepare(
     "SELECT * FROM workspaces ORDER BY createdAt, id LIMIT ? OFFSET ?",
@@ -185,14 +196,17 @@ export function createApp(
   const presetGet = database.prepare(
     "SELECT * FROM model_presets WHERE id = ?",
   );
-  const presetInsert = database.prepare(`INSERT INTO model_presets VALUES (
+  const presetInsert = database.prepare(`INSERT INTO model_presets (
+    id, name, integrationKind, provider, customProviderName, modelId,
+    contextWindow, maxOutputTokens, connectionId, compactionMode, compactionValue, createdAt, updatedAt
+  ) VALUES (
     @id, @name, @integrationKind, @provider, @customProviderName, @modelId,
-    @contextWindow, @maxOutputTokens, @notes, @compactionMode, @compactionValue, @createdAt, @updatedAt
+    @contextWindow, @maxOutputTokens, @connectionId, @compactionMode, @compactionValue, @createdAt, @updatedAt
   )`);
   const presetUpdate = database.prepare(`UPDATE model_presets SET name = @name,
     integrationKind = @integrationKind, provider = @provider, customProviderName = @customProviderName,
     modelId = @modelId, contextWindow = @contextWindow, maxOutputTokens = @maxOutputTokens,
-    notes = @notes, compactionMode = @compactionMode, compactionValue = @compactionValue,
+    connectionId = @connectionId, compactionMode = @compactionMode, compactionValue = @compactionValue,
     updatedAt = @updatedAt WHERE id = @id`);
   const presetDelete = database.prepare(
     "DELETE FROM model_presets WHERE id = ?",
@@ -206,6 +220,7 @@ export function createApp(
   });
   app.post("/api/model-presets", async (request, reply) => {
     const input = presetInput(request.body);
+    validatePresetConnection(input);
     const now = new Date().toISOString();
     const preset: ModelPreset = {
       ...input,
@@ -228,6 +243,7 @@ export function createApp(
       if (!row)
         return reply.code(404).send({ error: "Model preset not found." });
       const input = presetInput(request.body, fromRow(row));
+      validatePresetConnection(input);
       presetUpdate.run({
         ...toRow(input),
         id: row.id,

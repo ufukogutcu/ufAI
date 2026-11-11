@@ -11,6 +11,7 @@ import {
 test("new drafts default to 80% and allow unknown metadata", () => {
   const draft = {
     ...draftFromPreset(),
+    provider: "openai" as const,
     name: "Local",
     modelId: "example-model",
   };
@@ -43,6 +44,7 @@ test("percentage thresholds round down, clamp to one, and stay exact for safe in
 test("mode switching converts known percentage thresholds and requires unknown token limits", () => {
   const initial = {
     ...draftFromPreset(),
+    provider: "openai" as const,
     name: "Test",
     modelId: "test",
     contextWindow: "1001",
@@ -66,6 +68,7 @@ test("mode switching converts known percentage thresholds and requires unknown t
 test("context changes recalculate percentages and invalidate excessive absolute limits", () => {
   const draft = {
     ...draftFromPreset(),
+    provider: "openai" as const,
     name: "Test",
     modelId: "test",
     contextWindow: "1000",
@@ -87,7 +90,12 @@ test("context changes recalculate percentages and invalidate excessive absolute 
 });
 
 test("invalid numeric drafts cannot silently serialize as unknown values", () => {
-  const draft = { ...draftFromPreset(), name: "Test", modelId: "test" };
+  const draft = {
+    ...draftFromPreset(),
+    provider: "openai" as const,
+    name: "Test",
+    modelId: "test",
+  };
   for (const value of ["-1", "1.5", "NaN", "9007199254740992"]) {
     assert.ok(validateDraft({ ...draft, contextWindow: value }).contextWindow);
     assert.ok(

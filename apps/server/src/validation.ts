@@ -62,13 +62,19 @@ const inputKeys = new Set([
   "modelId",
   "contextWindow",
   "maxOutputTokens",
-  "notes",
+  "connectionId",
   "compaction",
 ]);
 const providers = new Set([
   "openai",
   "anthropic",
   "google",
+  "openrouter",
+  "xai",
+  "deepseek",
+  "mistral",
+  "groq",
+  "together",
   "ollama",
   "openai-compatible",
   "codex",
@@ -86,7 +92,14 @@ export function presetInput(
     if (!inputKeys.has(key)) fields[key] = "Unknown field.";
   const name = text(input.name, "name", 120, fields);
   const modelId = text(input.modelId, "modelId", 200, fields);
-  const notes = text(input.notes ?? "", "notes", 4000, fields, false);
+  const connectionId = input.connectionId ?? null;
+  if (
+    connectionId !== null &&
+    (typeof connectionId !== "string" ||
+      !connectionId ||
+      connectionId.length > 100)
+  )
+    fields.connectionId = "Choose a saved connection, or leave unlinked.";
   if (
     input.integrationKind !== "provider" &&
     input.integrationKind !== "runtime"
@@ -157,7 +170,7 @@ export function presetInput(
   return {
     name,
     modelId,
-    notes,
+    connectionId: connectionId as string | null,
     integrationKind: input.integrationKind as PresetInput["integrationKind"],
     provider: input.provider as PresetInput["provider"],
     customProviderName,

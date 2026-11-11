@@ -6,6 +6,11 @@ export type {
   ProviderId,
   IntegrationKind,
   Compaction,
+  ProviderConnection,
+  ConnectionInput,
+  ConnectionProvider,
+  DiscoveredModel,
+  CodexLoginStatus,
 } from "../../server/src/contracts";
 
 export class RequestError extends Error {
@@ -22,11 +27,13 @@ export async function request<T>(
   path: string,
   method = "GET",
   body?: unknown,
+  signal?: AbortSignal,
 ): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`/api${path}`, {
       method,
+      signal,
       headers:
         body === undefined ? undefined : { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),

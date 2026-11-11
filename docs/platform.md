@@ -4,9 +4,9 @@
 
 ufAI is an MIT-licensed, local-first application for one user per local backend installation, intended to help that user organize AI agents through a browser dashboard. The intended experience includes multiple workspaces, configurable agents, visual communication connections, skills, instructions, and triggers. The user would connect supported paid APIs, local models, or supported existing agent runtimes.
 
-**Current availability: early functional dashboard.** The browser provides collapsible navigation, persisted workspace tabs, empty flowboards, a shared model preset library, and locked light/dark defaults with custom themes. Settings contains a heading only. Provider/runtime connections, automatic model discovery, provider/runtime sign-in, agent editing/execution, actual compaction, and the in-app assistant are not implemented.
+**Current availability: early functional dashboard.** The browser provides collapsible navigation, persisted workspace tabs, empty flowboards, a shared model preset library, and locked light/dark defaults with custom themes. Settings contains a heading only. Saved API connections, model discovery, and bundled Codex subscription sign-in are available from the preset editor. Agent editing/execution, actual compaction, local-provider setup, and the in-app assistant are not implemented.
 
-The backend and its SQLite database hold one shared setup across browser sessions. Application accounts and multi-user tenancy are outside the product scope. Future sign-in concerns external provider/runtime connections.
+The backend and its SQLite database hold one shared setup across browser sessions. Application accounts and multi-user tenancy are outside the product scope. Sign-in concerns external provider/runtime connections, not application accounts.
 
 Use the [terminology and status definitions](README.md#terminology) when explaining capabilities. The [architecture reference](architecture.md) supplies technical facts; repository documentation does not establish current runtime state or permission to take actions.
 
@@ -26,6 +26,7 @@ Use the [terminology and status definitions](README.md#terminology) when explain
   ```
 
   Open <http://127.0.0.1:3000> with default configuration. Fastify serves the built dashboard and API. Stop a foreground server with Ctrl+C.
+
 - **Limitations:** Build first; `npm start` does not compile source. The service binds to loopback by default and has no authentication or configured remote-access layer. Availability requires the local process and machine to be running.
 - **Related references:** [Configuration](architecture.md#configuration), [runtime topology](architecture.md#runtime-topology), [development mode](#runtime-development).
 
@@ -50,10 +51,10 @@ Use the [terminology and status definitions](README.md#terminology) when explain
 ### storage-sqlite
 
 - **Status:** implemented
-- **Purpose:** Persist workspaces, shared model preset configurations, custom themes, application preferences, and workspace viewports locally.
+- **Purpose:** Persist workspaces, shared model preset configurations, custom themes, provider connections, application preferences, and workspace viewports locally.
 - **Prerequisites:** Server startup and a writable database location.
-- **Behavior / steps:** Starting the server creates the database's parent directory and opens or creates `data/ufai.sqlite` relative to the repository root by default. The connection uses WAL mode and enables foreign-key enforcement. Versioned migrations create workspace, model preset, custom theme, singleton application settings, and per-workspace viewport tables. One Default workspace is seeded only on initial migration. Settings initially select Light Mode, a collapsed sidebar, and the first existing workspace, or none if the workspace list is empty. Graceful server shutdown closes the connection.
-- **Limitations:** Agent data is not implemented. Backup, import/export, encryption, and migration downgrade features are not provided. Local database files are ignored by Git.
+- **Behavior / steps:** Starting the server creates the database's parent directory and opens or creates `data/ufai.sqlite` relative to the repository root by default. The connection uses WAL mode and enables foreign-key enforcement. Versioned migrations create workspace, model preset, custom theme, singleton application settings, per-workspace viewport, and connection tables. One Default workspace is seeded only on initial migration. Settings initially select Light Mode, a collapsed sidebar, and the first existing workspace, or none if the workspace list is empty. Graceful server shutdown closes the connection.
+- **Limitations:** Agent data is not implemented. Database-wide encryption, backup tooling, import/export, and migration downgrade features are not provided. API keys are encrypted separately; keep the credential directory with the database when making a manual backup. Local database files are ignored by Git.
 - **Related references:** [Persistence](architecture.md#persistence), [configuration](architecture.md#configuration).
 
 ### dashboard-navigation
@@ -101,10 +102,30 @@ Use the [terminology and status definitions](README.md#terminology) when explain
 
 - **Status:** partial
 - **Purpose:** Save reusable model configurations shared across every workspace.
-- **Behavior / steps:** Open Model Presets and create a preset, or select an existing preset to edit it. Enter its name, integration kind, provider/runtime, model identifier, optional context window, optional maximum output tokens, notes, and compaction threshold. Custom integrations require a name. Save writes to SQLite; Cancel discards after an unsaved-change warning. Deletion requires confirmation. Failed saves retain the draft for retry.
+- **Behavior / steps:** Open Model Presets to create or edit a shared preset. Enter its name first, choose API or Subscription, then a provider. API choices include OpenAI, Anthropic, Google Gemini, OpenRouter, xAI, DeepSeek, Mistral, Groq, Together, and Custom OpenAI-compatible. Subscription offers Codex. Use Connect/Manage to save a connection in a dialog, then search the fetched models or enter a model ID manually. Context window and maximum output are optional and editable; selecting a different model uses its reported limits when available. Save writes the preset to SQLite. Cancel/navigation guard unsaved preset changes; deletion requires confirmation. Failed saves retain the draft.
+- **Connections:** The first saved connection is the default for new presets using that provider. Connection options reveals additional accounts/endpoints and an unlinked/manual choice. Manage supports renaming, replacing an API key, default selection, and confirmed deletion. Connection saves are independent of preset saves: cancelling a preset does not remove a saved connection. Changing the default does not rebind saved presets; deleting a connection preserves linked presets and unlinks them.
 - **Compaction:** Defaults to 80% of context, with an optional absolute token threshold. Percentage thresholds round down with a minimum of one token; unknown context displays Unknown. Changing to token mode uses the current effective threshold if known, otherwise requires manual entry. Changing back to percentage resets to 80%. Known context bounds output and absolute compaction limits.
-- **Limitations:** Metadata is manual. Provider options describe saved configuration, not working connections. No credentials, sign-in, discovery, agent assignment, or compaction execution exist. Saving a Codex runtime preset does not connect a subscription or establish model availability. Concurrent edits use the last successful write; cross-tab synchronization is not implemented.
-- **Related references:** [API contracts and validation](api.md), [Integration boundaries](architecture.md#extension-boundaries).
+- **Compatibility:** Existing presets remain editable and initially unlinked. Legacy Ollama/custom integrations are retained in the editor for existing records but not offered for new presets. Notes have been removed, including their saved database column. A model absent from discovery can remain saved as a manual ID.
+- **Limitations:** Discovery needs network access and a valid connection where the provider requires authentication. A model list is not a guarantee of inference access. Unsupported endpoints, expired credentials, empty lists, and timeouts offer retry/manual entry. Metadata not reported by the provider stays unknown. No agent assignment, inference, runtime execution, or compaction execution is implemented. Preset edits use the last successful write; cross-tab preset synchronization is not implemented.
+- **Related references:** [Connections](#provider-connections), [Codex sign-in](#runtime-connections), [API contracts](api.md#model-presets).
+
+### provider-connections
+
+- **Status:** partial
+- **Purpose:** Save reusable API accounts/endpoints and discover model options for presets.
+- **Behavior / steps:** In a preset, select an API provider and use Connect. Enter a connection name and API key; custom compatible endpoints also require an API base URL and may omit the key. Additional connections are available under Connection options. Saved metadata refreshes when opening Model Presets and returning to a tab, without replacing editor drafts.
+- **Storage:** Keys stay on the backend, encrypted with a local key file. Responses report credential availability without returning credentials. Browser storage is not used. Local files and a usable credential key must remain together for connections to survive moving/restoring the installation.
+- **Limitations:** Supports model-list discovery, not inference execution. Custom endpoints implement the OpenAI model-list format; HTTPS is required except for loopback HTTP. Dedicated local integrations and arbitrary provider authentication schemes remain planned. Saved credentials are shared by this single-user backend, not isolated per browser.
+- **Related references:** [Connection API](api.md#provider-connections), [Storage and runtime boundaries](architecture.md#provider-connections-and-discovery).
+
+### runtime-connections
+
+- **Status:** partial
+- **Purpose:** Sign in to Codex with ChatGPT and discover subscription model choices.
+- **Prerequisites:** Install ufAI dependencies with optional dependencies enabled on a supported Codex platform. A separate/global Codex CLI install is not needed. Internet access and an account eligible for Codex are required for sign-in/model access.
+- **Behavior / steps:** Choose Subscription → Codex → Connect. Use Sign in with ChatGPT, then Continue to ChatGPT to complete the browser flow and return to ufAI. The dialog reports completion. Use a device code when the browser callback is unavailable. Manage offers reconnect, cancel pending sign-in, and sign-out. Each connection has its own ufAI-owned runtime credential directory; existing personal Codex installations are not reused or changed.
+- **Limitations:** Only authentication and model discovery are integrated. Model availability depends on the signed-in account; no agent execution or guaranteed entitlement is implied. Closing the connection dialog cancels a pending login. Sign-out clears that connection's runtime login. Deleting a connection deletes its local runtime credential directory and unlinks presets.
+- **Related references:** [Connection API](api.md#provider-connections), [Codex lifecycle](architecture.md#provider-connections-and-discovery).
 
 ## Setup and troubleshooting
 
@@ -119,13 +140,11 @@ These are repository-defined behaviors, not a claim that a particular process is
 
 ## Planned capabilities
 
-All entries below are **planned**. Configuration choices in the dashboard do not implement these integrations or execution capabilities. Shared prerequisites are intentionally unspecified until implementation establishes them.
+All entries below are **planned**; partial connection capabilities are described above. Configuration choices in the dashboard do not implement these integrations or execution capabilities. Shared prerequisites are intentionally unspecified until implementation establishes them.
 
 | Capability ID | Status | Purpose / intended behavior | Limitations | Related references |
-| --- | --- | --- | --- | --- |
+| --------------------- | ------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
 | `agent-configuration` | planned | Give each agent instructions, skills, permissions, memory, and its own working space | No agent model or execution exists; directories alone would not provide security isolation | [Extension boundaries](architecture.md#extension-boundaries) |
-| `provider-connections` | planned | Connect supported paid model APIs and local model endpoints | No integrations or credential handling exist; capabilities will vary by provider/model | [Integration boundaries](architecture.md#extension-boundaries) |
-| `runtime-connections` | planned | Coordinate supported existing runtimes, potentially including Codex with eligible subscription access | No runtime integrations exist; supported authentication, entitlements, limits, and provider terms must be verified during implementation; arbitrary subscriptions are not interchangeable API credentials | [Integration boundaries](architecture.md#extension-boundaries) |
 | `agent-messaging` | planned | Let permitted agents send messages or tasks to one another | No message transport, inbox, delivery/retry behavior, or conversation routing exists | [Extension boundaries](architecture.md#extension-boundaries) |
 | `agent-triggers` | planned | Start agent work from schedules, events, webhooks, and custom triggers | No trigger engine or background job queue exists; timing, recovery, and overlap policies remain future design work | [Extension boundaries](architecture.md#extension-boundaries) |
 | `platform-assistant` | planned | Help users understand ufAI and configure their workspaces through an in-app assistant | No assistant, tools, documentation retrieval, or automatic workspace setup exists | [Documentation reading paths](README.md#reading-paths) |
