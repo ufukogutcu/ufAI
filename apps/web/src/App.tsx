@@ -11,6 +11,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { DashboardProvider } from "./components/DashboardProvider";
+import { Tooltip } from "./components/Tooltip";
 import { readPreference, writePreference } from "./api";
 import { UnsavedChangesProvider } from "./components/UnsavedChanges";
 import { useNavigationGuard } from "./navigation-guard";
@@ -161,47 +162,57 @@ function Shell() {
         </div>
         <nav aria-label="Main navigation" className={styles.nav}>
           {pages.map((item) => (
-            <a
+            <Tooltip
               key={item.id}
-              href={`#/${item.id}`}
-              className={`${styles.navItem} ${page === item.id ? styles.active : ""}`}
-              aria-label={item.label}
-              aria-current={page === item.id ? "page" : undefined}
-              title={expanded ? undefined : item.label}
-              onClick={(event) => navigate(event, item.id)}
+              content={expanded ? "" : item.label}
+              placement="right"
             >
-              <item.icon size={19} strokeWidth={1.65} />
-              {expanded && <span>{item.label}</span>}
-              {page === item.id && expanded && <ChevronRight size={13} />}
-            </a>
+              <a
+                href={`#/${item.id}`}
+                className={`${styles.navItem} ${page === item.id ? styles.active : ""}`}
+                aria-label={item.label}
+                aria-current={page === item.id ? "page" : undefined}
+                onClick={(event) => navigate(event, item.id)}
+              >
+                <item.icon size={19} strokeWidth={1.65} />
+                {expanded && <span>{item.label}</span>}
+                {page === item.id && expanded && <ChevronRight size={13} />}
+              </a>
+            </Tooltip>
           ))}
         </nav>
         <div className={styles.sidebarBottom}>
-          <div className={styles.localInstance} title="Local instance">
-            <span className={styles.instanceIcon}>
-              <Laptop size={17} />
-            </span>
-            {expanded && (
-              <span>
-                Local instance<small>On your machine</small>
+          <Tooltip content="Local instance" placement="right">
+            <div className={styles.localInstance}>
+              <span className={styles.instanceIcon}>
+                <Laptop size={17} />
               </span>
-            )}
-          </div>
-          <button
-            className={styles.collapse}
-            type="button"
-            onClick={handleToggle}
-            aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
-            aria-expanded={expanded}
-            title={expanded ? "Collapse sidebar" : "Expand sidebar"}
+              {expanded && (
+                <span>
+                  Local instance<small>On your machine</small>
+                </span>
+              )}
+            </div>
+          </Tooltip>
+          <Tooltip
+            content={expanded ? "Collapse sidebar" : "Expand sidebar"}
+            placement="right"
           >
-            {expanded ? (
-              <PanelLeftClose size={17} />
-            ) : (
-              <PanelLeftOpen size={17} />
-            )}
-            {expanded && <span>Collapse sidebar</span>}
-          </button>
+            <button
+              className={styles.collapse}
+              type="button"
+              onClick={handleToggle}
+              aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
+              aria-expanded={expanded}
+            >
+              {expanded ? (
+                <PanelLeftClose size={17} />
+              ) : (
+                <PanelLeftOpen size={17} />
+              )}
+              {expanded && <span>Collapse sidebar</span>}
+            </button>
+          </Tooltip>
         </div>
       </aside>
       {expanded && (

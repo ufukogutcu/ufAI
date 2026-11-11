@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
+import { Tooltip } from "./Tooltip";
 import styles from "./Dialog.module.scss";
 
 export function Dialog({
@@ -39,15 +40,17 @@ export function Dialog({
     >
       <div className={styles.heading}>
         <h2 id={titleId}>{title}</h2>
-        <button
-          type="button"
-          className="iconButton"
-          aria-label="Close dialog"
-          onClick={onClose}
-          disabled={busy}
-        >
-          <X size={18} />
-        </button>
+        <Tooltip content="Close dialog">
+          <button
+            type="button"
+            className="iconButton"
+            aria-label="Close dialog"
+            onClick={onClose}
+            disabled={busy}
+          >
+            <X size={18} />
+          </button>
+        </Tooltip>
       </div>
       {children}
     </dialog>

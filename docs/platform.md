@@ -61,6 +61,14 @@ Use the [terminology and status definitions](README.md#terminology) when explain
 - **Behavior / steps:** The left sidebar starts as icons and can expand to icons and labels. Hash URLs support direct linking, refresh, and browser back/forward. Sidebar expansion and the selected workspace are optional browser-local preferences.
 - **Limitations:** Theme and Settings have headings only. Appearance is dark; theme switching is not implemented.
 
+### dashboard-tooltips
+
+- **Status:** implemented
+- **Purpose:** Show consistent dashboard-styled help for sidebar icons, workspace actions, flowboard controls, and dialog close buttons.
+- **Behavior / steps:** Tooltips appear after 400 ms of mouse hover or immediately on keyboard focus. Moving onto the tooltip keeps it visible. Moving away from both the control and tooltip dismisses it after a short delay. Blur, activation, Escape, scrolling, or resizing dismisses it immediately. Escape dismisses a tooltip inside a dialog before closing the dialog itself. Sidebar navigation tooltips appear only when the sidebar is collapsed.
+- **Limitations:** Tooltips contain text only. Disabled controls and touch hover do not show tooltips; control labels remain available independently of tooltips.
+- **Related references:** [Tooltip component](architecture.md#tooltips).
+
 ### workspaces
 
 - **Status:** partial

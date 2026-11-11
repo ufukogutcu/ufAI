@@ -11,6 +11,7 @@ import { useDashboard } from "../store";
 import { errorMessage, RequestError } from "../api";
 import { Dialog } from "../components/Dialog";
 import { Flowboard } from "../components/Flowboard";
+import { Tooltip } from "../components/Tooltip";
 import styles from "./Home.module.scss";
 
 type WorkspaceAction =
@@ -183,47 +184,51 @@ export default function Home() {
           ))}
         </div>
         {offset < total && (
+          <Tooltip content="Load more workspaces">
+            <button
+              className="iconButton"
+              aria-label="Load more workspaces"
+              disabled={status === "loading"}
+              onClick={handleMore}
+            >
+              <ChevronDown size={17} />
+            </button>
+          </Tooltip>
+        )}
+        <Tooltip content="Create workspace">
           <button
             className="iconButton"
-            aria-label="Load more workspaces"
-            title="Load more workspaces"
-            disabled={status === "loading"}
-            onClick={handleMore}
+            aria-label="Create workspace"
+            onClick={handleCreate}
+            disabled={
+              status === "idle" ||
+              status === "loading" ||
+              (status === "error" && !workspaces.length)
+            }
           >
-            <ChevronDown size={17} />
+            <Plus size={17} />
           </button>
-        )}
-        <button
-          className="iconButton"
-          aria-label="Create workspace"
-          title="Create workspace"
-          onClick={handleCreate}
-          disabled={
-            status === "idle" ||
-            status === "loading" ||
-            (status === "error" && !workspaces.length)
-          }
-        >
-          <Plus size={17} />
-        </button>
+        </Tooltip>
         {active && (
           <div className={styles.workspaceActions}>
-            <button
-              className="iconButton"
-              aria-label="Rename workspace"
-              title="Rename workspace"
-              onClick={handleRename}
-            >
-              <Pencil size={14} />
-            </button>
-            <button
-              className="iconButton"
-              aria-label="Delete workspace"
-              title="Delete workspace"
-              onClick={handleDelete}
-            >
-              <Trash2 size={14} />
-            </button>
+            <Tooltip content="Rename workspace">
+              <button
+                className="iconButton"
+                aria-label="Rename workspace"
+                onClick={handleRename}
+              >
+                <Pencil size={14} />
+              </button>
+            </Tooltip>
+            <Tooltip content="Delete workspace">
+              <button
+                className="iconButton"
+                aria-label="Delete workspace"
+                onClick={handleDelete}
+              >
+                <Trash2 size={14} />
+              </button>
+            </Tooltip>
           </div>
         )}
       </div>

@@ -11,6 +11,7 @@ import {
 } from "@xyflow/react";
 import { Minus, Plus, Scan, Workflow } from "lucide-react";
 import { useDashboard } from "../store";
+import { Tooltip } from "./Tooltip";
 import styles from "./Flowboard.module.scss";
 
 const defaultViewport: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -29,34 +30,37 @@ function ViewControls() {
   }
   return (
     <Panel position="bottom-left" className={styles.controls}>
-      <button
-        className="iconButton"
-        aria-label="Zoom out"
-        title="Zoom out"
-        disabled={zoom <= 0.25}
-        onClick={handleZoomOut}
-      >
-        <Minus size={16} />
-      </button>
+      <Tooltip content="Zoom out">
+        <button
+          className="iconButton"
+          aria-label="Zoom out"
+          disabled={zoom <= 0.25}
+          onClick={handleZoomOut}
+        >
+          <Minus size={16} />
+        </button>
+      </Tooltip>
       <span>{Math.round(zoom * 100)}%</span>
-      <button
-        className="iconButton"
-        aria-label="Zoom in"
-        title="Zoom in"
-        disabled={zoom >= 2}
-        onClick={handleZoomIn}
-      >
-        <Plus size={16} />
-      </button>
+      <Tooltip content="Zoom in">
+        <button
+          className="iconButton"
+          aria-label="Zoom in"
+          disabled={zoom >= 2}
+          onClick={handleZoomIn}
+        >
+          <Plus size={16} />
+        </button>
+      </Tooltip>
       <div className={styles.divider} />
-      <button
-        className="iconButton"
-        aria-label="Reset view"
-        title="Reset view"
-        onClick={handleReset}
-      >
-        <Scan size={16} />
-      </button>
+      <Tooltip content="Reset view">
+        <button
+          className="iconButton"
+          aria-label="Reset view"
+          onClick={handleReset}
+        >
+          <Scan size={16} />
+        </button>
+      </Tooltip>
     </Panel>
   );
 }

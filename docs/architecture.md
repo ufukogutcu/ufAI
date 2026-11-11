@@ -100,6 +100,14 @@ See the [HTTP API reference](api.md) for payloads, validation, defaults, errors,
 
 The current UI has an application-scoped Zustand store, created once by its provider. It caches server records and holds selection plus per-workspace viewport state. Page lists load in 100-record batches; immutable updates preserve unchanged record references. Form drafts stay in local React state. Server responses establish saved state; API failures do not replace drafts. SQLite stores durable records, browser local storage holds optional navigation preferences, and canvas viewports exist only in memory. Pointer and zoom events do not write to SQLite. Unsaved preset changes guard page changes, preset selection, cancellation, and browser unload.
 
+## Tooltips
+
+The shared [Tooltip component](../apps/web/src/components/Tooltip.tsx) accepts text `content`, an optional `placement` (`top`, `right`, `bottom`, or `left`; defaults to `top`), and one native HTML element as its child. It clones that element without a layout wrapper, preserves existing handlers and refs, and appends its stable tooltip ID to `aria-describedby` while visible. Keep the control's accessible name independent of the tooltip; use this component instead of native `title` attributes for UI help. Empty content and disabled children suppress tooltips.
+
+Tooltip state and timers are component-local. Mouse hover opens after 400 ms; keyboard focus opens immediately. A 120 ms closing delay allows the pointer to cross onto the tooltip. Activation, blur, Escape, scrolling, and resizing dismiss it; Escape and activation suppress reopening until the pointer leaves or focus is lost. Timers, open-state listeners, and resize observers are cleaned up. No animation is used, including with reduced motion enabled.
+
+SCSS modules style the text bubble using dashboard color variables. A fixed-position portal targets the nearest open dialog, or the document body outside dialogs, to avoid canvas transforms and keep modal help above the backdrop. Positioning flips to the opposite side when it offers more room and clamps to an 8 px viewport margin. Sidebar tooltips prefer the right; toolbar tooltips prefer the top. Tooltips are hoverable text, contain no focusable controls, and never become keyboard tab stops. No tooltip library, server interface, or persisted state is required.
+
 ## Extension boundaries
 
 The following execution and integration boundaries remain future direction:
