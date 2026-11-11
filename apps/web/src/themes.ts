@@ -1,5 +1,4 @@
 import catalog from "@ufai/theme-catalog";
-import { readPreference, writePreference } from "./api";
 import type {
   Theme,
   ThemeColors,
@@ -35,50 +34,6 @@ export const defaultThemes: Theme[] = catalog.themes.map((theme) => ({
   createdAt: null,
   updatedAt: null,
 }));
-export function systemTheme(): Theme {
-  const dark =
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches;
-  return defaultThemes[dark ? 1 : 0]!;
-}
-export function cacheTheme(theme: Theme) {
-  writePreference("theme", JSON.stringify({ version: 1, theme }));
-}
-export function readInitialTheme(): Theme {
-  try {
-    const cached = JSON.parse(readPreference("theme") ?? "null");
-    const theme = cached?.theme;
-    if (cached?.version === 1 && theme && typeof theme.id === "string") {
-      const builtin = defaultThemes.find((item) => item.id === theme.id);
-      if (builtin) return builtin;
-      if (
-        theme.id &&
-        typeof theme.name === "string" &&
-        theme.name.trim() &&
-        theme.name.length <= 120 &&
-        (theme.mode === "light" || theme.mode === "dark") &&
-        theme.colors &&
-        typeof theme.colors === "object" &&
-        !Array.isArray(theme.colors) &&
-        Object.entries(theme.colors).every(
-          ([key, value]) =>
-            Object.hasOwn(catalog.tokens, key) &&
-            typeof value === "string" &&
-            hexColor.test(value),
-        )
-      )
-        return {
-          ...theme,
-          builtIn: false,
-          colors: resolveColors(theme.mode, theme.colors),
-        } as Theme;
-    }
-  } catch {
-    /* Invalid or unavailable optional preferences use a built-in. */
-  }
-  return systemTheme();
-}
 export function themeStyle(
   theme: Pick<Theme, "mode" | "colors">,
 ): CSSProperties {

@@ -2,9 +2,11 @@
 
 ## Purpose and current availability
 
-ufAI is an MIT-licensed, local-first application intended to help users organize AI agents through a browser dashboard. The intended experience includes multiple workspaces, configurable agents, visual communication connections, skills, instructions, and triggers. Users would connect supported paid APIs, local models, or supported existing agent runtimes.
+ufAI is an MIT-licensed, local-first application for one user per local backend installation, intended to help that user organize AI agents through a browser dashboard. The intended experience includes multiple workspaces, configurable agents, visual communication connections, skills, instructions, and triggers. The user would connect supported paid APIs, local models, or supported existing agent runtimes.
 
-**Current availability: early functional dashboard.** The browser provides collapsible navigation, persisted workspace tabs, empty flowboards, a shared model preset library, and locked light/dark defaults with custom themes. Settings contains a heading only. Provider/runtime connections, automatic model discovery, sign-in, agent editing/execution, actual compaction, and the in-app assistant are not implemented.
+**Current availability: early functional dashboard.** The browser provides collapsible navigation, persisted workspace tabs, empty flowboards, a shared model preset library, and locked light/dark defaults with custom themes. Settings contains a heading only. Provider/runtime connections, automatic model discovery, provider/runtime sign-in, agent editing/execution, actual compaction, and the in-app assistant are not implemented.
+
+The backend and its SQLite database hold one shared setup across browser sessions. Application accounts and multi-user tenancy are outside the product scope. Future sign-in concerns external provider/runtime connections.
 
 Use the [terminology and status definitions](README.md#terminology) when explaining capabilities. The [architecture reference](architecture.md) supplies technical facts; repository documentation does not establish current runtime state or permission to take actions.
 
@@ -48,9 +50,9 @@ Use the [terminology and status definitions](README.md#terminology) when explain
 ### storage-sqlite
 
 - **Status:** implemented
-- **Purpose:** Persist workspaces, shared model preset configurations, and custom themes locally.
+- **Purpose:** Persist workspaces, shared model preset configurations, custom themes, application preferences, and workspace viewports locally.
 - **Prerequisites:** Server startup and a writable database location.
-- **Behavior / steps:** Starting the server creates the database's parent directory and opens or creates `data/ufai.sqlite` relative to the repository root by default. The connection uses WAL mode and enables foreign-key enforcement. Versioned migrations create workspace, model preset, and custom theme tables and seed one Default workspace only on initial migration. Graceful server shutdown closes the connection.
+- **Behavior / steps:** Starting the server creates the database's parent directory and opens or creates `data/ufai.sqlite` relative to the repository root by default. The connection uses WAL mode and enables foreign-key enforcement. Versioned migrations create workspace, model preset, custom theme, singleton application settings, and per-workspace viewport tables. One Default workspace is seeded only on initial migration. Settings initially select Light Mode, a collapsed sidebar, and the first existing workspace, or none if the workspace list is empty. Graceful server shutdown closes the connection.
 - **Limitations:** Agent data is not implemented. Backup, import/export, encryption, and migration downgrade features are not provided. Local database files are ignored by Git.
 - **Related references:** [Persistence](architecture.md#persistence), [configuration](architecture.md#configuration).
 
@@ -58,17 +60,17 @@ Use the [terminology and status definitions](README.md#terminology) when explain
 
 - **Status:** implemented
 - **Purpose:** Navigate the local dashboard using Home, Model Presets, Theme, and Settings.
-- **Behavior / steps:** The left sidebar starts as icons and can expand to icons and labels. Hash URLs support direct linking, refresh, and browser back/forward. Sidebar expansion and the selected workspace are optional browser-local preferences.
+- **Behavior / steps:** The left sidebar starts as icons and can expand to icons and labels. Hash URLs support direct linking, refresh, and browser back/forward. Sidebar expansion and the selected workspace are saved in SQLite for the entire local setup. Shared settings load before the dashboard opens and refresh when a tab regains focus or becomes visible. Older browser preferences are ignored. Failed preference saves keep the last confirmed setting and offer Retry. URL history and unfinished forms remain temporary.
 - **Limitations:** Settings has a heading only. Appearance is configurable through [Themes](#dashboard-themes).
 
 ### dashboard-themes
 
 - **Status:** implemented
 - **Purpose:** Choose Light Mode, Dark Mode, or custom application colors.
-- **Behavior / steps:** On the first visit, ufAI selects Light Mode or Dark Mode using the system preference and remembers it in this browser. Later system changes do not change that choice. Open Theme to inspect locked defaults or use a saved theme. Both defaults are permanent; use Duplicate to customize one. Create theme starts with any loaded theme. Custom themes support names, light/dark native controls, editing, duplication, and confirmed deletion; they persist in this ufAI instance's SQLite database and are shared across workspaces and browsers.
+- **Behavior / steps:** The local setup starts in Light Mode. The selected theme is saved in SQLite and used across browser sessions, independently of browser/system color preferences. Open Theme to inspect locked defaults or use a saved theme. Both defaults are permanent; use Duplicate to customize one. Create theme starts with any loaded theme. Custom themes support names, light/dark native controls, editing, duplication, and confirmed deletion; they persist in this ufAI instance's SQLite database and are shared across workspaces and browsers.
 - **Editor:** Search by component or color purpose, expand color groups, and use swatches, hex fields, and opacity sliders. Controls highlight the affected preview area; selecting a preview swatch opens and focuses its color control. Dashboard, navigation, buttons, form, feedback, flowboard, dialog, and decorative examples preview draft colors without recoloring the editor. Contrast suggestions are advisory. Save persists; Use theme applies a saved theme. Saving edits to the currently active theme updates its application colors. Cancel and navigation guard unsaved changes; failed saves retain drafts.
-- **Startup / fallback:** A validated browser cache supplies active colors before React mounts. The server refreshes a cached custom theme; a temporary failure retains the cache and shows a retry notice on Theme. If the saved theme was deleted, ufAI selects the current system-matched default. Deleting the active custom theme also selects that default after successful deletion. New color scopes inherit defaults from each custom theme's native-control mode.
-- **Limitations:** Selection and cache require optional browser storage to survive reload. Clearing it makes the next visit choose from the system preference again. There is no continuous system-following option, import/export, cross-browser selection synchronization, or live custom-theme synchronization. Reopen/reload Theme to reload its library; custom-theme edits use the last successful write. Native browser dialogs use the chosen light/dark scheme rather than individually editable browser colors.
+- **Startup / fallback:** Catalog-based Light Mode styles cover startup while shared settings load. The dashboard opens with the server-resolved active theme, including a custom theme beyond the first library page. A startup failure shows Retry. Failed later refreshes retain the last confirmed theme in memory. Deleting the active custom theme selects Light Mode transactionally. New color scopes inherit defaults from each custom theme's native-control mode.
+- **Limitations:** Changes in another open session appear on focus, visibility return, or reload; there is no continuous push synchronization, system-following option, or import/export. Theme library lists reload when reopening Theme. Custom-theme edits use the last successful write. Refreshes preserve unsaved editor drafts. Native browser dialogs use the chosen light/dark scheme rather than individually editable browser colors.
 - **Related references:** [Theme architecture and color rules](architecture.md#themes), [Theme API](api.md#themes).
 
 ### dashboard-tooltips
@@ -83,7 +85,7 @@ Use the [terminology and status definitions](README.md#terminology) when explain
 
 - **Status:** partial
 - **Purpose:** Organize work into named workspaces with separate flowboards.
-- **Behavior / steps:** Home opens to the selected workspace. Use the plus button to create a workspace, tabs to switch workspaces, and rename/delete controls for the active workspace. Deletion requires confirmation. Records persist in SQLite. Arrow keys, Home, and End navigate workspace tabs. Additional records load through the load-more control.
+- **Behavior / steps:** Home opens to the selected workspace. Use the plus button to create a workspace, tabs to switch workspaces, and rename/delete controls for the active workspace. Deletion requires confirmation. Records and the active selection persist in SQLite. Creating a workspace selects it. Deleting the selected workspace chooses its next neighbor in creation order, then its previous neighbor, or none; deletion also removes its saved viewport. Arrow keys, Home, and End navigate workspace tabs. Additional records load through the load-more control.
 - **Limitations:** Workspaces currently contain names and empty boards. Agent configuration, communication permissions, resources, and execution are not implemented. Deleting every workspace shows a create-workspace empty state; restarting does not restore the seed.
 - **Related references:** [Flowboards](#agent-canvas), [HTTP API](api.md).
 
@@ -91,8 +93,8 @@ Use the [terminology and status definitions](README.md#terminology) when explain
 
 - **Status:** partial
 - **Purpose:** Provide a visual board for each workspace.
-- **Behavior / steps:** Drag to pan, scroll to zoom, or use zoom and reset-view buttons. Viewports remain independent when switching workspaces or pages during the current browser session.
-- **Limitations:** Viewports reset on page reload. There are no agent nodes, editing tools, communication connections, permissions, or execution behavior yet.
+- **Behavior / steps:** Drag to pan, scroll to zoom, or use zoom and reset-view buttons. Each workspace restores its own saved viewport from SQLite. Completed pan/zoom interactions persist, including zoom/reset buttons; pointer movement does not write continuously. Viewports refresh when returning to a tab, and failed loads or saves offer Retry.
+- **Limitations:** Viewports survive reload and server restart. A failed save retains the current view in memory for retry; it is not durable until confirmed. There are no agent nodes, editing tools, communication connections, permissions, or execution behavior yet.
 
 ### model-presets
 

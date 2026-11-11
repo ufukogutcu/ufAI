@@ -23,6 +23,10 @@ The application provides static UI serving, a health route, workspace, model pre
 
 Workspace manifests and the lockfile define installed dependencies and versions. Zustand, Sass, React Flow (`@xyflow/react`), and Lucide are installed. React Compiler is not configured. Component styles use SCSS modules with a small global foundation. No ORM is installed.
 
+## Single-user setup and working rules
+
+One local backend installation and its SQLite database represent one user's setup across all browser sessions. Application accounts, multi-user tenancy, and browser-specific preference profiles are outside the product scope; future authentication concerns external provider/runtime connections. Durable preferences and workspace presentation state belong in backend persistence. URL history, unsaved forms, dialogs, and pointer/focus state remain temporary. Do not introduce browser identities or use browser storage as preference authority.
+
 ## Runtime topology
 
 **Production:** Browser requests reach one persistent Fastify process. `npm run build` compiles the server into `apps/server/dist` and the UI into `apps/web/dist`. `npm start` runs the compiled server. At startup, the server registers `@fastify/static` only if the UI build directory exists. The root URL serves the built page; `/api/health` is handled by Fastify.
@@ -64,6 +68,8 @@ All documented commands assume execution from the repository root. Loopback defa
 | `GET /` | Built dashboard HTML when static serving was registered at startup | Requires frontend build output |
 | `GET/POST /api/workspaces` | Paginated list / create workspace | Names and IDs only; no agent contents |
 | `PATCH/DELETE /api/workspaces/:id` | Rename / permanently delete workspace | Missing IDs return 404 |
+| `GET/PATCH /api/settings` | Shared settings and resolved active theme/workspace | One settings record per installation |
+| `GET/PATCH /api/workspaces/:id/viewport` | Saved pan/zoom, defaulting to x=0, y=0, zoom=1 | Existing workspace; zoom 0.25–2 |
 | `GET/POST /api/model-presets` | Paginated list / create shared preset | Configuration only |
 | `PATCH/DELETE /api/model-presets/:id` | Partially update / permanently delete preset | Missing IDs return 404 |
 | `GET/POST /api/themes` | Paginated built-in/custom library / create custom theme | Built-ins always precede custom records |
@@ -79,6 +85,7 @@ See the [HTTP API reference](api.md) for payloads, validation, defaults, errors,
 - The database connection is owned by the server process and closed by the Fastify close hook.
 - Schema versioning uses SQLite `user_version`. Migration 1 creates `workspaces` and `model_presets`, adds creation-order indexes, seeds one Default workspace, and advances the version in one short transaction. It also upgrades the original empty scaffold database.
 - Migration 2 adds `themes` and its creation-order index without changing existing workspace/preset records. Custom themes store name, light/dark mode, JSON colors, and timestamps. Built-ins come from the shared catalog rather than mutable database rows.
+- Migration 3 adds singleton `app_settings` and `workspace_viewports` keyed by workspace ID, preserving all previous records. Defaults are Light Mode, a collapsed sidebar, and the first existing workspace by creation order, or null. Old browser preferences are ignored. Workspace foreign keys clear deleted selections and cascade viewport deletion. API transactions select newly created workspaces, repair active workspace selection to its next/previous neighbor on deletion, and select Light Mode when deleting the active custom theme.
 - Records use server-generated UUIDs and ISO timestamps. Presets store compaction mode/value separately. Prepared statements use parameter binding; list queries are paginated at at most 100 rows per request. Names need not be unique.
 - Seeding runs only during migration, including when every workspace is later deleted. Migrations are forward-only; databases newer than this application are rejected.
 - The Fastify application owns its database handle. Tests construct isolated applications with temporary database paths or in-memory SQLite. Workspace deletion currently has no associated agent data to cascade.
@@ -96,12 +103,16 @@ See the [HTTP API reference](api.md) for payloads, validation, defaults, errors,
 | npm workspaces | Coordinate browser and server packages in one repository |
 | MIT | Permissive open-source licensing; dependencies and provider terms retain their own conditions |
 | Zustand and SCSS modules | Provider-scoped shared state with narrow selectors; local editor drafts and component-scoped styling |
-| React Flow viewport | Empty pan/zoom canvas with independent session-only viewports; no agent graph yet |
+| React Flow viewport | Empty pan/zoom canvas with independent SQLite-backed viewports; no agent graph yet |
 | Type-only API contracts | Share record shapes without bundling server modules or creating a runtime package |
 
 ## Client state
 
-The current UI has an application-scoped Zustand store, created once by its provider. It caches server records and holds selection plus per-workspace viewport state. Page lists load in 100-record batches; immutable updates preserve unchanged record references. Form drafts stay in local React state. Server responses establish saved state; API failures do not replace drafts. SQLite stores durable records, browser local storage holds optional navigation preferences, and canvas viewports exist only in memory. Pointer and zoom events do not write to SQLite. Unsaved preset and theme changes guard page changes, record selection, cancellation, and browser unload.
+Provider-scoped Zustand stores cache server records through narrow selectors. A shared settings store holds the server-confirmed settings snapshot plus resolved active theme/workspace. Startup requests settings before mounting the dashboard; failure leaves a retryable startup screen. Active records resolve independently of list pagination. Page lists load in 100-record batches; immutable updates preserve unrelated references. Form drafts stay in local React state, and settings refreshes do not replace editor records/drafts or remount the application.
+
+Settings refresh on window focus or visible-tab return; paired events share one refresh, and listeners are cleaned up. Local settings-affecting writes are serialized in action order. Revision checks reject stale reads after newer actions; refresh skips pending writes. A completed CRUD request remains successful if its subsequent settings refresh fails, avoiding duplicate creates on retry. Preference failures retain confirmed values and expose the failed patch for retry. Later read failures retain the in-memory snapshot and expose a read retry. There is no browser preference storage or continuous synchronization service.
+
+Each workspace viewport loads before first canvas display. React Flow owns motion, while move-start invalidates stale reads and move-end supplies a completed viewport for persistence. Writes keep at most one in-flight request and one latest pending viewport per workspace. Remote viewport application does not trigger another persistence write. Refresh skips active interactions and writes. Read failures retry reads; save failures retain the current view and retry saves. Deleting a workspace clears its cached viewport and associated request bookkeeping. URL history, dialogs, and unfinished interactions remain temporary. Unsaved preset and theme changes guard page changes, record selection, cancellation, and browser unload.
 
 ## Themes
 
@@ -109,9 +120,9 @@ The data-only [theme catalog](../packages/theme-catalog/catalog.json) is the sin
 
 Built-in `light-mode` and `dark-mode` records are assembled from the catalog, never stored as editable rows. The API blocks their PATCH/DELETE operations. Custom-theme colors resolve against the selected base mode on reads and writes, filling newly added keys while retaining existing values. Theme contracts stay in the server's type-only contracts module. Hex values are validated on the server and normalized to six/eight digits; arbitrary CSS expressions are not accepted.
 
-An independent provider-scoped Zustand theme store holds saved library records and the active browser selection. Narrow selectors keep color-picker drafts out of shared state. A local editor draft scopes custom properties to its preview, and selection maps catalog regions to preview examples. Successful saves establish saved state; editing an active theme applies its new saved palette. Only successful deletion can trigger active-theme fallback. The shared unsaved-change guard covers both preset and theme editors.
+An independent provider-scoped Zustand theme store holds saved library records; the shared settings snapshot owns active selection. Narrow selectors keep color-picker drafts out of shared state. A local editor draft scopes custom properties to its preview, and selection maps catalog regions to preview examples. Successful saves establish saved state; editing an active theme applies its new saved palette. Only successful deletion can trigger active-theme fallback. The shared unsaved-change guard covers both preset and theme editors.
 
-Vite injects system-aware fallback CSS from the catalog into the HTML head for early paint. Before mounting React, startup validates `ufai.theme` in optional local storage, resolves its colors, and applies the remembered theme. Cached built-in colors are replaced with catalog values to preserve immutability. The provider persists the initial choice once and subscribes to saved selection changes; there is no system-preference listener. A cached custom theme is refreshed by ID, including one beyond the first library page. A 404 selects the current system-matched default; other failures retain the validated cache. An in-flight refresh cannot replace a later selection or saved edit. The cache is optional and not authoritative storage for custom themes.
+Vite injects Light Mode fallback CSS from the catalog into the HTML head for early paint. Startup loads `/api/settings` and applies its resolved active theme before displaying the dashboard. Neither browser storage nor browser/system color preferences determine selection. A settings subscription applies confirmed palette changes to the root. Active theme saves refresh the resolved palette, while successful deletion selects Light Mode in the same server transaction. Refresh failures retain the last confirmed in-memory palette; there is no persisted browser theme cache.
 
 Lists load at most 100 records per request, with immutable defaults first, then custom records by creation order. No push synchronization or optimistic concurrency token is provided. Palette changes do not remount React Flow or reset workspace viewports; its color mode and dot grid follow the active theme. Browser-native controls receive the theme's light/dark `color-scheme`.
 
@@ -145,6 +156,6 @@ The following execution and integration boundaries remain future direction:
 | `npm run build` | Compile server; type-check and build browser assets |
 | `npm start` | Start compiled server; does not build or watch source |
 
-Node.js >=22.12 and npm are required; `.nvmrc` selects Node 22. CI uses that file, then runs `npm ci`, `npm run typecheck`, `npm test`, and `npm run build`. Tests cover API/database behavior, client-store isolation and server-confirmed updates, theme API/migrations/cache/catalog rules, and form calculations/validation; no automated browser suite or lint command is configured. Development Strict Mode is enabled in the browser entry point; distinguish development checks from production performance measurements.
+Node.js >=22.12 and npm are required; `.nvmrc` selects Node 22. CI uses that file, then runs `npm ci`, `npm run typecheck`, `npm test`, and `npm run build`. Tests cover API/database behavior, client-store isolation and server-confirmed updates, theme API/migrations/settings/catalog rules, and form calculations/validation; no automated browser suite or lint command is configured. Development Strict Mode is enabled in the browser entry point; distinguish development checks from production performance measurements.
 
 For documentation maintenance, follow the [index checklist](README.md#maintenance-checklist) rather than treating a successful build as documentation validation.

@@ -1,3 +1,4 @@
+import { useSettings } from "../settings-store";
 import {
   useEffect,
   useId,
@@ -17,7 +18,6 @@ import {
   colorKeys,
   contrastWarnings,
   defaultThemes,
-  systemTheme,
   hexColor,
   normalizeColor,
   themeStyle,
@@ -390,8 +390,10 @@ function ThemeEditor({
   const modeId = useId();
   const searchId = useId();
   const save = useTheme((state) => state.save);
-  const selectTheme = useTheme((state) => state.select);
-  const activeId = useTheme((state) => state.active.id);
+  const updateSettings = useSettings((state) => state.update);
+  const activeId = useSettings(
+    (state) => state.snapshot.settings.activeThemeId,
+  );
   const attempt = useNavigationGuard();
   const locked = !!record?.builtIn;
   const invalid = Object.values(raw).some((value) => !hexColor.test(value));
@@ -469,7 +471,8 @@ function ThemeEditor({
     attempt(onCancel);
   }
   function handleUse() {
-    if (record) attempt(() => selectTheme(record));
+    if (record)
+      attempt(() => void updateSettings({ activeThemeId: record.id }));
   }
   function handleDuplicate() {
     if (record) attempt(() => onDuplicate(record));
@@ -699,15 +702,13 @@ function ThemeEditor({
 
 export default function Themes() {
   const themes = useTheme((state) => state.themes);
-  const active = useTheme((state) => state.active);
+  const active = useSettings((state) => state.snapshot.activeTheme);
   const total = useTheme((state) => state.total);
   const offset = useTheme((state) => state.offset);
   const loading = useTheme((state) => state.loading);
   const error = useTheme((state) => state.error);
-  const activeError = useTheme((state) => state.activeError);
   const load = useTheme((state) => state.load);
-  const select = useTheme((state) => state.select);
-  const refreshActive = useTheme((state) => state.refreshActive);
+  const updateSettings = useSettings((state) => state.update);
   const remove = useTheme((state) => state.remove);
   const attempt = useNavigationGuard();
   const [editor, setEditor] = useState<{
@@ -780,7 +781,7 @@ export default function Themes() {
     setDeleteError("");
     try {
       await remove(deleting.id);
-      show(deleting.id === active.id ? systemTheme() : active);
+      show(deleting.id === active.id ? defaultThemes[0]! : active);
       setDeleting(null);
     } catch (failure) {
       setDeleteError(errorMessage(failure));
@@ -808,14 +809,6 @@ export default function Themes() {
         </button>
       </header>
       <div className={styles.content}>
-        {activeError && (
-          <div className={styles.notice} role="status">
-            {activeError}
-            <button className="textButton" onClick={() => void refreshActive()}>
-              Retry refresh
-            </button>
-          </div>
-        )}
         {error && (
           <div className={styles.notice} role="alert">
             {error}
@@ -871,7 +864,11 @@ export default function Themes() {
                 <button
                   type="button"
                   className="textButton"
-                  onClick={() => attempt(() => select(theme))}
+                  onClick={() =>
+                    attempt(
+                      () => void updateSettings({ activeThemeId: theme.id }),
+                    )
+                  }
                   disabled={theme.id === active.id}
                 >
                   {theme.id === active.id ? "In use" : "Use theme"}
@@ -951,7 +948,7 @@ export default function Themes() {
           <p>
             Delete “{deleting.name}”? This cannot be undone.
             {deleting.id === active.id
-              ? " Your browser will switch to a default theme based on your system preference."
+              ? " Your setup will switch to Light Mode."
               : ""}
           </p>
           {deleteError && (

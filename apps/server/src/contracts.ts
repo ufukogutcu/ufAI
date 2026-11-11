@@ -61,3 +61,19 @@ export interface Theme extends ThemeInput {
   createdAt: string | null;
   updatedAt: string | null;
 }
+
+export interface AppSettings {
+  activeThemeId: string;
+  activeWorkspaceId: string | null;
+  sidebarExpanded: boolean;
+}
+export interface SettingsResponse {
+  settings: AppSettings;
+  activeTheme: Theme;
+  activeWorkspace: Workspace | null;
+}
+export interface WorkspaceViewport {
+  x: number;
+  y: number;
+  zoom: number;
+}

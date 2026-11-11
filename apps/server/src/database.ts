@@ -18,7 +18,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 2)
+    if (version > 3)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -55,6 +55,27 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
           CREATE INDEX themes_created ON themes(createdAt, id);
         `);
         database.pragma("user_version = 2");
+      })();
+    if (version < 3)
+      database.transaction(() => {
+        database.exec(`
+          CREATE TABLE app_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            activeThemeId TEXT NOT NULL,
+            activeWorkspaceId TEXT REFERENCES workspaces(id) ON DELETE SET NULL,
+            sidebarExpanded INTEGER NOT NULL CHECK (sidebarExpanded IN (0, 1))
+          );
+          INSERT INTO app_settings VALUES (
+            1, 'light-mode',
+            (SELECT id FROM workspaces ORDER BY createdAt, id LIMIT 1), 0
+          );
+          CREATE TABLE workspace_viewports (
+            workspaceId TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+            x REAL NOT NULL, y REAL NOT NULL,
+            zoom REAL NOT NULL CHECK (zoom BETWEEN 0.25 AND 2)
+          );
+        `);
+        database.pragma("user_version = 3");
       })();
   } catch (error) {
     database.close();

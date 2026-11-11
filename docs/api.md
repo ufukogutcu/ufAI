@@ -1,6 +1,6 @@
 # HTTP API reference
 
-The local Fastify server exposes the following JSON API. Hash-based browser routes do not alter API paths. There is no authentication layer or remote-access configuration. Live provider/runtime connections and execution APIs are not implemented.
+The local Fastify server exposes the following JSON API for one user and one shared setup. Hash-based browser routes do not alter API paths. There is no authentication layer or remote-access configuration. Live provider/runtime connections and execution APIs are not implemented.
 
 ## Records and requests
 
@@ -10,12 +10,25 @@ The local Fastify server exposes the following JSON API. Hash-based browser rout
 
 A workspace response is `{ id, name, createdAt, updatedAt }`. IDs are server-generated UUID strings; timestamps are ISO strings.
 
-- `POST /api/workspaces`: accepts `{ "name": "Studio" }`, returns the workspace with status 201.
+- `POST /api/workspaces`: accepts `{ "name": "Studio" }`, returns the workspace with status 201 and transactionally makes it the active workspace.
 - `PATCH /api/workspaces/:id`: accepts `{ "name": "Renamed studio" }`, returns the updated workspace with status 200.
-- `DELETE /api/workspaces/:id`: permanently deletes the record, returns 204 with no body. It does not delete presets, which are project-wide.
+- `DELETE /api/workspaces/:id`: permanently deletes the record, returns 204 with no body. It also deletes the saved viewport. If selected, the next workspace in creation order becomes active, then the previous workspace if no next one exists, or null if none remain. These changes are transactional. It does not delete presets, which are installation-wide.
 - Names must be strings of 1–120 characters, nonempty after trimming. Unknown fields are rejected. Names need not be unique.
 
 The first migration creates one Default workspace. Deleting all workspaces does not re-seed the database on restart.
+
+### Application settings
+
+- `GET /api/settings` returns `{ settings: { activeThemeId, activeWorkspaceId, sidebarExpanded }, activeTheme, activeWorkspace }`. The resolved records use the existing theme/workspace response types; `activeWorkspaceId` and `activeWorkspace` may be null. Resolution does not depend on list pagination.
+- `PATCH /api/settings` accepts any subset of `activeThemeId` (existing built-in/custom theme ID), `activeWorkspaceId` (existing workspace ID or null), and `sidebarExpanded` (boolean). It returns the same full response with status 200. Only supplied fields change; unknown fields, invalid types, and missing referenced records return 400 with field errors, leaving settings unchanged. An empty patch is a no-op.
+- Settings are one singleton per installation, without browser or user identifiers. Initial defaults are `light-mode`, `false` for sidebar expansion, and the first existing workspace by `createdAt`, then `id`, or null. Existing browser preferences are ignored.
+- Startup loads settings before showing the dashboard. Open tabs refresh on focus/visibility return; there is no continuous push synchronization. Successful writes establish saved preferences.
+
+### Workspace viewports
+
+- `GET /api/workspaces/:id/viewport` returns `{ x, y, zoom }`, defaulting to `{ x: 0, y: 0, zoom: 1 }` until saved.
+- `PATCH /api/workspaces/:id/viewport` accepts any subset of those three fields, merges into the saved/default viewport, and returns the full viewport with status 200. Coordinates must be finite numbers; zoom must be a finite number from 0.25 through 2. Unknown fields or invalid values return 400 without changing saved state. An empty patch is a no-op in value.
+- Both routes return 404 for a missing workspace. Each workspace has one viewport shared by all sessions; deleting it cascades viewport deletion. The browser saves completed interactions rather than pointer events, coalescing pending writes to the latest completed view.
 
 ### Model presets
 
@@ -58,9 +71,9 @@ A theme is `{ id, name, mode, colors, builtIn, createdAt, updatedAt }`. `mode` i
 
 - `POST /api/themes`: accepts `{ name, mode, colors }`, returns a custom theme with status 201. A color object is required; `{}` starts from the selected mode's defaults. Names are trimmed, nonempty, at most 120 characters, and need not be unique. Duplication posts an independent copy of a saved theme's name/mode/colors with a new name.
 - `PATCH /api/themes/:id`: accepts partial name/mode/colors and returns the saved full record with status 200. Supplied color keys merge into existing values. Missing/new keys resolve from the base mode. Changing mode preserves existing explicit colors. Validation failures leave the saved record unchanged.
-- `DELETE /api/themes/:id`: permanently removes a custom theme and returns 204. Built-ins never disappear.
+- `DELETE /api/themes/:id`: permanently removes a custom theme and returns 204. If active, selection switches to `light-mode` in the same transaction. Built-ins never disappear.
 - Hex values accept `#RGB`, `#RGBA`, `#RRGGBB`, or `#RRGGBBAA` and normalize to lowercase six/eight-digit values. Unknown color keys, arbitrary CSS values, invalid input types, and protected/unknown fields (including `id`, `builtIn`, and timestamps) are rejected with 400 and field errors.
-- PATCH/DELETE of either built-in returns **403** with an explanatory error, regardless of request body. Missing IDs return 404. Active selection and cache are browser preferences, with no server selection endpoint.
+- PATCH/DELETE of either built-in returns **403** with an explanatory error, regardless of request body. Missing IDs return 404. Active selection belongs to the singleton application settings.
 
 ## Lists
 

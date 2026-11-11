@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -10,7 +10,7 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import { Minus, Plus, Scan, Workflow } from "lucide-react";
-import { useTheme } from "../theme-store";
+import { useSettings } from "../settings-store";
 import { useDashboard } from "../store";
 import { Tooltip } from "./Tooltip";
 import styles from "./Flowboard.module.scss";
@@ -67,12 +67,39 @@ function ViewControls() {
 }
 
 function Board({ workspaceId }: { workspaceId: string }) {
-  const mode = useTheme((state) => state.active.mode);
+  const mode = useSettings((state) => state.snapshot.activeTheme.mode);
   const viewport = useDashboard((state) => state.viewports[workspaceId]);
   const saveViewport = useDashboard((state) => state.saveViewport);
+  const beginInteraction = useDashboard(
+    (state) => state.beginViewportInteraction,
+  );
+  const endInteraction = useDashboard((state) => state.endViewportInteraction);
+  useEffect(
+    () => () => endInteraction(workspaceId),
+    [endInteraction, workspaceId],
+  );
+  const { setViewport, getViewport } = useReactFlow();
+  const applying = useRef(false);
+  useEffect(() => {
+    if (!viewport) return;
+    const current = getViewport();
+    if (
+      current.x === viewport.x &&
+      current.y === viewport.y &&
+      current.zoom === viewport.zoom
+    )
+      return;
+    applying.current = true;
+    void setViewport(viewport).finally(() => {
+      applying.current = false;
+    });
+  }, [viewport, setViewport, getViewport]);
+  const handleMoveStart = useCallback(() => {
+    if (!applying.current) beginInteraction(workspaceId);
+  }, [beginInteraction, workspaceId]);
   const handleMoveEnd = useCallback(
     (_event: MouseEvent | TouchEvent | null, next: Viewport) => {
-      saveViewport(workspaceId, next);
+      if (!applying.current) void saveViewport(workspaceId, next);
     },
     [saveViewport, workspaceId],
   );
@@ -80,6 +107,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
     <div className={styles.board}>
       <ReactFlow
         defaultViewport={viewport ?? defaultViewport}
+        onMoveStart={handleMoveStart}
         onMoveEnd={handleMoveEnd}
         minZoom={0.25}
         maxZoom={2}
@@ -122,9 +150,35 @@ function Board({ workspaceId }: { workspaceId: string }) {
 }
 
 export function Flowboard({ workspaceId }: { workspaceId: string }) {
+  const viewport = useDashboard((state) => state.viewports[workspaceId]);
+  const error = useDashboard((state) => state.viewportErrors[workspaceId]);
+  const load = useDashboard((state) => state.loadViewport);
+  const retry = useDashboard((state) => state.retryViewport);
+  useEffect(() => {
+    void load(workspaceId);
+  }, [load, workspaceId]);
+  function handleRetry() {
+    void retry(workspaceId);
+  }
   return (
-    <ReactFlowProvider key={workspaceId}>
-      <Board workspaceId={workspaceId} />
-    </ReactFlowProvider>
+    <>
+      {error && (
+        <div className="errorBanner" role="alert">
+          {error}{" "}
+          <button className="textButton" onClick={handleRetry}>
+            Retry
+          </button>
+        </div>
+      )}
+      {viewport ? (
+        <ReactFlowProvider key={workspaceId}>
+          <Board workspaceId={workspaceId} />
+        </ReactFlowProvider>
+      ) : (
+        <div className="centerState" role="status">
+          {error ? "Canvas could not load." : "Loading canvas…"}
+        </div>
+      )}
+    </>
   );
 }

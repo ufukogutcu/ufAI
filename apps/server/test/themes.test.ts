@@ -192,7 +192,7 @@ test("version 1 upgrades preserve records; themes survive restart and older colo
   );
   await app.close();
   const storage = new Database(databasePath);
-  assert.equal(storage.pragma("user_version", { simple: true }), 2);
+  assert.equal(storage.pragma("user_version", { simple: true }), 3);
   storage
     .prepare("UPDATE themes SET colors = ? WHERE id = ?")
     .run(JSON.stringify({ text: "#112233" }), saved.id);

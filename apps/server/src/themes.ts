@@ -38,6 +38,16 @@ function fromRow(row: ThemeRow): Theme {
     colors: resolveColors(row.mode, JSON.parse(row.colors)),
   };
 }
+export function readTheme(
+  database: Database.Database,
+  id: string,
+): Theme | undefined {
+  const builtin = builtIns.find((theme) => theme.id === id);
+  if (builtin) return builtin;
+  const row = database.prepare("SELECT * FROM themes WHERE id = ?").get(id) as
+    ThemeRow | undefined;
+  return row ? fromRow(row) : undefined;
+}
 function themeInput(body: unknown, existing?: ThemeInput): ThemeInput {
   const patch = objectBody(body);
   const input = { ...existing, ...patch };
@@ -167,8 +177,17 @@ export function registerThemes(
         return reply
           .code(403)
           .send({ error: "Default themes cannot be deleted." });
-      if (!remove.run(request.params.id).changes)
-        return reply.code(404).send({ error: "Theme not found." });
+      const removed = database.transaction(() => {
+        const result = remove.run(request.params.id);
+        if (result.changes)
+          database
+            .prepare(
+              "UPDATE app_settings SET activeThemeId = 'light-mode' WHERE activeThemeId = ?",
+            )
+            .run(request.params.id);
+        return result.changes;
+      })();
+      if (!removed) return reply.code(404).send({ error: "Theme not found." });
       return reply.code(204).send();
     },
   );

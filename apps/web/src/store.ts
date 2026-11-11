@@ -3,14 +3,13 @@ import { createStore, useStore } from "zustand";
 import {
   errorMessage,
   getPage,
-  readPreference,
   request,
-  writePreference,
   type Workspace,
   type ModelPreset,
   type PresetInput,
 } from "./api";
-import type { Viewport } from "@xyflow/react";
+import type { WorkspaceViewport as Viewport } from "../../server/src/contracts";
+import type { SettingsStore } from "./settings-store";
 
 type Status = "idle" | "loading" | "ready" | "error";
 interface DashboardState {
@@ -24,12 +23,15 @@ interface DashboardState {
   presetTotal: number;
   workspaceOffset: number;
   presetOffset: number;
-  activeWorkspaceId: string | null;
   viewports: Record<string, Viewport>;
   loadWorkspaces: (more?: boolean) => Promise<void>;
   loadPresets: (more?: boolean) => Promise<void>;
-  selectWorkspace: (id: string) => void;
-  saveViewport: (id: string, viewport: Viewport) => void;
+  viewportErrors: Record<string, string>;
+  beginViewportInteraction: (id: string) => void;
+  endViewportInteraction: (id: string) => void;
+  retryViewport: (id: string) => Promise<void>;
+  loadViewport: (id: string) => Promise<void>;
+  saveViewport: (id: string, viewport: Viewport) => Promise<void>;
   createWorkspace: (name: string) => Promise<void>;
   renameWorkspace: (id: string, name: string) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
@@ -49,7 +51,14 @@ function merge<T extends { id: string; createdAt: string }>(
   );
 }
 
-export function createDashboardStore() {
+export function createDashboardStore(settings: SettingsStore) {
+  const viewportLoads = new Map<string, Promise<void>>();
+  const viewportWrites = new Map<string, Promise<void>>();
+  const viewportRevisions = new Map<string, number>();
+  const viewportInteractions = new Set<string>();
+  const pendingViewports = new Map<string, Viewport>();
+  const viewportRetries = new Map<string, () => Promise<void>>();
+  const unsavedViewports = new Set<string>();
   return createStore<DashboardState>()((set, get) => ({
     workspaces: [],
     presets: [],
@@ -61,8 +70,8 @@ export function createDashboardStore() {
     presetTotal: 0,
     workspaceOffset: 0,
     presetOffset: 0,
-    activeWorkspaceId: readPreference("workspace"),
     viewports: {},
+    viewportErrors: {},
     loadWorkspaces: async (more = false) => {
       if (get().workspaceStatus === "loading") return;
       set({ workspaceStatus: "loading", workspaceError: "" });
@@ -73,19 +82,11 @@ export function createDashboardStore() {
           const workspaces = more
             ? merge(state.workspaces, page.items)
             : page.items;
-          const activeWorkspaceId = workspaces.some(
-            (w) => w.id === state.activeWorkspaceId,
-          )
-            ? state.activeWorkspaceId
-            : (workspaces[0]?.id ?? null);
-          if (activeWorkspaceId)
-            writePreference("workspace", activeWorkspaceId);
           return {
             workspaces,
             workspaceTotal: page.total,
             workspaceOffset: offset + page.items.length,
             workspaceStatus: "ready",
-            activeWorkspaceId,
           };
         });
       } catch (error) {
@@ -108,16 +109,107 @@ export function createDashboardStore() {
         set({ presetStatus: "error", presetError: errorMessage(error) });
       }
     },
-    selectWorkspace: (id) => {
-      writePreference("workspace", id);
-      set({ activeWorkspaceId: id });
+    beginViewportInteraction: (id) => {
+      viewportInteractions.add(id);
+      viewportRevisions.set(id, (viewportRevisions.get(id) ?? 0) + 1);
     },
-    saveViewport: (id, viewport) =>
-      set((state) => ({ viewports: { ...state.viewports, [id]: viewport } })),
+    endViewportInteraction: (id) => {
+      viewportInteractions.delete(id);
+    },
+    retryViewport: async (id) => {
+      await viewportRetries.get(id)?.();
+    },
+    loadViewport: async (id) => {
+      if (viewportLoads.has(id)) return viewportLoads.get(id);
+      if (
+        viewportWrites.has(id) ||
+        viewportInteractions.has(id) ||
+        unsavedViewports.has(id)
+      )
+        return;
+      const revision = viewportRevisions.get(id);
+      const loading = (async () => {
+        try {
+          const viewport = await request<Viewport>(
+            `/workspaces/${encodeURIComponent(id)}/viewport`,
+          );
+          if (viewportRevisions.get(id) === revision) {
+            viewportRetries.delete(id);
+            set((state) => ({
+              viewports: { ...state.viewports, [id]: viewport },
+              viewportErrors: { ...state.viewportErrors, [id]: "" },
+            }));
+          }
+        } catch (error) {
+          if (viewportRevisions.get(id) === revision) {
+            viewportRetries.set(id, () => get().loadViewport(id));
+            set((state) => ({
+              viewportErrors: {
+                ...state.viewportErrors,
+                [id]: errorMessage(error),
+              },
+            }));
+          }
+        }
+      })();
+      viewportLoads.set(id, loading);
+      try {
+        await loading;
+      } finally {
+        viewportLoads.delete(id);
+      }
+    },
+    saveViewport: async (id, viewport) => {
+      viewportInteractions.delete(id);
+      unsavedViewports.add(id);
+      viewportRevisions.set(id, (viewportRevisions.get(id) ?? 0) + 1);
+      // Keep one in-flight write and the latest completed view, never a pointer-event queue.
+      set((state) => ({ viewports: { ...state.viewports, [id]: viewport } }));
+      pendingViewports.set(id, viewport);
+      if (viewportWrites.has(id)) return viewportWrites.get(id);
+      const saving = (async () => {
+        while (pendingViewports.has(id)) {
+          const next = pendingViewports.get(id)!;
+          pendingViewports.delete(id);
+          try {
+            await request(
+              `/workspaces/${encodeURIComponent(id)}/viewport`,
+              "PATCH",
+              next,
+            );
+            if (get().viewports[id] === next) {
+              unsavedViewports.delete(id);
+              viewportRetries.delete(id);
+              set((state) => ({
+                viewportErrors: { ...state.viewportErrors, [id]: "" },
+              }));
+            }
+          } catch (error) {
+            if (get().viewports[id] === next) {
+              viewportRetries.set(id, () =>
+                get().saveViewport(id, get().viewports[id]!),
+              );
+              set((state) => ({
+                viewportErrors: {
+                  ...state.viewportErrors,
+                  [id]: errorMessage(error),
+                },
+              }));
+            }
+          }
+        }
+      })();
+      viewportWrites.set(id, saving);
+      try {
+        await saving;
+      } finally {
+        viewportWrites.delete(id);
+      }
+    },
     createWorkspace: async (name) => {
-      const workspace = await request<Workspace>("/workspaces", "POST", {
-        name,
-      });
+      const workspace = await settings
+        .getState()
+        .mutate(() => request<Workspace>("/workspaces", "POST", { name }));
       set((state) => ({
         workspaces: merge(state.workspaces, [workspace]),
         workspaceTotal: state.workspaceTotal + 1,
@@ -126,36 +218,44 @@ export function createDashboardStore() {
             ? state.workspaceOffset + 1
             : state.workspaceOffset,
       }));
-      get().selectWorkspace(workspace.id);
     },
     renameWorkspace: async (id, name) => {
-      const workspace = await request<Workspace>(`/workspaces/${id}`, "PATCH", {
-        name,
-      });
+      const workspace = await settings
+        .getState()
+        .mutate(() =>
+          request<Workspace>(`/workspaces/${id}`, "PATCH", { name }),
+        );
       set((state) => ({
         workspaces: state.workspaces.map((w) => (w.id === id ? workspace : w)),
       }));
     },
     deleteWorkspace: async (id) => {
-      await request(`/workspaces/${id}`, "DELETE");
+      await settings
+        .getState()
+        .mutate(() => request(`/workspaces/${id}`, "DELETE"));
+      viewportRevisions.set(id, (viewportRevisions.get(id) ?? 0) + 1);
+      await Promise.all([viewportLoads.get(id), viewportWrites.get(id)]);
+      viewportRevisions.delete(id);
+      viewportInteractions.delete(id);
+      pendingViewports.delete(id);
+      viewportRetries.delete(id);
+      unsavedViewports.delete(id);
       set((state) => {
         const index = state.workspaces.findIndex((w) => w.id === id);
         const workspaces = state.workspaces.filter((w) => w.id !== id);
         const viewports = { ...state.viewports };
+        const viewportErrors = { ...state.viewportErrors };
         delete viewports[id];
-        const activeWorkspaceId =
-          state.activeWorkspaceId === id
-            ? (workspaces[Math.min(index, workspaces.length - 1)]?.id ?? null)
-            : state.activeWorkspaceId;
-        writePreference("workspace", activeWorkspaceId ?? "");
+        delete viewportErrors[id];
         return {
           workspaces,
           viewports,
-          activeWorkspaceId,
+          viewportErrors,
           workspaceTotal: state.workspaceTotal - 1,
           workspaceOffset: Math.max(
             0,
-            state.workspaceOffset - (index < state.workspaceOffset ? 1 : 0),
+            state.workspaceOffset -
+              (index >= 0 && index < state.workspaceOffset ? 1 : 0),
           ),
         };
       });

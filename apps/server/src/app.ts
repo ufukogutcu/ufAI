@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyError } from "fastify";
 import fastifyStatic from "@fastify/static";
+import { registerSettings } from "./settings.js";
 import { registerThemes } from "./themes.js";
 import { openDatabase } from "./database.js";
 import type { ModelPreset, Workspace, PresetInput } from "./contracts.js";
@@ -106,7 +107,12 @@ export function createApp(
       createdAt: now,
       updatedAt: now,
     };
-    workspaceInsert.run(workspace);
+    database.transaction(() => {
+      workspaceInsert.run(workspace);
+      database
+        .prepare("UPDATE app_settings SET activeWorkspaceId = ? WHERE id = 1")
+        .run(workspace.id);
+    })();
     return reply.code(201).send(workspace);
   });
   app.patch<{ Params: { id: string } }>(
@@ -122,7 +128,34 @@ export function createApp(
   app.delete<{ Params: { id: string } }>(
     "/api/workspaces/:id",
     async (request, reply) => {
-      if (!workspaceDelete.run(request.params.id).changes)
+      const removed = database.transaction(() => {
+        const workspace = workspaceGet.get(request.params.id) as
+          Workspace | undefined;
+        if (!workspace) return false;
+        const next = database
+          .prepare(
+            `SELECT id FROM workspaces WHERE (createdAt, id) > (?, ?)
+          ORDER BY createdAt, id LIMIT 1`,
+          )
+          .get(workspace.createdAt, workspace.id) as { id: string } | undefined;
+        const previous =
+          next ??
+          (database
+            .prepare(
+              `SELECT id FROM workspaces WHERE (createdAt, id) < (?, ?)
+          ORDER BY createdAt DESC, id DESC LIMIT 1`,
+            )
+            .get(workspace.createdAt, workspace.id) as
+            { id: string } | undefined);
+        database
+          .prepare(
+            "UPDATE app_settings SET activeWorkspaceId = ? WHERE activeWorkspaceId = ?",
+          )
+          .run(previous?.id ?? null, workspace.id);
+        workspaceDelete.run(workspace.id);
+        return true;
+      })();
+      if (!removed)
         return reply.code(404).send({ error: "Workspace not found." });
       return reply.code(204).send();
     },
@@ -198,6 +231,7 @@ export function createApp(
   );
 
   registerThemes(app, database);
+  registerSettings(app, database);
 
   const webRoot = fileURLToPath(new URL("../../web/dist/", import.meta.url));
   if (options.serveStatic !== false && existsSync(webRoot))

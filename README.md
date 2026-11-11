@@ -1,8 +1,8 @@
 # ufAI
 
-An open-source, local-first application for organizing AI agents in multiple workspaces through a browser interface.
+An open-source, local-first application for one user to organize AI agents in multiple workspaces through a browser interface. One local backend and SQLite database hold the shared setup across browser sessions.
 
-**Status: early functional dashboard.** The application includes collapsible navigation, saved workspace tabs with empty pannable flowboards, a project-wide model preset library, and locked light/dark defaults with custom themes backed by SQLite. Settings is an empty page. Provider connections, automatic model discovery, sign-in, agent editing/execution, compaction execution, skills, messaging, and triggers remain planned.
+**Status: early functional dashboard.** The application includes collapsible navigation, saved workspace tabs with empty pannable flowboards, a project-wide model preset library, and locked light/dark defaults with custom themes backed by SQLite. Settings is an empty page. Provider connections, automatic model discovery, provider/runtime sign-in, agent editing/execution, compaction execution, skills, messaging, and triggers remain planned.
 
 ## Stack
 
@@ -65,14 +65,14 @@ SQLite is created at `data/ufai.sqlite` on server startup, with WAL mode and for
 
 ## Dashboard
 
-- **Home:** create, rename, and delete workspaces; switch between empty flowboards with pan, zoom, and reset controls. Board viewports last for the current browser session.
+- **Home:** create, rename, and delete workspaces; switch between empty flowboards with pan, zoom, and reset controls. Board viewports are saved per workspace in SQLite after pan/zoom interactions.
 - **Model Presets:** create, edit, and delete shared model configurations. Metadata is entered manually; no credentials are collected. Compaction defaults to 80% of context and can use an absolute token limit instead. These values are configuration only.
-- **Theme:** permanent Light Mode and Dark Mode, first-visit system selection, and custom theme creation/duplication/editing with a contained visual preview. Custom themes persist in SQLite; each browser remembers its selection.
+- **Theme:** permanent Light Mode and Dark Mode, a shared Light Mode default, and custom theme creation/duplication/editing with a contained visual preview. Custom themes and the active selection persist in SQLite for the whole local setup.
 - **Settings:** empty page reserved for later work.
 
-Pages use hash URLs, including `#/home` and `#/model-presets`. Workspace, preset, and custom theme records survive server restarts. Sidebar, selected-workspace, and active-theme preferences are browser-local.
+Pages use hash URLs, including `#/home` and `#/model-presets`. Workspace, preset, and custom theme records survive server restarts. Sidebar, selected-workspace, active-theme, and canvas viewport preferences also survive restarts in SQLite. Settings load on open and refresh when returning to a tab. Old browser preferences are ignored; new settings start with Light Mode, a collapsed sidebar, and the first existing workspace. Unsaved drafts and URL history remain temporary. Application accounts and multi-user tenancy are outside the product scope.
 
-`npm test` runs API/database integration, client-state, theme/cache/catalog, and preset calculation/validation checks using temporary databases. See the [HTTP API reference](docs/api.md) for request and response contracts.
+`npm test` runs API/database integration, client-state, theme/settings/catalog, and preset calculation/validation checks using temporary databases. See the [HTTP API reference](docs/api.md) for request and response contracts.
 
 ## Agent documentation
 

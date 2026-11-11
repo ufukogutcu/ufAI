@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { connectedSetup, initialSettings } from "./helpers";
+import { createSettingsStore } from "../src/settings-store.js";
 import { createDashboardStore } from "../src/store.js";
 import { draftFromPreset, draftToInput } from "../src/preset-form.js";
 import type { ModelPreset, Workspace } from "../src/api.js";
@@ -13,14 +15,16 @@ function workspace(id: string): Workspace {
   };
 }
 
-test("application stores and per-workspace viewports stay isolated", () => {
-  const first = createDashboardStore();
-  const second = createDashboardStore();
-  first.getState().saveViewport("a", { x: 50, y: 20, zoom: 1.2 });
-  first.getState().saveViewport("b", { x: 0, y: 0, zoom: 1 });
-  assert.equal(first.getState().viewports.a?.zoom, 1.2);
-  assert.equal(first.getState().viewports.b?.zoom, 1);
+test("application caches stay isolated while saved per-workspace viewports are shared", async (t) => {
+  const { settings, initial } = await connectedSetup(t);
+  const first = createDashboardStore(settings);
+  const second = createDashboardStore(settings);
+  const id = initial.settings.activeWorkspaceId!;
+  await first.getState().saveViewport(id, { x: 50, y: 20, zoom: 1.2 });
+  assert.equal(first.getState().viewports[id]?.zoom, 1.2);
   assert.deepEqual(second.getState().viewports, {});
+  await second.getState().loadViewport(id);
+  assert.equal(second.getState().viewports[id]?.zoom, 1.2);
 });
 
 test("paginated loads preserve selection and unrelated record identities", async (t) => {
@@ -29,13 +33,20 @@ test("paginated loads preserve selection and unrelated record identities", async
     const items = url.includes("offset=0") ? [first] : [workspace("b")];
     return Response.json({ items, total: 2 });
   });
-  const store = createDashboardStore();
+  const settings = createSettingsStore(initialSettings());
+  const store = createDashboardStore(settings);
   await store.getState().loadWorkspaces();
   const before = store.getState().workspaces[0];
-  store.getState().selectWorkspace("a");
+  settings.setState({
+    snapshot: {
+      ...initialSettings(),
+      settings: { ...initialSettings().settings, activeWorkspaceId: "a" },
+      activeWorkspace: first,
+    },
+  });
   await store.getState().loadWorkspaces(true);
   assert.equal(store.getState().workspaces[0], before);
-  assert.equal(store.getState().activeWorkspaceId, "a");
+  assert.equal(settings.getState().snapshot.settings.activeWorkspaceId, "a");
   assert.equal(store.getState().workspaceOffset, 2);
   assert.deepEqual(
     store.getState().workspaces.map((item) => item.id),
@@ -64,7 +75,8 @@ test("preset state changes only after a successful server response", async (t) =
         finish = resolve;
       }),
   );
-  const store = createDashboardStore();
+  const settings = createSettingsStore(initialSettings());
+  const store = createDashboardStore(settings);
   const saving = store.getState().savePreset(null, input);
   assert.deepEqual(store.getState().presets, []);
   finish(Response.json(record, { status: 201 }));
@@ -79,23 +91,13 @@ test("preset state changes only after a successful server response", async (t) =
   assert.equal(store.getState().presets[0]?.name, "Test");
 });
 
-test("deleting an active workspace selects a neighbor and clears its viewport", async (t) => {
-  t.mock.method(
-    globalThis,
-    "fetch",
-    async (_url: string, init?: RequestInit) =>
-      init?.method === "DELETE"
-        ? new Response(null, { status: 204 })
-        : Response.json({ items: [workspace("a"), workspace("b")], total: 2 }),
-  );
-  const store = createDashboardStore();
-  await store.getState().loadWorkspaces();
-  store.getState().selectWorkspace("a");
-  store.getState().saveViewport("a", { x: 20, y: 0, zoom: 1 });
-  await store.getState().deleteWorkspace("a");
-  assert.equal(store.getState().activeWorkspaceId, "b");
-  assert.equal(store.getState().viewports.a, undefined);
-  await store.getState().deleteWorkspace("b");
-  assert.equal(store.getState().activeWorkspaceId, null);
-  assert.deepEqual(store.getState().workspaces, []);
+test("deleting an active workspace uses the backend neighbor and clears its viewport", async (t) => {
+  const { settings } = await connectedSetup(t);
+  const store = createDashboardStore(settings);
+  await store.getState().createWorkspace("a");
+  const id = settings.getState().snapshot.settings.activeWorkspaceId!;
+  await store.getState().saveViewport(id, { x: 20, y: 0, zoom: 1 });
+  await store.getState().deleteWorkspace(id);
+  assert.notEqual(settings.getState().snapshot.settings.activeWorkspaceId, id);
+  assert.equal(store.getState().viewports[id], undefined);
 });

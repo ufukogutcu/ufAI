@@ -12,11 +12,15 @@ import {
 } from "lucide-react";
 import { DashboardProvider } from "./components/DashboardProvider";
 import { Tooltip } from "./components/Tooltip";
-import { readPreference, writePreference } from "./api";
+import {
+  createSettingsStore,
+  SettingsContext,
+  useSettings,
+} from "./settings-store";
 import { UnsavedChangesProvider } from "./components/UnsavedChanges";
 import { useNavigationGuard } from "./navigation-guard";
 import { ThemeProvider } from "./components/ThemeProvider";
-import type { Theme } from "./themes";
+import type { SettingsResponse } from "../../server/src/contracts";
 import Themes from "./pages/Themes";
 import Home from "./pages/Home";
 import Presets from "./pages/Presets";
@@ -36,9 +40,12 @@ function readPage(): PageId {
 
 function Shell() {
   const [page, setPage] = useState(readPage);
-  const [expanded, setExpanded] = useState(
-    () => readPreference("sidebar") === "expanded",
+  const expanded = useSettings(
+    (state) => state.snapshot.settings.sidebarExpanded,
   );
+  const updateSettings = useSettings((state) => state.update);
+  const settingsError = useSettings((state) => state.error);
+  const retrySettings = useSettings((state) => state.retry);
   const attempt = useNavigationGuard();
   const pageRef = useRef(page);
   const historyIndex = useRef<number>(window.history.state?.ufaiIndex ?? 0);
@@ -97,10 +104,7 @@ function Shell() {
     };
   }, [attempt]);
   function handleToggle() {
-    setExpanded((current) => {
-      writePreference("sidebar", current ? "collapsed" : "expanded");
-      return !current;
-    });
+    void updateSettings({ sidebarExpanded: !expanded });
   }
   function navigate(event: MouseEvent<HTMLAnchorElement>, target: PageId) {
     if (
@@ -113,7 +117,8 @@ function Shell() {
       return;
     event.preventDefault();
     function closeMobileSidebar() {
-      if (window.matchMedia("(max-width: 540px)").matches) setExpanded(false);
+      if (expanded && window.matchMedia("(max-width: 540px)").matches)
+        void updateSettings({ sidebarExpanded: false });
     }
     if (target === page) {
       closeMobileSidebar();
@@ -241,6 +246,17 @@ function Shell() {
           </div>
         </div>
         <main id="main-content" tabIndex={-1} className={styles.main}>
+          {settingsError && (
+            <div className="errorBanner" role="alert">
+              {settingsError}{" "}
+              <button
+                className="textButton"
+                onClick={() => void retrySettings()}
+              >
+                Retry
+              </button>
+            </div>
+          )}
           {page === "home" ? (
             <Home />
           ) : page === "model-presets" ? (
@@ -269,14 +285,17 @@ function Shell() {
     </div>
   );
 }
-export default function App({ initialTheme }: { initialTheme: Theme }) {
+export default function App({ initial }: { initial: SettingsResponse }) {
+  const [settings] = useState(() => createSettingsStore(initial));
   return (
-    <ThemeProvider initial={initialTheme}>
-      <DashboardProvider>
-        <UnsavedChangesProvider>
-          <Shell />
-        </UnsavedChangesProvider>
-      </DashboardProvider>
-    </ThemeProvider>
+    <SettingsContext.Provider value={settings}>
+      <ThemeProvider>
+        <DashboardProvider>
+          <UnsavedChangesProvider>
+            <Shell />
+          </UnsavedChangesProvider>
+        </DashboardProvider>
+      </ThemeProvider>
+    </SettingsContext.Provider>
   );
 }

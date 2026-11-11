@@ -58,19 +58,3 @@ export function errorMessage(error: unknown): string {
     ? error.message
     : "Something went wrong. Please try again.";
 }
-
-export function readPreference(key: string): string | null {
-  try {
-    return localStorage.getItem(`ufai.${key}`);
-  } catch {
-    return null;
-  }
-}
-
-export function writePreference(key: string, value: string) {
-  try {
-    localStorage.setItem(`ufai.${key}`, value);
-  } catch {
-    /* Browser preferences are optional. */
-  }
-}

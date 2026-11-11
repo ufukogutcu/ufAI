@@ -1,3 +1,4 @@
+import { useSettings } from "../settings-store";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   ArrowRight,
@@ -104,15 +105,27 @@ function WorkspaceDialog({
 
 export default function Home() {
   const workspaces = useDashboard((state) => state.workspaces);
-  const activeId = useDashboard((state) => state.activeWorkspaceId);
+  const activeId = useSettings(
+    (state) => state.snapshot.settings.activeWorkspaceId,
+  );
+  const selectedWorkspace = useSettings(
+    (state) => state.snapshot.activeWorkspace,
+  );
   const status = useDashboard((state) => state.workspaceStatus);
   const error = useDashboard((state) => state.workspaceError);
   const total = useDashboard((state) => state.workspaceTotal);
   const offset = useDashboard((state) => state.workspaceOffset);
   const load = useDashboard((state) => state.loadWorkspaces);
-  const select = useDashboard((state) => state.selectWorkspace);
+  const updateSettings = useSettings((state) => state.update);
   const [action, setAction] = useState<WorkspaceAction | null>(null);
-  const active = workspaces.find((w) => w.id === activeId);
+  const active = selectedWorkspace;
+  const tabs =
+    active && !workspaces.some((workspace) => workspace.id === active.id)
+      ? [...workspaces, active]
+      : workspaces;
+  function select(id: string) {
+    void updateSettings({ activeWorkspaceId: id });
+  }
   useEffect(() => {
     if (status === "idle") void load();
   }, [load, status]);
@@ -151,7 +164,7 @@ export default function Home() {
       </header>
       <div className={styles.workspaceBar}>
         <div className={styles.tabs} role="tablist" aria-label="Workspaces">
-          {workspaces.map((workspace, index) => (
+          {tabs.map((workspace, index) => (
             <button
               key={workspace.id}
               role="tab"
@@ -164,13 +177,12 @@ export default function Home() {
               onKeyDown={(event) => {
                 let next: number | undefined;
                 if (event.key === "ArrowRight")
-                  next = (index + 1) % workspaces.length;
+                  next = (index + 1) % tabs.length;
                 if (event.key === "ArrowLeft")
-                  next = (index - 1 + workspaces.length) % workspaces.length;
+                  next = (index - 1 + tabs.length) % tabs.length;
                 if (event.key === "Home") next = 0;
-                if (event.key === "End") next = workspaces.length - 1;
-                const target =
-                  next === undefined ? undefined : workspaces[next];
+                if (event.key === "End") next = tabs.length - 1;
+                const target = next === undefined ? undefined : tabs[next];
                 if (target) {
                   event.preventDefault();
                   select(target.id);

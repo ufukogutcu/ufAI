@@ -21,7 +21,7 @@ export default defineConfig({
             tag: "style",
             attrs: { id: "ufai-theme-defaults" },
             injectTo: "head-prepend",
-            children: `${defaultColors("light")}@media(prefers-color-scheme:dark){${defaultColors("dark")}}`,
+            children: defaultColors("light"),
           },
         ];
       },
