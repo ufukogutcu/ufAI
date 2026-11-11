@@ -4,7 +4,7 @@
 
 ufAI is an npm-workspace repository containing a React + Vite browser app and a Node.js + Fastify server, all in TypeScript. SQLite is opened through `better-sqlite3`. The project is MIT licensed.
 
-The application provides static UI serving, a health route, workspace, model preset and custom theme CRUD, versioned SQLite persistence, and a React dashboard with empty flowboards. See the [platform capability inventory](platform.md) for current availability and product direction. Performance and coding conventions are in [AGENTS.md](../AGENTS.md).
+The application provides static UI serving, a health route, workspace, model preset and custom theme CRUD, versioned SQLite persistence, and a React dashboard with empty flowboards. See the [platform capability inventory](platform.md) for current availability and product direction. Local `AGENTS.md` files may provide additional working instructions and are ignored by Git.
 
 ## Repository map
 
@@ -105,7 +105,7 @@ The current UI has an application-scoped Zustand store, created once by its prov
 
 ## Themes
 
-The data-only [theme catalog](../packages/theme-catalog/catalog.json) is the single source of semantic keys, CSS variables, editor metadata, preview regions, and complete light/dark palettes. It has no build step or runtime dependencies. Application SCSS and TSX consume registered variables; the source/canonical-palette checks run through the browser workspace's Node tests. See [developer color rules](../AGENTS.md#theme-colors) when adding a scope.
+The data-only [theme catalog](../packages/theme-catalog/catalog.json) is the single source of semantic keys, CSS variables, editor metadata, preview regions, and complete light/dark palettes. It has no build step or runtime dependencies. Application SCSS and TSX consume registered variables; the source/canonical-palette checks run through the browser workspace's Node tests. Each new color scope needs a stable key/CSS variable, complete light/dark values, a label and description, component usage, an editor group, and a representative preview example. Application-authored colors must use semantic catalog tokens; structural `transparent`, `inherit`, and `currentColor` are allowed.
 
 Built-in `light-mode` and `dark-mode` records are assembled from the catalog, never stored as editable rows. The API blocks their PATCH/DELETE operations. Custom-theme colors resolve against the selected base mode on reads and writes, filling newly added keys while retaining existing values. Theme contracts stay in the server's type-only contracts module. Hex values are validated on the server and normalized to six/eight digits; arbitrary CSS expressions are not accepted.
 

@@ -6,7 +6,7 @@ This directory is the repository's shared project reference for AI agents. It ex
 
 | Audience or task | Read |
 | --- | --- |
-| Coding agent starting work | Root [AGENTS.md](../AGENTS.md), this index, then relevant sections of the [architecture reference](architecture.md) and [platform guide](platform.md) |
+| Coding agent starting work | Any local `AGENTS.md` instructions (ignored by Git), this index, then relevant sections of the [architecture reference](architecture.md) and [platform guide](platform.md) |
 | Future in-app assistant helping a user | [Platform guide](platform.md); consult architecture only when a technical detail is necessary |
 | Setup, startup, configuration, or troubleshooting | [Platform operations](platform.md#implemented-capabilities) and [configuration](architecture.md#configuration) |
 | HTTP payloads, errors, and persistence-backed UI APIs | [HTTP API reference](api.md), [architecture reference](architecture.md) |
@@ -66,7 +66,7 @@ Record current engineering decisions with a short rationale and label future dir
 For every change, the coding agent must:
 
 1. Identify affected capability IDs and whether behavior, setup, permissions, configuration, interfaces, persistence, or limitations changed.
-2. Update the platform guide for user-visible behavior and the architecture reference for implementation changes in the same change as the code. Update `AGENTS.md` only when lasting working rules or shared project context change.
+2. Update the platform guide for user-visible behavior and the architecture reference for implementation changes in the same change as the code. Keep shared working rules in versioned documentation; local `AGENTS.md` instructions are ignored by Git.
 3. Change statuses only after the described behavior exists and has been appropriately checked. Mark partial implementations honestly; do not carry forward obsolete future-only descriptions.
 4. Update navigation, relative links, examples, and cross-references when documents or features move. Remove stale and contradictory guidance. Add a focused document and index link when a topic outgrows a short section.
 5. Check facts against source and manifests. Validate referenced commands, API shapes, defaults, and limitations; run behavior checks only as needed to resolve uncertainty.

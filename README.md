@@ -76,7 +76,7 @@ Pages use hash URLs, including `#/home` and `#/model-presets`. Workspace, preset
 
 ## Agent documentation
 
-Coding agents should start with [AGENTS.md](AGENTS.md) and the [documentation index](docs/README.md). The [platform guide](docs/platform.md) describes verified capabilities, setup, limitations, and future product direction; the [architecture reference](docs/architecture.md) explains implementation details and boundaries.
+Coding agents should start with the [documentation index](docs/README.md) and any local `AGENTS.md` instructions. Agent instruction files are ignored by Git and are not included in fresh clones. The [platform guide](docs/platform.md) describes verified capabilities, setup, limitations, and future product direction; the [architecture reference](docs/architecture.md) explains implementation details and boundaries.
 
 These references are maintained alongside relevant changes. They are intended for coding agents and as source material for a future in-app assistant; assistant integration is not implemented.
 
