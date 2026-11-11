@@ -18,7 +18,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 1)
+    if (version > 2)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -44,6 +44,17 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
           .prepare("INSERT INTO workspaces VALUES (?, ?, ?, ?)")
           .run(randomUUID(), "Default workspace", now, now);
         database.pragma("user_version = 1");
+      })();
+    if (version < 2)
+      database.transaction(() => {
+        database.exec(`
+          CREATE TABLE themes (
+            id TEXT PRIMARY KEY, name TEXT NOT NULL, mode TEXT NOT NULL,
+            colors TEXT NOT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
+          );
+          CREATE INDEX themes_created ON themes(createdAt, id);
+        `);
+        database.pragma("user_version = 2");
       })();
   } catch (error) {
     database.close();

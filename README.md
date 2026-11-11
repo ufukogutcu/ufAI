@@ -2,7 +2,7 @@
 
 An open-source, local-first application for organizing AI agents in multiple workspaces through a browser interface.
 
-**Status: early functional dashboard.** The application includes collapsible navigation, saved workspace tabs with empty pannable flowboards, and a project-wide model preset library backed by SQLite. Theme and Settings are empty pages. Provider connections, automatic model discovery, sign-in, agent editing/execution, compaction execution, skills, messaging, and triggers remain planned.
+**Status: early functional dashboard.** The application includes collapsible navigation, saved workspace tabs with empty pannable flowboards, a project-wide model preset library, and locked light/dark defaults with custom themes backed by SQLite. Settings is an empty page. Provider connections, automatic model discovery, sign-in, agent editing/execution, compaction execution, skills, messaging, and triggers remain planned.
 
 ## Stack
 
@@ -51,25 +51,28 @@ apps/
     src/
       database.ts     SQLite initialization and versioned migrations
       index.ts        Fastify process entry point
-      app.ts          Health, workspace and preset routes
+      app.ts          Health, workspace and preset routes; theme registration
       contracts.ts    API types shared with the browser through type-only imports
   web/
-    src/              React dashboard, flowboards and preset editor
+    src/              React dashboard, flowboards, preset and theme editors
     vite.config.ts    Development server and API proxy
+packages/
+  theme-catalog/      Shared color tokens, editor metadata and default palettes
 data/                 Generated local database; ignored by Git
 ```
 
-SQLite is created at `data/ufai.sqlite` on server startup, with WAL mode and foreign-key enforcement enabled. Versioned migrations create workspace and model preset tables, and seed one Default workspace once. Deleting the last workspace leaves an empty state; restarting does not recreate it. The connection closes during graceful shutdown.
+SQLite is created at `data/ufai.sqlite` on server startup, with WAL mode and foreign-key enforcement enabled. Versioned migrations create workspace, model preset, and custom theme tables, and seed one Default workspace once. Deleting the last workspace leaves an empty state; restarting does not recreate it. The connection closes during graceful shutdown.
 
 ## Dashboard
 
 - **Home:** create, rename, and delete workspaces; switch between empty flowboards with pan, zoom, and reset controls. Board viewports last for the current browser session.
 - **Model Presets:** create, edit, and delete shared model configurations. Metadata is entered manually; no credentials are collected. Compaction defaults to 80% of context and can use an absolute token limit instead. These values are configuration only.
-- **Theme / Settings:** empty pages reserved for later work.
+- **Theme:** permanent Light Mode and Dark Mode, first-visit system selection, and custom theme creation/duplication/editing with a contained visual preview. Custom themes persist in SQLite; each browser remembers its selection.
+- **Settings:** empty page reserved for later work.
 
-Pages use hash URLs, including `#/home` and `#/model-presets`. Workspace and preset records survive server restarts. Sidebar and selected-workspace preferences are browser-local.
+Pages use hash URLs, including `#/home` and `#/model-presets`. Workspace, preset, and custom theme records survive server restarts. Sidebar, selected-workspace, and active-theme preferences are browser-local.
 
-`npm test` runs API/database integration checks and preset calculation/validation checks using temporary databases. See the [HTTP API reference](docs/api.md) for request and response contracts.
+`npm test` runs API/database integration, client-state, theme/cache/catalog, and preset calculation/validation checks using temporary databases. See the [HTTP API reference](docs/api.md) for request and response contracts.
 
 ## Agent documentation
 

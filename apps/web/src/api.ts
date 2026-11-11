@@ -12,6 +12,7 @@ export class RequestError extends Error {
   constructor(
     message: string,
     public fields: Record<string, string> = {},
+    public status?: number,
   ) {
     super(message);
   }
@@ -40,6 +41,7 @@ export async function request<T>(
     throw new RequestError(
       result?.error ?? `Request failed (${response.status}). Please try again.`,
       result?.fields,
+      response.status,
     );
   }
   return response.status === 204

@@ -7,10 +7,10 @@
   border: 1px solid var(--border-strong);
   border-radius: 16px;
   padding: 24px;
-  box-shadow: 0 24px 100px #0009;
+  box-shadow: 0 24px 100px var(--dialog-shadow);
 
   &::backdrop {
-    background: #080a10b8;
+    background: var(--dialog-backdrop);
   }
   p {
     color: var(--muted);

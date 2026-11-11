@@ -105,16 +105,16 @@
   flex-shrink: 0;
 }
 .selected {
-  border-color: #9485ce40;
-  background: #ab95f20b;
+  border-color: var(--preset-selected-border);
+  background: var(--preset-selected-background);
   > svg {
     opacity: 1;
     color: var(--accent-light);
   }
   .listIcon {
     color: var(--accent-light);
-    background: #a594eb10;
-    border-color: #a594eb30;
+    background: var(--preset-icon-background);
+    border-color: var(--preset-icon-border);
   }
 }
 .libraryFoot {
@@ -192,9 +192,9 @@
   }
 }
 .unsaved {
-  color: #d8b87c;
+  color: var(--warning);
   span {
-    background: #d8b87c;
+    background: var(--warning);
   }
 }
 .fields {
@@ -274,12 +274,12 @@
       margin-top: 5px;
     }
     &:hover {
-      border-color: #7c738f;
+      border-color: var(--kind-hover-border);
     }
   }
   .kindActive {
-    background: #a594eb09;
-    border-color: #9485ce80;
+    background: var(--kind-active-background);
+    border-color: var(--kind-active-border);
     color: var(--accent-light);
   }
 }
@@ -333,9 +333,9 @@
 .configBadge {
   font-size: 7px;
   padding: 4px 6px;
-  background: #b19aed0a;
-  color: #a494c3;
-  border: 1px solid #b19aed20;
+  background: var(--config-background);
+  color: var(--config-text);
+  border: 1px solid var(--config-border);
   border-radius: 4px;
   white-space: nowrap;
   letter-spacing: 0.05em;
@@ -366,7 +366,7 @@
     color: var(--text);
     border-color: var(--border-strong);
     background: var(--panel);
-    box-shadow: 0 1px 3px #0003;
+    box-shadow: 0 1px 3px var(--segment-shadow);
   }
 }
 .threshold {

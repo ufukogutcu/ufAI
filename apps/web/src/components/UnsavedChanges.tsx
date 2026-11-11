@@ -30,7 +30,7 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
       {children}
       {pending && (
         <Dialog title="Discard unsaved changes?" onClose={handleCancel}>
-          <p>Your preset has unsaved changes. Discard them to continue?</p>
+          <p>You have unsaved changes. Discard them to continue?</p>
           <div className="dialogActions">
             <button className="button secondary" onClick={handleCancel}>
               Keep editing

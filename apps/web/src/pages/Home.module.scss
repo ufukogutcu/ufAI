@@ -48,7 +48,7 @@
 .active {
   color: var(--accent-light);
   border-bottom-color: var(--accent);
-  background: linear-gradient(0deg, #a794f40a, transparent);
+  background: linear-gradient(0deg, var(--tab-active), transparent);
 }
 .workspaceActions {
   display: flex;

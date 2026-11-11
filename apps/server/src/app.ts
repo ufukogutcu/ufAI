@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyError } from "fastify";
 import fastifyStatic from "@fastify/static";
+import { registerThemes } from "./themes.js";
 import { openDatabase } from "./database.js";
 import type { ModelPreset, Workspace, PresetInput } from "./contracts.js";
 import {
@@ -195,6 +196,8 @@ export function createApp(
       return reply.code(204).send();
     },
   );
+
+  registerThemes(app, database);
 
   const webRoot = fileURLToPath(new URL("../../web/dist/", import.meta.url));
   if (options.serveStatic !== false && existsSync(webRoot))

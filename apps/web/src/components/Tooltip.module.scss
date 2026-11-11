@@ -9,7 +9,7 @@
   border-radius: 6px;
   background: var(--panel);
   color: var(--text);
-  box-shadow: 0 4px 16px #0005;
+  box-shadow: 0 4px 16px var(--tooltip-shadow);
   font-size: 11px;
   font-weight: 400;
   line-height: 1.5;

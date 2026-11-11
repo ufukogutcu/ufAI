@@ -1,0 +1,746 @@
+{
+  "version": 1,
+  "groups": [
+    "Surfaces",
+    "Text",
+    "Navigation",
+    "Buttons and inputs",
+    "Feedback",
+    "Canvas",
+    "Decorative effects"
+  ],
+  "themes": [
+    {
+      "id": "light-mode",
+      "name": "Light Mode",
+      "mode": "light"
+    },
+    {
+      "id": "dark-mode",
+      "name": "Dark Mode",
+      "mode": "dark"
+    }
+  ],
+  "tokens": {
+    "background": {
+      "cssVariable": "--background",
+      "label": "App background",
+      "description": "Main pages and editor backgrounds.",
+      "components": ["Main pages and editor backgrounds"],
+      "group": "Surfaces",
+      "region": "dashboard",
+      "light": "#f7f7fb",
+      "dark": "#13151b"
+    },
+    "sidebar": {
+      "cssVariable": "--sidebar",
+      "label": "Sidebar background",
+      "description": "Main navigation sidebar.",
+      "components": ["Main navigation sidebar"],
+      "group": "Surfaces",
+      "region": "navigation",
+      "light": "#ffffff",
+      "dark": "#14161c"
+    },
+    "surface": {
+      "cssVariable": "--surface",
+      "label": "Surface",
+      "description": "Top bar, workspace tabs and library.",
+      "components": ["Top bar", "workspace tabs and library"],
+      "group": "Surfaces",
+      "region": "dashboard",
+      "light": "#ffffff",
+      "dark": "#17191f"
+    },
+    "panel": {
+      "cssVariable": "--panel",
+      "label": "Raised panel",
+      "description": "Cards, secondary buttons and canvas controls.",
+      "components": ["Cards", "secondary buttons and canvas controls"],
+      "group": "Surfaces",
+      "region": "dashboard",
+      "light": "#ededf5",
+      "dark": "#1e2028"
+    },
+    "canvas": {
+      "cssVariable": "--canvas",
+      "label": "Canvas background",
+      "description": "Workspace flowboard.",
+      "components": ["Workspace flowboard"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#f3f4f9",
+      "dark": "#121419"
+    },
+    "text": {
+      "cssVariable": "--text",
+      "label": "Primary text",
+      "description": "Headings, inputs and main content.",
+      "components": ["Headings", "inputs and main content"],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#252535",
+      "dark": "#dedee6"
+    },
+    "muted": {
+      "cssVariable": "--muted",
+      "label": "Secondary text",
+      "description": "Descriptions, labels and navigation.",
+      "components": ["Descriptions", "labels and navigation"],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#5b5d70",
+      "dark": "#a2a4b2"
+    },
+    "faint": {
+      "cssVariable": "--faint",
+      "label": "Subtle text",
+      "description": "Hints, small labels and metadata.",
+      "components": ["Hints", "small labels and metadata"],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#666a7c",
+      "dark": "#858896"
+    },
+    "border": {
+      "cssVariable": "--border",
+      "label": "Subtle border",
+      "description": "Dividers and card borders.",
+      "components": ["Dividers and card borders"],
+      "group": "Surfaces",
+      "region": "dashboard",
+      "light": "#24243e17",
+      "dark": "#ffffff0d"
+    },
+    "border-strong": {
+      "cssVariable": "--border-strong",
+      "label": "Strong border",
+      "description": "Inputs, buttons and selected containers.",
+      "components": ["Inputs", "buttons and selected containers"],
+      "group": "Surfaces",
+      "region": "dashboard",
+      "light": "#24243e30",
+      "dark": "#ffffff16"
+    },
+    "accent": {
+      "cssVariable": "--accent",
+      "label": "Accent and focus",
+      "description": "Focus outlines, active markers and canvas labels.",
+      "components": ["Focus outlines", "active markers and canvas labels"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#7051b3",
+      "dark": "#b19be9"
+    },
+    "accent-light": {
+      "cssVariable": "--accent-light",
+      "label": "Accent text",
+      "description": "Active links, icons and highlighted text.",
+      "components": ["Active links", "icons and highlighted text"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#65449e",
+      "dark": "#c9b6f6"
+    },
+    "hover": {
+      "cssVariable": "--hover",
+      "label": "Hover surface",
+      "description": "Navigation, tabs and icon buttons.",
+      "components": ["Navigation", "tabs and icon buttons"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#40307708",
+      "dark": "#ffffff05"
+    },
+    "root-background": {
+      "cssVariable": "--root-background",
+      "label": "Document background",
+      "description": "Browser document outside the dashboard.",
+      "components": ["Browser document outside the dashboard"],
+      "group": "Surfaces",
+      "region": "dashboard",
+      "light": "#f7f7fb",
+      "dark": "#111318"
+    },
+    "scrollbar": {
+      "cssVariable": "--scrollbar",
+      "label": "Scrollbar thumb",
+      "description": "Scrollable editors and lists.",
+      "components": ["Scrollable editors and lists"],
+      "group": "Surfaces",
+      "region": "dashboard",
+      "light": "#b3b4c4",
+      "dark": "#383b47"
+    },
+    "selection": {
+      "cssVariable": "--selection",
+      "label": "Text selection",
+      "description": "Selected text throughout the app.",
+      "components": ["Selected text throughout the app"],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#8a65d940",
+      "dark": "#aa91e950"
+    },
+    "success": {
+      "cssVariable": "--success",
+      "label": "Local status",
+      "description": "Local instance and footer status dots.",
+      "components": ["Local instance and footer status dots"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#39794b",
+      "dark": "#99af9d"
+    },
+    "primary-background": {
+      "cssVariable": "--primary-background",
+      "label": "Primary button",
+      "description": "Save and create buttons.",
+      "components": ["Save and create buttons"],
+      "group": "Buttons and inputs",
+      "region": "buttons",
+      "light": "#7651ba",
+      "dark": "#bda7eb"
+    },
+    "primary-text": {
+      "cssVariable": "--primary-text",
+      "label": "Primary button text",
+      "description": "Labels on primary buttons.",
+      "components": ["Labels on primary buttons"],
+      "group": "Buttons and inputs",
+      "region": "buttons",
+      "light": "#ffffff",
+      "dark": "#211b2f"
+    },
+    "primary-border": {
+      "cssVariable": "--primary-border",
+      "label": "Primary button border",
+      "description": "Primary button edges.",
+      "components": ["Primary button edges"],
+      "group": "Buttons and inputs",
+      "region": "buttons",
+      "light": "#6944ac",
+      "dark": "#c5b0f3"
+    },
+    "primary-highlight": {
+      "cssVariable": "--primary-highlight",
+      "label": "Button inner highlight",
+      "description": "Inset highlight on primary buttons.",
+      "components": ["Inset highlight on primary buttons"],
+      "group": "Decorative effects",
+      "region": "buttons",
+      "light": "#ffffff30",
+      "dark": "#ffffff1f"
+    },
+    "primary-hover": {
+      "cssVariable": "--primary-hover",
+      "label": "Primary button hover",
+      "description": "Hovered save and create buttons.",
+      "components": ["Hovered save and create buttons"],
+      "group": "Buttons and inputs",
+      "region": "buttons",
+      "light": "#6540a9",
+      "dark": "#cbb8f3"
+    },
+    "secondary-hover": {
+      "cssVariable": "--secondary-hover",
+      "label": "Secondary button hover",
+      "description": "Hovered secondary buttons.",
+      "components": ["Hovered secondary buttons"],
+      "group": "Buttons and inputs",
+      "region": "buttons",
+      "light": "#e1e1ee",
+      "dark": "#282b35"
+    },
+    "danger-background": {
+      "cssVariable": "--danger-background",
+      "label": "Destructive button",
+      "description": "Confirm deletion and discard buttons.",
+      "components": ["Confirm deletion and discard buttons"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#b02f4b",
+      "dark": "#a24255"
+    },
+    "danger-text": {
+      "cssVariable": "--danger-text",
+      "label": "Destructive button text",
+      "description": "Labels on destructive buttons.",
+      "components": ["Labels on destructive buttons"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#ffffff",
+      "dark": "#fff0f2"
+    },
+    "danger-border": {
+      "cssVariable": "--danger-border",
+      "label": "Destructive button border",
+      "description": "Destructive button edges.",
+      "components": ["Destructive button edges"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#96213b",
+      "dark": "#c85c70"
+    },
+    "danger-hover": {
+      "cssVariable": "--danger-hover",
+      "label": "Destructive button hover",
+      "description": "Hovered destructive buttons.",
+      "components": ["Hovered destructive buttons"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#94223c",
+      "dark": "#b64a60"
+    },
+    "delete-text": {
+      "cssVariable": "--delete-text",
+      "label": "Delete action text",
+      "description": "Inline delete buttons.",
+      "components": ["Inline delete buttons"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#a32f4a",
+      "dark": "#cf939f"
+    },
+    "delete-hover": {
+      "cssVariable": "--delete-hover",
+      "label": "Delete action hover",
+      "description": "Hovered inline delete actions.",
+      "components": ["Hovered inline delete actions"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#ba365615",
+      "dark": "#dc718a0d"
+    },
+    "input-background": {
+      "cssVariable": "--input-background",
+      "label": "Input background",
+      "description": "Text fields, selects and text areas.",
+      "components": ["Text fields", "selects and text areas"],
+      "group": "Buttons and inputs",
+      "region": "form",
+      "light": "#ffffff",
+      "dark": "#15171e"
+    },
+    "placeholder": {
+      "cssVariable": "--placeholder",
+      "label": "Placeholder text",
+      "description": "Empty input placeholder text.",
+      "components": ["Empty input placeholder text"],
+      "group": "Buttons and inputs",
+      "region": "form",
+      "light": "#73768a",
+      "dark": "#747786"
+    },
+    "input-invalid": {
+      "cssVariable": "--input-invalid",
+      "label": "Invalid input border",
+      "description": "Fields with validation errors.",
+      "components": ["Fields with validation errors"],
+      "group": "Buttons and inputs",
+      "region": "form",
+      "light": "#b93b58",
+      "dark": "#c27788"
+    },
+    "error-text": {
+      "cssVariable": "--error-text",
+      "label": "Error text",
+      "description": "Validation errors and error banners.",
+      "components": ["Validation errors and error banners"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#a52d48",
+      "dark": "#efa5b4"
+    },
+    "error-background": {
+      "cssVariable": "--error-background",
+      "label": "Error banner background",
+      "description": "Connection and save error banners.",
+      "components": ["Connection and save error banners"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#b3325010",
+      "dark": "#9c435e15"
+    },
+    "error-border": {
+      "cssVariable": "--error-border",
+      "label": "Error banner border",
+      "description": "Error banner divider.",
+      "components": ["Error banner divider"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#b3325040",
+      "dark": "#b5506a25"
+    },
+    "empty-gradient-start": {
+      "cssVariable": "--empty-gradient-start",
+      "label": "Empty icon gradient start",
+      "description": "Empty-state icon backgrounds.",
+      "components": ["Empty-state icon backgrounds"],
+      "group": "Decorative effects",
+      "region": "decoration",
+      "light": "#eee7fc",
+      "dark": "#24212d"
+    },
+    "empty-gradient-end": {
+      "cssVariable": "--empty-gradient-end",
+      "label": "Empty icon gradient end",
+      "description": "Empty-state icon backgrounds.",
+      "components": ["Empty-state icon backgrounds"],
+      "group": "Decorative effects",
+      "region": "decoration",
+      "light": "#f3f1f9",
+      "dark": "#191b23"
+    },
+    "empty-border": {
+      "cssVariable": "--empty-border",
+      "label": "Empty icon border",
+      "description": "Empty-state icon outlines.",
+      "components": ["Empty-state icon outlines"],
+      "group": "Decorative effects",
+      "region": "decoration",
+      "light": "#9479c74a",
+      "dark": "#a99afa26"
+    },
+    "attribution": {
+      "cssVariable": "--attribution",
+      "label": "Canvas attribution",
+      "description": "React Flow attribution link.",
+      "components": ["React Flow attribution link"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#646b7c",
+      "dark": "#818590"
+    },
+    "logo-text": {
+      "cssVariable": "--logo-text",
+      "label": "Logo text",
+      "description": "Primary ufAI logo letter.",
+      "components": ["Primary ufAI logo letter"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#60438f",
+      "dark": "#e2daf8"
+    },
+    "logo-gradient-start": {
+      "cssVariable": "--logo-gradient-start",
+      "label": "Logo gradient start",
+      "description": "ufAI logo background.",
+      "components": ["ufAI logo background"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#bda5ed50",
+      "dark": "#76679a50"
+    },
+    "logo-gradient-end": {
+      "cssVariable": "--logo-gradient-end",
+      "label": "Logo gradient end",
+      "description": "ufAI logo background.",
+      "components": ["ufAI logo background"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#e1d7f560",
+      "dark": "#36334460"
+    },
+    "logo-border": {
+      "cssVariable": "--logo-border",
+      "label": "Logo border",
+      "description": "ufAI logo outline.",
+      "components": ["ufAI logo outline"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#8b6abc50",
+      "dark": "#8b7eae40"
+    },
+    "logo-secondary": {
+      "cssVariable": "--logo-secondary",
+      "label": "Logo secondary letter",
+      "description": "Secondary ufAI logo letter.",
+      "components": ["Secondary ufAI logo letter"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#84709f",
+      "dark": "#aaa0bd"
+    },
+    "nav-active-background": {
+      "cssVariable": "--nav-active-background",
+      "label": "Active navigation background",
+      "description": "Selected sidebar page.",
+      "components": ["Selected sidebar page"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#8862c615",
+      "dark": "#b198ef0e"
+    },
+    "nav-active-border": {
+      "cssVariable": "--nav-active-border",
+      "label": "Active navigation border",
+      "description": "Selected sidebar page outline.",
+      "components": ["Selected sidebar page outline"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#8862c63a",
+      "dark": "#b198ef1c"
+    },
+    "status-divider": {
+      "cssVariable": "--status-divider",
+      "label": "Footer divider",
+      "description": "Footer slash separator.",
+      "components": ["Footer slash separator"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#c1c2d0",
+      "dark": "#3c3e49"
+    },
+    "sidebar-shadow": {
+      "cssVariable": "--sidebar-shadow",
+      "label": "Mobile sidebar shadow",
+      "description": "Expanded mobile sidebar shadow.",
+      "components": ["Expanded mobile sidebar shadow"],
+      "group": "Decorative effects",
+      "region": "dialog",
+      "light": "#26213b26",
+      "dark": "#0005"
+    },
+    "sidebar-backdrop": {
+      "cssVariable": "--sidebar-backdrop",
+      "label": "Mobile navigation overlay",
+      "description": "Backdrop behind mobile navigation.",
+      "components": ["Backdrop behind mobile navigation"],
+      "group": "Decorative effects",
+      "region": "dialog",
+      "light": "#23213b55",
+      "dark": "#0007"
+    },
+    "tab-active": {
+      "cssVariable": "--tab-active",
+      "label": "Active workspace tab",
+      "description": "Gradient tint of selected workspace tabs.",
+      "components": ["Gradient tint of selected workspace tabs"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#9470d51a",
+      "dark": "#a794f40a"
+    },
+    "dialog-shadow": {
+      "cssVariable": "--dialog-shadow",
+      "label": "Dialog shadow",
+      "description": "Modal drop shadow.",
+      "components": ["Modal drop shadow"],
+      "group": "Decorative effects",
+      "region": "dialog",
+      "light": "#24203733",
+      "dark": "#0009"
+    },
+    "dialog-backdrop": {
+      "cssVariable": "--dialog-backdrop",
+      "label": "Dialog overlay",
+      "description": "Backdrop behind modal dialogs.",
+      "components": ["Backdrop behind modal dialogs"],
+      "group": "Decorative effects",
+      "region": "dialog",
+      "light": "#2f2d4966",
+      "dark": "#080a10b8"
+    },
+    "canvas-icon-border": {
+      "cssVariable": "--canvas-icon-border",
+      "label": "Canvas illustration border",
+      "description": "Empty flowboard icon outline.",
+      "components": ["Empty flowboard icon outline"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#d3cbe5",
+      "dark": "#343544"
+    },
+    "canvas-gradient-start": {
+      "cssVariable": "--canvas-gradient-start",
+      "label": "Canvas illustration gradient start",
+      "description": "Empty flowboard icon background.",
+      "components": ["Empty flowboard icon background"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#e9e3f7",
+      "dark": "#242330"
+    },
+    "canvas-gradient-end": {
+      "cssVariable": "--canvas-gradient-end",
+      "label": "Canvas illustration gradient end",
+      "description": "Empty flowboard icon background.",
+      "components": ["Empty flowboard icon background"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#f5f2fb",
+      "dark": "#181b23"
+    },
+    "canvas-ring-inner": {
+      "cssVariable": "--canvas-ring-inner",
+      "label": "Canvas inner halo",
+      "description": "Inner ring around the flowboard illustration.",
+      "components": ["Inner ring around the flowboard illustration"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#8664ca0a",
+      "dark": "#a99afa04"
+    },
+    "canvas-ring-outer": {
+      "cssVariable": "--canvas-ring-outer",
+      "label": "Canvas outer halo",
+      "description": "Outer ring around the flowboard illustration.",
+      "components": ["Outer ring around the flowboard illustration"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#8664ca17",
+      "dark": "#a99afa08"
+    },
+    "controls-shadow": {
+      "cssVariable": "--controls-shadow",
+      "label": "Canvas controls shadow",
+      "description": "Zoom toolbar shadow.",
+      "components": ["Zoom toolbar shadow"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#29233e15",
+      "dark": "#0002"
+    },
+    "preset-selected-border": {
+      "cssVariable": "--preset-selected-border",
+      "label": "Selected preset border",
+      "description": "Selected preset in the library.",
+      "components": ["Selected preset in the library"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#7656ac50",
+      "dark": "#9485ce40"
+    },
+    "preset-selected-background": {
+      "cssVariable": "--preset-selected-background",
+      "label": "Selected preset background",
+      "description": "Selected preset in the library.",
+      "components": ["Selected preset in the library"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#7656ac0e",
+      "dark": "#ab95f20b"
+    },
+    "preset-icon-background": {
+      "cssVariable": "--preset-icon-background",
+      "label": "Selected preset icon background",
+      "description": "Selected preset icon tile.",
+      "components": ["Selected preset icon tile"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#7656ac16",
+      "dark": "#a594eb10"
+    },
+    "preset-icon-border": {
+      "cssVariable": "--preset-icon-border",
+      "label": "Selected preset icon border",
+      "description": "Selected preset icon tile outline.",
+      "components": ["Selected preset icon tile outline"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#7656ac40",
+      "dark": "#a594eb30"
+    },
+    "warning": {
+      "cssVariable": "--warning",
+      "label": "Unsaved changes",
+      "description": "Unsaved changes indicators and contrast notices.",
+      "components": ["Unsaved changes indicators and contrast notices"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#856212",
+      "dark": "#d8b87c"
+    },
+    "kind-hover-border": {
+      "cssVariable": "--kind-hover-border",
+      "label": "Option hover border",
+      "description": "Hovered integration-kind option.",
+      "components": ["Hovered integration-kind option"],
+      "group": "Buttons and inputs",
+      "region": "form",
+      "light": "#9783b4",
+      "dark": "#7c738f"
+    },
+    "kind-active-background": {
+      "cssVariable": "--kind-active-background",
+      "label": "Selected option background",
+      "description": "Selected integration-kind option.",
+      "components": ["Selected integration-kind option"],
+      "group": "Buttons and inputs",
+      "region": "form",
+      "light": "#7656ac0e",
+      "dark": "#a594eb09"
+    },
+    "kind-active-border": {
+      "cssVariable": "--kind-active-border",
+      "label": "Selected option border",
+      "description": "Selected integration-kind option outline.",
+      "components": ["Selected integration-kind option outline"],
+      "group": "Buttons and inputs",
+      "region": "form",
+      "light": "#7656ac80",
+      "dark": "#9485ce80"
+    },
+    "config-background": {
+      "cssVariable": "--config-background",
+      "label": "Configuration badge background",
+      "description": "Preset configuration-only badge.",
+      "components": ["Preset configuration-only badge"],
+      "group": "Decorative effects",
+      "region": "decoration",
+      "light": "#7656ac0e",
+      "dark": "#b19aed0a"
+    },
+    "config-text": {
+      "cssVariable": "--config-text",
+      "label": "Configuration badge text",
+      "description": "Preset configuration-only badge label.",
+      "components": ["Preset configuration-only badge label"],
+      "group": "Decorative effects",
+      "region": "decoration",
+      "light": "#755297",
+      "dark": "#a494c3"
+    },
+    "config-border": {
+      "cssVariable": "--config-border",
+      "label": "Configuration badge border",
+      "description": "Preset configuration-only badge outline.",
+      "components": ["Preset configuration-only badge outline"],
+      "group": "Decorative effects",
+      "region": "decoration",
+      "light": "#7656ac36",
+      "dark": "#b19aed20"
+    },
+    "segment-shadow": {
+      "cssVariable": "--segment-shadow",
+      "label": "Segmented control shadow",
+      "description": "Selected compaction-mode segment.",
+      "components": ["Selected compaction-mode segment"],
+      "group": "Decorative effects",
+      "region": "buttons",
+      "light": "#24203720",
+      "dark": "#0003"
+    },
+    "tooltip-shadow": {
+      "cssVariable": "--tooltip-shadow",
+      "label": "Tooltip shadow",
+      "description": "Help tooltip drop shadow.",
+      "components": ["Help tooltip drop shadow"],
+      "group": "Decorative effects",
+      "region": "dialog",
+      "light": "#24203726",
+      "dark": "#0005"
+    },
+    "canvas-dots": {
+      "cssVariable": "--canvas-dots",
+      "label": "Canvas dots",
+      "description": "Flowboard dot grid.",
+      "components": ["Flowboard dot grid"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#c9ccda",
+      "dark": "#353944"
+    }
+  }
+}

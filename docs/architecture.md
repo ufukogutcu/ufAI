@@ -4,7 +4,7 @@
 
 ufAI is an npm-workspace repository containing a React + Vite browser app and a Node.js + Fastify server, all in TypeScript. SQLite is opened through `better-sqlite3`. The project is MIT licensed.
 
-The application provides static UI serving, a health route, workspace and model preset CRUD, versioned SQLite persistence, and a React dashboard with empty flowboards. See the [platform capability inventory](platform.md) for current availability and product direction. Performance and coding conventions are in [AGENTS.md](../AGENTS.md).
+The application provides static UI serving, a health route, workspace, model preset and custom theme CRUD, versioned SQLite persistence, and a React dashboard with empty flowboards. See the [platform capability inventory](platform.md) for current availability and product direction. Performance and coding conventions are in [AGENTS.md](../AGENTS.md).
 
 ## Repository map
 
@@ -66,9 +66,11 @@ All documented commands assume execution from the repository root. Loopback defa
 | `PATCH/DELETE /api/workspaces/:id` | Rename / permanently delete workspace | Missing IDs return 404 |
 | `GET/POST /api/model-presets` | Paginated list / create shared preset | Configuration only |
 | `PATCH/DELETE /api/model-presets/:id` | Partially update / permanently delete preset | Missing IDs return 404 |
+| `GET/POST /api/themes` | Paginated built-in/custom library / create custom theme | Built-ins always precede custom records |
+| `GET/PATCH/DELETE /api/themes/:id` | Read / edit / delete theme | Built-in edits and deletion return 403 |
 | Static asset paths from the built HTML | Assets served by `@fastify/static` | No custom client-side routing fallback |
 
-See the [HTTP API reference](api.md) for payloads, validation, defaults, errors, and pagination. There are no agent, live provider/runtime connection, messaging, trigger, approval, or assistant endpoints. No SSE/WebSocket application interface or shared client/server contract package exists yet.
+See the [HTTP API reference](api.md) for payloads, validation, defaults, errors, and pagination. There are no agent, live provider/runtime connection, messaging, trigger, approval, or assistant endpoints. No SSE/WebSocket application interface exists. API contracts remain type-only; the data-only `@ufai/theme-catalog` workspace package shares color metadata and palettes without server runtime imports.
 
 ## Persistence
 
@@ -76,6 +78,7 @@ See the [HTTP API reference](api.md) for payloads, validation, defaults, errors,
 - It enables `journal_mode = WAL` and `foreign_keys = ON`. WAL may create companion files beside the database.
 - The database connection is owned by the server process and closed by the Fastify close hook.
 - Schema versioning uses SQLite `user_version`. Migration 1 creates `workspaces` and `model_presets`, adds creation-order indexes, seeds one Default workspace, and advances the version in one short transaction. It also upgrades the original empty scaffold database.
+- Migration 2 adds `themes` and its creation-order index without changing existing workspace/preset records. Custom themes store name, light/dark mode, JSON colors, and timestamps. Built-ins come from the shared catalog rather than mutable database rows.
 - Records use server-generated UUIDs and ISO timestamps. Presets store compaction mode/value separately. Prepared statements use parameter binding; list queries are paginated at at most 100 rows per request. Names need not be unique.
 - Seeding runs only during migration, including when every workspace is later deleted. Migrations are forward-only; databases newer than this application are rejected.
 - The Fastify application owns its database handle. Tests construct isolated applications with temporary database paths or in-memory SQLite. Workspace deletion currently has no associated agent data to cascade.
@@ -98,7 +101,19 @@ See the [HTTP API reference](api.md) for payloads, validation, defaults, errors,
 
 ## Client state
 
-The current UI has an application-scoped Zustand store, created once by its provider. It caches server records and holds selection plus per-workspace viewport state. Page lists load in 100-record batches; immutable updates preserve unchanged record references. Form drafts stay in local React state. Server responses establish saved state; API failures do not replace drafts. SQLite stores durable records, browser local storage holds optional navigation preferences, and canvas viewports exist only in memory. Pointer and zoom events do not write to SQLite. Unsaved preset changes guard page changes, preset selection, cancellation, and browser unload.
+The current UI has an application-scoped Zustand store, created once by its provider. It caches server records and holds selection plus per-workspace viewport state. Page lists load in 100-record batches; immutable updates preserve unchanged record references. Form drafts stay in local React state. Server responses establish saved state; API failures do not replace drafts. SQLite stores durable records, browser local storage holds optional navigation preferences, and canvas viewports exist only in memory. Pointer and zoom events do not write to SQLite. Unsaved preset and theme changes guard page changes, record selection, cancellation, and browser unload.
+
+## Themes
+
+The data-only [theme catalog](../packages/theme-catalog/catalog.json) is the single source of semantic keys, CSS variables, editor metadata, preview regions, and complete light/dark palettes. It has no build step or runtime dependencies. Application SCSS and TSX consume registered variables; the source/canonical-palette checks run through the browser workspace's Node tests. See [developer color rules](../AGENTS.md#theme-colors) when adding a scope.
+
+Built-in `light-mode` and `dark-mode` records are assembled from the catalog, never stored as editable rows. The API blocks their PATCH/DELETE operations. Custom-theme colors resolve against the selected base mode on reads and writes, filling newly added keys while retaining existing values. Theme contracts stay in the server's type-only contracts module. Hex values are validated on the server and normalized to six/eight digits; arbitrary CSS expressions are not accepted.
+
+An independent provider-scoped Zustand theme store holds saved library records and the active browser selection. Narrow selectors keep color-picker drafts out of shared state. A local editor draft scopes custom properties to its preview, and selection maps catalog regions to preview examples. Successful saves establish saved state; editing an active theme applies its new saved palette. Only successful deletion can trigger active-theme fallback. The shared unsaved-change guard covers both preset and theme editors.
+
+Vite injects system-aware fallback CSS from the catalog into the HTML head for early paint. Before mounting React, startup validates `ufai.theme` in optional local storage, resolves its colors, and applies the remembered theme. Cached built-in colors are replaced with catalog values to preserve immutability. The provider persists the initial choice once and subscribes to saved selection changes; there is no system-preference listener. A cached custom theme is refreshed by ID, including one beyond the first library page. A 404 selects the current system-matched default; other failures retain the validated cache. An in-flight refresh cannot replace a later selection or saved edit. The cache is optional and not authoritative storage for custom themes.
+
+Lists load at most 100 records per request, with immutable defaults first, then custom records by creation order. No push synchronization or optimistic concurrency token is provided. Palette changes do not remount React Flow or reset workspace viewports; its color mode and dot grid follow the active theme. Browser-native controls receive the theme's light/dark `color-scheme`.
 
 ## Tooltips
 
@@ -130,6 +145,6 @@ The following execution and integration boundaries remain future direction:
 | `npm run build` | Compile server; type-check and build browser assets |
 | `npm start` | Start compiled server; does not build or watch source |
 
-Node.js >=22.12 and npm are required; `.nvmrc` selects Node 22. CI uses that file, then runs `npm ci`, `npm run typecheck`, `npm test`, and `npm run build`. Tests cover API/database behavior, client-store isolation and server-confirmed updates, and form calculations/validation; no automated browser suite or lint command is configured. Development Strict Mode is enabled in the browser entry point; distinguish development checks from production performance measurements.
+Node.js >=22.12 and npm are required; `.nvmrc` selects Node 22. CI uses that file, then runs `npm ci`, `npm run typecheck`, `npm test`, and `npm run build`. Tests cover API/database behavior, client-store isolation and server-confirmed updates, theme API/migrations/cache/catalog rules, and form calculations/validation; no automated browser suite or lint command is configured. Development Strict Mode is enabled in the browser entry point; distinguish development checks from production performance measurements.
 
 For documentation maintenance, follow the [index checklist](README.md#maintenance-checklist) rather than treating a successful build as documentation validation.

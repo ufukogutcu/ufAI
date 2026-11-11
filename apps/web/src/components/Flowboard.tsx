@@ -10,6 +10,7 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import { Minus, Plus, Scan, Workflow } from "lucide-react";
+import { useTheme } from "../theme-store";
 import { useDashboard } from "../store";
 import { Tooltip } from "./Tooltip";
 import styles from "./Flowboard.module.scss";
@@ -66,6 +67,7 @@ function ViewControls() {
 }
 
 function Board({ workspaceId }: { workspaceId: string }) {
+  const mode = useTheme((state) => state.active.mode);
   const viewport = useDashboard((state) => state.viewports[workspaceId]);
   const saveViewport = useDashboard((state) => state.saveViewport);
   const handleMoveEnd = useCallback(
@@ -81,7 +83,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
         onMoveEnd={handleMoveEnd}
         minZoom={0.25}
         maxZoom={2}
-        colorMode="dark"
+        colorMode={mode}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}
@@ -91,7 +93,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
           variant={BackgroundVariant.Dots}
           gap={24}
           size={1}
-          color="#353944"
+          color="var(--canvas-dots)"
         />
         <ViewControls />
         <Panel position="top-left" className={styles.label}>

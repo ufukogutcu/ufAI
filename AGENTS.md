@@ -4,7 +4,7 @@
 
 ufAI is an MIT-licensed, local-first platform intended to let users organize AI agents in multiple workspaces through a browser dashboard. Planned capabilities include provider connections, local models, supported subscription-backed runtimes, per-agent instructions and skills, visual communication permissions, messaging, and triggers.
 
-**Current state: early functional dashboard.** Navigation, persisted workspace tabs, empty pannable flowboards, and model preset CRUD exist. Provider/runtime connections, automatic discovery, sign-in, agent editing/execution, and actual compaction remain planned. Verify the repository before describing any feature as implemented.
+**Current state: early functional dashboard.** Navigation, persisted workspace tabs, empty pannable flowboards, model preset CRUD, and locked built-in plus custom themes exist. Provider/runtime connections, automatic discovery, sign-in, agent editing/execution, and actual compaction remain planned. Verify the repository before describing any feature as implemented.
 
 ## Read before changing code
 
@@ -47,6 +47,14 @@ ufAI is an MIT-licensed, local-first platform intended to let users organize AI 
 - Dynamic inline styles are allowed when values depend on runtime state. Memoize style objects when stable identity matters; do not use memoization merely to store static styles.
 - Avoid deeply nested selectors and broad global overrides. Keep focus indicators, keyboard interaction, reduced-motion preferences, and layout stability intact.
 
+### Theme colors
+
+- Every application-authored color must use a semantic token from [the shared theme catalog](packages/theme-catalog/catalog.json). This includes SCSS, TSX/SVG attributes, gradients, shadows, overlays, hover/focus/selected states, status colors, scrollbars, and third-party canvas styling. Structural `transparent`, `inherit`, and `currentColor` are allowed; do not add literal palette colors in components or stylesheets.
+- Reuse a token only when its semantic purpose matches. A new color scope requires a stable key/CSS variable, Light Mode and Dark Mode values, a plain-language label and description, component usage, an editor group, and an existing preview region. Extend the preview with a representative component example when needed. The editor automatically exposes catalog entries.
+- Both built-in themes are permanent and immutable. Enforce this in the API as well as the UI; customization starts from an independent duplicate.
+- Custom themes inherit newly added scopes from their light/dark base. Preserve existing overrides and cover catalog completeness, source-color rules, preview metadata, and compatibility in tests. Keep server contract imports type-only; shared runtime color data belongs in the browser-safe catalog package.
+- Saved custom themes are authoritative in SQLite; browser selection/cache and temporary preview drafts are separate. Do not persist pointer/color-picker events or apply unsaved draft colors to the application root.
+
 ## Server, database, and resource performance
 
 - Keep CPU-heavy work and long blocking operations out of Fastify request handlers. Use bounded concurrency and workers/child processes where needed; async syntax does not make synchronous work non-blocking.
@@ -65,7 +73,7 @@ Run from the repository root; Node.js >=22.12 and npm are required (`.nvmrc` sel
 | `npm ci` | Install locked dependencies |
 | `npm run dev` | Start Fastify and Vite with watch/reload |
 | `npm run typecheck` | Type-check both workspaces |
-| `npm test` | Run API/database, client-state, and preset validation/calculation checks |
+| `npm test` | Run API/database, client-state, theme/catalog, and preset validation/calculation checks |
 | `npm run build` | Compile server and browser assets |
 | `npm start` | Run the built server and serve the built UI |
 

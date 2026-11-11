@@ -50,18 +50,31 @@ Responses contain all normalized fields plus `id`, `createdAt`, and `updatedAt`.
 - `DELETE /api/model-presets/:id`: permanently deletes the record and returns 204 with no body.
 - Unknown fields and client-supplied IDs/timestamps are rejected. There are no credential fields.
 
+### Themes
+
+`GET /api/themes` returns a paginated `{ items, total }` library. The first two records are immutable `light-mode` (Light Mode) and `dark-mode` (Dark Mode), followed by custom themes sorted by `createdAt`, then `id`. Pagination uses the same bounds as other lists, and offsets include built-ins. `GET /api/themes/:id` reads a theme directly, including one outside the current list page.
+
+A theme is `{ id, name, mode, colors, builtIn, createdAt, updatedAt }`. `mode` is `light` or `dark` for native controls and newly added color defaults. `colors` maps stable keys from the [shared catalog](../packages/theme-catalog/catalog.json) to hex colors. Responses include every current key. Built-ins have null timestamps; custom records have server-generated UUIDs and ISO timestamps.
+
+- `POST /api/themes`: accepts `{ name, mode, colors }`, returns a custom theme with status 201. A color object is required; `{}` starts from the selected mode's defaults. Names are trimmed, nonempty, at most 120 characters, and need not be unique. Duplication posts an independent copy of a saved theme's name/mode/colors with a new name.
+- `PATCH /api/themes/:id`: accepts partial name/mode/colors and returns the saved full record with status 200. Supplied color keys merge into existing values. Missing/new keys resolve from the base mode. Changing mode preserves existing explicit colors. Validation failures leave the saved record unchanged.
+- `DELETE /api/themes/:id`: permanently removes a custom theme and returns 204. Built-ins never disappear.
+- Hex values accept `#RGB`, `#RGBA`, `#RRGGBB`, or `#RRGGBBAA` and normalize to lowercase six/eight-digit values. Unknown color keys, arbitrary CSS values, invalid input types, and protected/unknown fields (including `id`, `builtIn`, and timestamps) are rejected with 400 and field errors.
+- PATCH/DELETE of either built-in returns **403** with an explanatory error, regardless of request body. Missing IDs return 404. Active selection and cache are browser preferences, with no server selection endpoint.
+
 ## Lists
 
 `GET /api/workspaces` and `GET /api/model-presets` accept optional `limit` (integer 1–100, default 100) and `offset` (non-negative safe integer, default 0).
 
-Both return `{ "items": [...], "total": 123 }`, sorted by `createdAt` then `id`, ascending. Request another batch by advancing the offset by the returned item count. A page beyond the end has an empty items array. The UI exposes load-more controls for additional batches.
+Workspace and preset lists return `{ "items": [...], "total": 123 }`, sorted by `createdAt` then `id`, ascending. Request another batch by advancing the offset by the returned item count. A page beyond the end has an empty items array. The UI exposes load-more controls for additional batches.
 
 Lists are not snapshot-isolated across multiple requests. Concurrent clients can change ordering/counts between pages. Edits use the last successful write; there is no cross-client push synchronization or optimistic concurrency token yet.
 
 ## Errors and operational limits
 
 - **400:** Invalid JSON or input. Field validation returns `{ "error": "...", "fields": { "name": "...", "compaction.value": "..." } }`; nested field names use dots. General parser errors may omit `fields`.
-- **404:** Missing mutation target or unknown route; `{ "error": "..." }`.
+- **403:** Attempt to edit or delete a built-in theme; `{ "error": "..." }`.
+- **404:** Missing record/mutation target or unknown route; `{ "error": "..." }`.
 - **413:** Request exceeds the 32 KiB body limit.
 - **500:** Unexpected server/storage failure; a generic retryable message is returned and details are logged on the server.
 

@@ -37,12 +37,12 @@
   font-family: ui-rounded, system-ui, sans-serif;
   letter-spacing: -5px;
   padding-right: 4px;
-  color: #e2daf8;
-  background: linear-gradient(135deg, #76679a50, #36334460);
-  border: 1px solid #8b7eae40;
+  color: var(--logo-text);
+  background: linear-gradient(135deg, var(--logo-gradient-start), var(--logo-gradient-end));
+  border: 1px solid var(--logo-border);
   border-radius: 10px;
   span {
-    color: #aaa0bd;
+    color: var(--logo-secondary);
   }
 }
 .wordmark {
@@ -103,8 +103,8 @@
 }
 .active {
   color: var(--accent-light);
-  background: #b198ef0e;
-  border-color: #b198ef1c;
+  background: var(--nav-active-background);
+  border-color: var(--nav-active-border);
   &::before {
     position: absolute;
     content: "";
@@ -258,11 +258,11 @@
 .statusDot {
   width: 4px;
   height: 4px;
-  background: #99af9d;
+  background: var(--success);
   border-radius: 50%;
 }
 .statusDivider {
-  color: #3c3e49;
+  color: var(--status-divider);
   margin: 0 3px;
 }
 .placeholder {
@@ -348,7 +348,7 @@
       inset: 0 auto 0 0;
       width: 220px;
       z-index: 30;
-      box-shadow: 15px 0 50px #0005;
+      box-shadow: 15px 0 50px var(--sidebar-shadow);
     }
   }
   .sidebarBackdrop {
@@ -357,6 +357,6 @@
     inset: 0 0 0 220px;
     z-index: 20;
     border: 0;
-    background: #0007;
+    background: var(--sidebar-backdrop);
   }
 }

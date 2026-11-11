@@ -15,6 +15,9 @@ import { Tooltip } from "./components/Tooltip";
 import { readPreference, writePreference } from "./api";
 import { UnsavedChangesProvider } from "./components/UnsavedChanges";
 import { useNavigationGuard } from "./navigation-guard";
+import { ThemeProvider } from "./components/ThemeProvider";
+import type { Theme } from "./themes";
+import Themes from "./pages/Themes";
 import Home from "./pages/Home";
 import Presets from "./pages/Presets";
 import styles from "./App.module.scss";
@@ -242,6 +245,8 @@ function Shell() {
             <Home />
           ) : page === "model-presets" ? (
             <Presets />
+          ) : page === "theme" ? (
+            <Themes />
           ) : (
             <section className={styles.placeholder}>
               <header className="pageHeader">
@@ -264,12 +269,14 @@ function Shell() {
     </div>
   );
 }
-export default function App() {
+export default function App({ initialTheme }: { initialTheme: Theme }) {
   return (
-    <DashboardProvider>
-      <UnsavedChangesProvider>
-        <Shell />
-      </UnsavedChangesProvider>
-    </DashboardProvider>
+    <ThemeProvider initial={initialTheme}>
+      <DashboardProvider>
+        <UnsavedChangesProvider>
+          <Shell />
+        </UnsavedChangesProvider>
+      </DashboardProvider>
+    </ThemeProvider>
   );
 }

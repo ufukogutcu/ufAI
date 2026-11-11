@@ -1,3 +1,5 @@
+import type catalog from "@ufai/theme-catalog";
+
 // Browser imports from this module must remain type-only.
 export type IntegrationKind = "provider" | "runtime";
 export type ProviderId =
@@ -43,4 +45,19 @@ export interface Page<T> {
 export interface ApiError {
   error: string;
   fields?: Record<string, string>;
+}
+
+export type ThemeMode = "light" | "dark";
+export type ThemeColorKey = keyof typeof catalog.tokens;
+export type ThemeColors = Record<ThemeColorKey, string>;
+export interface ThemeInput {
+  name: string;
+  mode: ThemeMode;
+  colors: ThemeColors;
+}
+export interface Theme extends ThemeInput {
+  id: string;
+  builtIn: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
 }

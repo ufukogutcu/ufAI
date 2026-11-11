@@ -1,8 +1,32 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import catalog from "@ufai/theme-catalog";
+
+function defaultColors(mode: "light" | "dark") {
+  return `:root{color-scheme:${mode};color:var(--text);background:var(--root-background);${Object.values(
+    catalog.tokens,
+  )
+    .map((token) => `${token.cssVariable}:${token[mode]}`)
+    .join(";")}}`;
+}
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: "ufai-theme-defaults",
+      transformIndexHtml() {
+        return [
+          {
+            tag: "style",
+            attrs: { id: "ufai-theme-defaults" },
+            injectTo: "head-prepend",
+            children: `${defaultColors("light")}@media(prefers-color-scheme:dark){${defaultColors("dark")}}`,
+          },
+        ];
+      },
+    },
+  ],
   server: {
     host: "127.0.0.1",
     port: Number(process.env.WEB_PORT ?? 5173),
