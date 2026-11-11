@@ -1,0 +1,26 @@
+{
+  "name": "ufai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first workspace for AI agents. Initial project scaffold.",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "concurrently --kill-others --names server,web \"npm run dev --workspace @ufai/server\" \"npm run dev --workspace @ufai/web\"",
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "start": "node apps/server/dist/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "concurrently": "^10.0.7",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
