@@ -8,12 +8,12 @@ The local Fastify server exposes the following JSON API for one user and one sha
 
 ### Workspaces
 
-A workspace response is `{ id, name, createdAt, updatedAt }`. IDs are server-generated UUID strings; timestamps are ISO strings.
+A workspace response is `{ id, name, description, createdAt, updatedAt }`. IDs are server-generated UUID strings; timestamps are ISO strings.
 
-- `POST /api/workspaces`: accepts `{ "name": "Studio" }`, returns the workspace with status 201 and transactionally makes it the active workspace.
-- `PATCH /api/workspaces/:id`: accepts `{ "name": "Renamed studio" }`, returns the updated workspace with status 200.
+- `POST /api/workspaces`: accepts `{ "name": "Studio", "description": "Build useful tools." }` (description is optional and defaults to `""`), returns the workspace with status 201 and transactionally makes it the active workspace.
+- `PATCH /api/workspaces/:id`: accepts name, description, or both, such as `{ "description": "Ship the first release." }`, and returns the updated workspace with status 200. Omitted fields retain their saved values; an empty patch is a no-op, including timestamps. Existing name-only requests remain supported.
 - `DELETE /api/workspaces/:id`: permanently deletes the record, returns 204 with no body. It also deletes the saved viewport. If selected, the next workspace in creation order becomes active, then the previous workspace if no next one exists, or null if none remain. These changes are transactional. It does not delete presets, which are installation-wide.
-- Names must be strings of 1–120 characters, nonempty after trimming. Unknown fields are rejected. Names need not be unique.
+- Names must be strings of 1–120 characters, nonempty after trimming. Unknown fields are rejected. Names need not be unique. Descriptions must be strings of at most 4,000 characters and may be empty. Both fields trim surrounding whitespace; descriptions preserve internal line breaks and are plain text. Invalid requests leave saved records unchanged. Existing workspaces receive empty descriptions during migration.
 
 The first migration creates one Default workspace. Deleting all workspaces does not re-seed the database on restart.
 

@@ -25,6 +25,7 @@ test("health, workspace CRUD, pagination and parameterized names", async (t) => 
   const initial = (await app.inject("/api/workspaces")).json();
   assert.equal(initial.total, 1);
   assert.equal(initial.items[0].name, "Default workspace");
+  assert.equal(initial.items[0].description, "");
   const created = await app.inject({
     method: "POST",
     url: "/api/workspaces",
@@ -33,6 +34,7 @@ test("health, workspace CRUD, pagination and parameterized names", async (t) => 
   assert.equal(created.statusCode, 201);
   const workspace = created.json<Workspace>();
   assert.equal(workspace.name, "Studio");
+  assert.equal(workspace.description, "");
   assert.ok(workspace.id);
   assert.ok(workspace.createdAt);
   const sqlText = "Robert'); DROP TABLE workspaces;--";
@@ -74,6 +76,79 @@ test("health, workspace CRUD, pagination and parameterized names", async (t) => 
     ).statusCode,
     404,
   );
+});
+
+test("workspace descriptions support partial updates, clearing, validation and settings resolution", async (t) => {
+  const app = memoryApp();
+  t.after(() => app.close());
+  const created = await app.inject({
+    method: "POST",
+    url: "/api/workspaces",
+    payload: {
+      name: "Studio",
+      description: "  Plan products.\nShip useful tools.  ",
+    },
+  });
+  assert.equal(created.statusCode, 201);
+  let workspace = created.json<Workspace>();
+  assert.equal(workspace.description, "Plan products.\nShip useful tools.");
+  const url = `/api/workspaces/${workspace.id}`;
+  const renamed = await app.inject({
+    method: "PATCH",
+    url,
+    payload: { name: "New studio" },
+  });
+  assert.equal(renamed.statusCode, 200);
+  assert.equal(renamed.json().description, workspace.description);
+  const described = await app.inject({
+    method: "PATCH",
+    url,
+    payload: { description: "x".repeat(4000) },
+  });
+  assert.equal(described.statusCode, 200);
+  workspace = described.json<Workspace>();
+  assert.equal(workspace.name, "New studio");
+  assert.equal(workspace.description.length, 4000);
+  const unchanged = await app.inject({ method: "PATCH", url, payload: {} });
+  assert.equal(unchanged.statusCode, 200);
+  assert.deepEqual(unchanged.json(), workspace);
+  for (const description of [null, 42, {}, [], "x".repeat(4001)]) {
+    for (const method of ["POST", "PATCH"] as const) {
+      const invalid = await app.inject({
+        method,
+        url: method === "POST" ? "/api/workspaces" : url,
+        payload: { name: "Invalid edit", description },
+      });
+      assert.equal(invalid.statusCode, 400);
+      assert.ok(invalid.json().fields.description);
+    }
+  }
+  const invalid = await app.inject({
+    method: "PATCH",
+    url,
+    payload: { name: "Not saved", unknown: true },
+  });
+  assert.equal(invalid.statusCode, 400);
+  assert.deepEqual(
+    (await app.inject("/api/settings")).json().activeWorkspace,
+    workspace,
+  );
+  assert.deepEqual(
+    (await app.inject("/api/workspaces"))
+      .json()
+      .items.find((item: Workspace) => item.id === workspace.id),
+    workspace,
+  );
+  for (const description of ["", "  \n  "]) {
+    const cleared = await app.inject({
+      method: "PATCH",
+      url,
+      payload: { description },
+    });
+    assert.equal(cleared.statusCode, 200);
+    assert.equal(cleared.json().description, "");
+    assert.equal(cleared.json().name, workspace.name);
+  }
 });
 
 test("workspace input and list bounds return actionable errors", async (t) => {
@@ -288,7 +363,10 @@ test("migration is repeatable, records survive reopen, and deleted seed never re
       await app.inject({
         method: "POST",
         url: "/api/workspaces",
-        payload: { name: "Persisted" },
+        payload: {
+          name: "Persisted",
+          description: "A lasting goal.\nAcross restarts.",
+        },
       })
     ).json<Workspace>();
     const preset = (
@@ -300,9 +378,9 @@ test("migration is repeatable, records survive reopen, and deleted seed never re
     ).json<ModelPreset>();
     await app.close();
     app = createApp({ databasePath, serveStatic: false });
-    assert.equal(
-      (await app.inject("/api/workspaces")).json().items[0].id,
-      workspace.id,
+    assert.deepEqual(
+      (await app.inject("/api/workspaces")).json().items[0],
+      workspace,
     );
     assert.deepEqual(
       (await app.inject("/api/model-presets")).json().items[0],
@@ -323,17 +401,64 @@ test("migration is repeatable, records survive reopen, and deleted seed never re
   }
 });
 
+test("version 3 migration adds empty descriptions without changing existing workspace state", async (t) => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "ufai-description-migration-"),
+  );
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const databasePath = join(directory, "test.sqlite");
+  const old = openDatabase(databasePath);
+  const workspace = old
+    .prepare("SELECT id, name, createdAt, updatedAt FROM workspaces")
+    .get() as Omit<Workspace, "description">;
+  old
+    .prepare(
+      "UPDATE app_settings SET activeThemeId = 'dark-mode', sidebarExpanded = 1 WHERE id = 1",
+    )
+    .run();
+  old
+    .prepare("INSERT INTO workspace_viewports VALUES (?, 12, -24, 1.5)")
+    .run(workspace.id);
+  old.exec(
+    "ALTER TABLE workspaces DROP COLUMN description; PRAGMA user_version = 3;",
+  );
+  old.close();
+  let app = createApp({ databasePath, serveStatic: false });
+  try {
+    const settings = (await app.inject("/api/settings")).json();
+    assert.deepEqual(settings.activeWorkspace, {
+      ...workspace,
+      description: "",
+    });
+    assert.deepEqual(settings.settings, {
+      activeWorkspaceId: workspace.id,
+      activeThemeId: "dark-mode",
+      sidebarExpanded: true,
+    });
+    assert.deepEqual(
+      (await app.inject(`/api/workspaces/${workspace.id}/viewport`)).json(),
+      { x: 12, y: -24, zoom: 1.5 },
+    );
+    await app.close();
+    app = createApp({ databasePath, serveStatic: false });
+    assert.deepEqual((await app.inject("/api/settings")).json(), settings);
+    assert.equal((await app.inject("/api/workspaces")).json().total, 1);
+  } finally {
+    await app.close();
+  }
+});
+
 test("newer database versions fail without downgrading schema", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "ufai-version-test-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "test.sqlite");
   const db = openDatabase(path);
-  assert.equal(db.pragma("user_version", { simple: true }), 3);
+  assert.equal(db.pragma("user_version", { simple: true }), 4);
   assert.equal(db.pragma("foreign_keys", { simple: true }), 1);
-  db.pragma("user_version = 4");
+  db.pragma("user_version = 5");
   db.close();
   assert.throws(() => openDatabase(path), /newer version/);
   const inspection = new Database(path, { readonly: true });
-  assert.equal(inspection.pragma("user_version", { simple: true }), 4);
+  assert.equal(inspection.pragma("user_version", { simple: true }), 5);
   inspection.close();
 });

@@ -11,7 +11,7 @@ import {
   InputError,
   pagination,
   presetInput,
-  workspaceName,
+  workspaceInput,
 } from "./validation.js";
 
 type PresetRow = Omit<ModelPreset, "compaction"> & {
@@ -83,10 +83,11 @@ export function createApp(
     "SELECT * FROM workspaces WHERE id = ?",
   );
   const workspaceInsert = database.prepare(
-    "INSERT INTO workspaces VALUES (@id, @name, @createdAt, @updatedAt)",
+    `INSERT INTO workspaces (id, name, description, createdAt, updatedAt)
+     VALUES (@id, @name, @description, @createdAt, @updatedAt)`,
   );
   const workspaceUpdate = database.prepare(
-    "UPDATE workspaces SET name = ?, updatedAt = ? WHERE id = ?",
+    "UPDATE workspaces SET name = @name, description = @description, updatedAt = @updatedAt WHERE id = @id",
   );
   const workspaceDelete = database.prepare(
     "DELETE FROM workspaces WHERE id = ?",
@@ -99,11 +100,11 @@ export function createApp(
     };
   });
   app.post("/api/workspaces", async (request, reply) => {
-    const name = workspaceName(request.body);
+    const input = workspaceInput(request.body);
     const now = new Date().toISOString();
     const workspace: Workspace = {
       id: randomUUID(),
-      name,
+      ...input,
       createdAt: now,
       updatedAt: now,
     };
@@ -118,10 +119,22 @@ export function createApp(
   app.patch<{ Params: { id: string } }>(
     "/api/workspaces/:id",
     async (request, reply) => {
-      if (!workspaceGet.get(request.params.id))
+      const existing = workspaceGet.get(request.params.id) as
+        | Workspace
+        | undefined;
+      if (!existing)
         return reply.code(404).send({ error: "Workspace not found." });
-      const name = workspaceName(request.body);
-      workspaceUpdate.run(name, new Date().toISOString(), request.params.id);
+      const input = workspaceInput(request.body, existing);
+      if (
+        input.name === existing.name &&
+        input.description === existing.description
+      )
+        return existing;
+      workspaceUpdate.run({
+        ...input,
+        updatedAt: new Date().toISOString(),
+        id: existing.id,
+      });
       return workspaceGet.get(request.params.id);
     },
   );
@@ -130,7 +143,8 @@ export function createApp(
     async (request, reply) => {
       const removed = database.transaction(() => {
         const workspace = workspaceGet.get(request.params.id) as
-          Workspace | undefined;
+          | Workspace
+          | undefined;
         if (!workspace) return false;
         const next = database
           .prepare(
@@ -146,7 +160,8 @@ export function createApp(
           ORDER BY createdAt DESC, id DESC LIMIT 1`,
             )
             .get(workspace.createdAt, workspace.id) as
-            { id: string } | undefined);
+            | { id: string }
+            | undefined);
         database
           .prepare(
             "UPDATE app_settings SET activeWorkspaceId = ? WHERE activeWorkspaceId = ?",

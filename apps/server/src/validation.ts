@@ -1,4 +1,4 @@
-import type { PresetInput } from "./contracts.js";
+import type { PresetInput, WorkspaceInput } from "./contracts.js";
 
 export class InputError extends Error {
   constructor(public fields: Record<string, string>) {
@@ -33,14 +33,25 @@ function text(
   return value.trim();
 }
 
-export function workspaceName(body: unknown): string {
-  const input = objectBody(body);
+export function workspaceInput(
+  body: unknown,
+  existing?: WorkspaceInput,
+): WorkspaceInput {
+  const patch = objectBody(body);
+  const input = { description: "", ...existing, ...patch };
   const fields: Record<string, string> = {};
-  for (const key of Object.keys(input))
-    if (key !== "name") fields[key] = "Unknown field.";
+  for (const key of Object.keys(patch))
+    if (key !== "name" && key !== "description") fields[key] = "Unknown field.";
   const name = text(input.name, "name", 120, fields);
+  const description = text(
+    input.description,
+    "description",
+    4000,
+    fields,
+    false,
+  );
   if (Object.keys(fields).length) throw new InputError(fields);
-  return name;
+  return { name, description };
 }
 
 const inputKeys = new Set([

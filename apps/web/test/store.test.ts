@@ -10,6 +10,7 @@ function workspace(id: string): Workspace {
   return {
     id,
     name: id,
+    description: "",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
@@ -25,6 +26,52 @@ test("application caches stay isolated while saved per-workspace viewports are s
   assert.deepEqual(second.getState().viewports, {});
   await second.getState().loadViewport(id);
   assert.equal(second.getState().viewports[id]?.zoom, 1.2);
+});
+
+test("workspace creates and edits refresh selected details, preserve unrelated records and retain state on failure", async (t) => {
+  const { settings } = await connectedSetup(t);
+  const store = createDashboardStore(settings);
+  await store.getState().loadWorkspaces();
+  const original = store.getState().workspaces[0];
+  await store
+    .getState()
+    .createWorkspace("Studio", "Plan products.\nShip useful tools.");
+  const created = settings.getState().snapshot.activeWorkspace!;
+  assert.equal(created.description, "Plan products.\nShip useful tools.");
+  assert.deepEqual(
+    store.getState().workspaces.find((item) => item.id === created.id),
+    created,
+  );
+  await store
+    .getState()
+    .updateWorkspace(created.id, { name: "Renamed", description: "New goal" });
+  const updated = settings.getState().snapshot.activeWorkspace!;
+  assert.equal(updated.name, "Renamed");
+  assert.equal(updated.description, "New goal");
+  assert.deepEqual(
+    store.getState().workspaces.find((item) => item.id === created.id),
+    updated,
+  );
+  assert.equal(store.getState().workspaces[0], original);
+  const before = store.getState().workspaces;
+  await assert.rejects(
+    store
+      .getState()
+      .updateWorkspace(created.id, {
+        name: "Not saved",
+        description: "x".repeat(4001),
+      }),
+  );
+  assert.equal(store.getState().workspaces, before);
+  assert.equal(settings.getState().snapshot.activeWorkspace, updated);
+  await assert.rejects(store.getState().createWorkspace("", "Invalid create"));
+  assert.equal(store.getState().workspaces, before);
+  await store
+    .getState()
+    .updateWorkspace(created.id, { name: updated.name, description: "" });
+  assert.equal(settings.getState().snapshot.activeWorkspace?.description, "");
+  await store.getState().createWorkspace("No description");
+  assert.equal(settings.getState().snapshot.activeWorkspace?.description, "");
 });
 
 test("paginated loads preserve selection and unrelated record identities", async (t) => {

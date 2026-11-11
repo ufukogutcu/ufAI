@@ -264,7 +264,7 @@ test("version 2 migration preserves data; all settings survive reopening by inde
   await server.close();
   const old = new Database(databasePath);
   old.exec(
-    "DROP TABLE workspace_viewports; DROP TABLE app_settings; PRAGMA user_version = 2;",
+    "DROP TABLE workspace_viewports; DROP TABLE app_settings; ALTER TABLE workspaces DROP COLUMN description; PRAGMA user_version = 2;",
   );
   old.close();
   server = createApp({ databasePath, serveStatic: false });
@@ -313,7 +313,7 @@ test("version 2 migration preserves data; all settings survive reopening by inde
   });
   await server.close();
   const storage = new Database(databasePath);
-  assert.equal(storage.pragma("user_version", { simple: true }), 3);
+  assert.equal(storage.pragma("user_version", { simple: true }), 4);
   assert.equal(
     (
       storage

@@ -12,9 +12,13 @@ export type ProviderId =
   | "custom";
 export type Compaction = { mode: "percentage" | "tokens"; value: number };
 
-export interface Workspace {
-  id: string;
+export interface WorkspaceInput {
   name: string;
+  description: string;
+}
+
+export interface Workspace extends WorkspaceInput {
+  id: string;
   createdAt: string;
   updatedAt: string;
 }

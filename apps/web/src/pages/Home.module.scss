@@ -6,6 +6,7 @@
 }
 .workspaceBar {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 8px;
   padding: 0 25px;
@@ -57,9 +58,35 @@
   border-left: 1px solid var(--border);
   padding-left: 12px;
 }
-.canvas {
+.workspacePanel {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+}
+.workspaceHeader:global(.pageHeader) {
+  display: block;
+  min-height: auto;
+  max-height: 40vh;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  h1 {
+    display: block;
+    margin-top: 0;
+  }
+  p {
+    white-space: pre-wrap;
+  }
+}
+.canvas {
+  flex: 1;
+  min-height: 320px;
+}
+.workspaceForm {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 @media (max-width: 640px) {
   .workspaceBar {

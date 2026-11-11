@@ -66,8 +66,8 @@ All documented commands assume execution from the repository root. Loopback defa
 | --- | --- | --- |
 | `GET /api/health` | HTTP 200, JSON `{"status":"ok"}` | Does not run a database query or check planned services |
 | `GET /` | Built dashboard HTML when static serving was registered at startup | Requires frontend build output |
-| `GET/POST /api/workspaces` | Paginated list / create workspace | Names and IDs only; no agent contents |
-| `PATCH/DELETE /api/workspaces/:id` | Rename / permanently delete workspace | Missing IDs return 404 |
+| `GET/POST /api/workspaces` | Paginated list / create workspace | Names and optional goal descriptions; no agent contents |
+| `PATCH/DELETE /api/workspaces/:id` | Edit name/description / permanently delete workspace | Missing IDs return 404 |
 | `GET/PATCH /api/settings` | Shared settings and resolved active theme/workspace | One settings record per installation |
 | `GET/PATCH /api/workspaces/:id/viewport` | Saved pan/zoom, defaulting to x=0, y=0, zoom=1 | Existing workspace; zoom 0.25–2 |
 | `GET/POST /api/model-presets` | Paginated list / create shared preset | Configuration only |
@@ -86,6 +86,7 @@ See the [HTTP API reference](api.md) for payloads, validation, defaults, errors,
 - Schema versioning uses SQLite `user_version`. Migration 1 creates `workspaces` and `model_presets`, adds creation-order indexes, seeds one Default workspace, and advances the version in one short transaction. It also upgrades the original empty scaffold database.
 - Migration 2 adds `themes` and its creation-order index without changing existing workspace/preset records. Custom themes store name, light/dark mode, JSON colors, and timestamps. Built-ins come from the shared catalog rather than mutable database rows.
 - Migration 3 adds singleton `app_settings` and `workspace_viewports` keyed by workspace ID, preserving all previous records. Defaults are Light Mode, a collapsed sidebar, and the first existing workspace by creation order, or null. Old browser preferences are ignored. Workspace foreign keys clear deleted selections and cascade viewport deletion. API transactions select newly created workspaces, repair active workspace selection to its next/previous neighbor on deletion, and select Light Mode when deleting the active custom theme.
+- Migration 4 adds a non-null workspace description with an empty-string default, preserving existing records, settings, timestamps, and viewports. Workspace creation accepts an optional description; partial edits preserve omitted fields and empty patches leave timestamps unchanged.
 - Records use server-generated UUIDs and ISO timestamps. Presets store compaction mode/value separately. Prepared statements use parameter binding; list queries are paginated at at most 100 rows per request. Names need not be unique.
 - Seeding runs only during migration, including when every workspace is later deleted. Migrations are forward-only; databases newer than this application are rejected.
 - The Fastify application owns its database handle. Tests construct isolated applications with temporary database paths or in-memory SQLite. Workspace deletion currently has no associated agent data to cascade.
@@ -108,7 +109,7 @@ See the [HTTP API reference](api.md) for payloads, validation, defaults, errors,
 
 ## Client state
 
-Provider-scoped Zustand stores cache server records through narrow selectors. A shared settings store holds the server-confirmed settings snapshot plus resolved active theme/workspace. Startup requests settings before mounting the dashboard; failure leaves a retryable startup screen. Active records resolve independently of list pagination. Page lists load in 100-record batches; immutable updates preserve unrelated references. Form drafts stay in local React state, and settings refreshes do not replace editor records/drafts or remount the application.
+Provider-scoped Zustand stores cache server records through narrow selectors. A shared settings store holds the server-confirmed settings snapshot plus resolved active theme/workspace. Startup requests settings before mounting the dashboard; failure leaves a retryable startup screen. Active records resolve independently of list pagination. Page lists load in 100-record batches; immutable updates preserve unrelated references. Home places workspace tabs above a header displaying the server-resolved selected workspace’s name and optional plain-text description. The pencil dialog edits both fields; descriptions retain line breaks and the header scrolls for long content to keep the flowboard accessible. Form drafts stay in local React state, and settings refreshes do not replace editor records/drafts or remount the application.
 
 Settings refresh on window focus or visible-tab return; paired events share one refresh, and listeners are cleaned up. Local settings-affecting writes are serialized in action order. Revision checks reject stale reads after newer actions; refresh skips pending writes. A completed CRUD request remains successful if its subsequent settings refresh fails, avoiding duplicate creates on retry. Preference failures retain confirmed values and expose the failed patch for retry. Later read failures retain the in-memory snapshot and expose a read retry. There is no browser preference storage or continuous synchronization service.
 

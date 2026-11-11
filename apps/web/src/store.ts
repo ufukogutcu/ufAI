@@ -8,7 +8,10 @@ import {
   type ModelPreset,
   type PresetInput,
 } from "./api";
-import type { WorkspaceViewport as Viewport } from "../../server/src/contracts";
+import type {
+  WorkspaceInput,
+  WorkspaceViewport as Viewport,
+} from "../../server/src/contracts";
 import type { SettingsStore } from "./settings-store";
 
 type Status = "idle" | "loading" | "ready" | "error";
@@ -32,8 +35,8 @@ interface DashboardState {
   retryViewport: (id: string) => Promise<void>;
   loadViewport: (id: string) => Promise<void>;
   saveViewport: (id: string, viewport: Viewport) => Promise<void>;
-  createWorkspace: (name: string) => Promise<void>;
-  renameWorkspace: (id: string, name: string) => Promise<void>;
+  createWorkspace: (name: string, description?: string) => Promise<void>;
+  updateWorkspace: (id: string, input: WorkspaceInput) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
   savePreset: (id: string | null, input: PresetInput) => Promise<ModelPreset>;
   deletePreset: (id: string) => Promise<void>;
@@ -206,10 +209,12 @@ export function createDashboardStore(settings: SettingsStore) {
         viewportWrites.delete(id);
       }
     },
-    createWorkspace: async (name) => {
+    createWorkspace: async (name, description = "") => {
       const workspace = await settings
         .getState()
-        .mutate(() => request<Workspace>("/workspaces", "POST", { name }));
+        .mutate(() =>
+          request<Workspace>("/workspaces", "POST", { name, description }),
+        );
       set((state) => ({
         workspaces: merge(state.workspaces, [workspace]),
         workspaceTotal: state.workspaceTotal + 1,
@@ -219,12 +224,10 @@ export function createDashboardStore(settings: SettingsStore) {
             : state.workspaceOffset,
       }));
     },
-    renameWorkspace: async (id, name) => {
+    updateWorkspace: async (id, input) => {
       const workspace = await settings
         .getState()
-        .mutate(() =>
-          request<Workspace>(`/workspaces/${id}`, "PATCH", { name }),
-        );
+        .mutate(() => request<Workspace>(`/workspaces/${id}`, "PATCH", input));
       set((state) => ({
         workspaces: state.workspaces.map((w) => (w.id === id ? workspace : w)),
       }));

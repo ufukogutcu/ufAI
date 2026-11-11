@@ -1,5 +1,5 @@
 import { useSettings } from "../settings-store";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
 import {
   ArrowRight,
   ChevronDown,
@@ -16,7 +16,9 @@ import { Tooltip } from "../components/Tooltip";
 import styles from "./Home.module.scss";
 
 type WorkspaceAction =
-  { kind: "create" } | { kind: "rename" | "delete"; id: string; name: string };
+  | { kind: "create" }
+  | { kind: "edit"; id: string; name: string; description: string }
+  | { kind: "delete"; id: string; name: string };
 
 function WorkspaceDialog({
   action,
@@ -25,57 +27,97 @@ function WorkspaceDialog({
   action: WorkspaceAction;
   onClose: () => void;
 }) {
-  const [name, setName] = useState(action.kind === "rename" ? action.name : "");
+  const [name, setName] = useState(action.kind === "edit" ? action.name : "");
+  const [description, setDescription] = useState(
+    action.kind === "edit" ? action.description : "",
+  );
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const fieldId = useId();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const createWorkspace = useDashboard((state) => state.createWorkspace);
-  const renameWorkspace = useDashboard((state) => state.renameWorkspace);
+  const updateWorkspace = useDashboard((state) => state.updateWorkspace);
   const deleteWorkspace = useDashboard((state) => state.deleteWorkspace);
   const title =
     action.kind === "create"
       ? "Create workspace"
-      : action.kind === "rename"
-        ? "Rename workspace"
+      : action.kind === "edit"
+        ? "Edit workspace"
         : "Delete workspace";
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
     setBusy(true);
     setError("");
+    setFields({});
     try {
-      if (action.kind === "create") await createWorkspace(name);
-      else if (action.kind === "rename") await renameWorkspace(action.id, name);
+      if (action.kind === "create") await createWorkspace(name, description);
+      else if (action.kind === "edit")
+        await updateWorkspace(action.id, { name, description });
       else await deleteWorkspace(action.id);
       onClose();
     } catch (error) {
-      setError(
-        error instanceof RequestError
-          ? (error.fields.name ?? error.message)
-          : errorMessage(error),
-      );
+      if (error instanceof RequestError) setFields(error.fields);
+      setError(errorMessage(error));
       setBusy(false);
     }
   }
   return (
     <Dialog title={title} onClose={onClose} busy={busy}>
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} className={styles.workspaceForm}>
         {action.kind === "delete" ? (
           <p>
             Delete <strong>{action.name}</strong>? This permanently removes the
             workspace and cannot be undone.
           </p>
         ) : (
-          <label className="field">
-            Workspace name
-            <input
-              autoFocus
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              required
-              maxLength={120}
-              placeholder="e.g. Product studio"
-            />
-          </label>
+          <>
+            <label className="field">
+              Workspace name
+              <input
+                autoFocus
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                required
+                maxLength={120}
+                placeholder="e.g. Product studio"
+                disabled={busy}
+                aria-invalid={!!fields.name}
+                aria-describedby={
+                  fields.name ? `${fieldId}-name-error` : undefined
+                }
+              />
+              {fields.name && (
+                <span className="fieldError" id={`${fieldId}-name-error`}>
+                  {fields.name}
+                </span>
+              )}
+            </label>
+            <label className="field">
+              Description (optional)
+              <textarea
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                maxLength={4000}
+                rows={4}
+                disabled={busy}
+                aria-invalid={!!fields.description}
+                aria-describedby={`${fieldId}-description-hint${fields.description ? ` ${fieldId}-description-error` : ""}`}
+              />
+              <span className="fieldHint" id={`${fieldId}-description-hint`}>
+                Describe the main goal of this workspace. You can leave this
+                empty.
+              </span>
+              {fields.description && (
+                <span
+                  className="fieldError"
+                  id={`${fieldId}-description-error`}
+                >
+                  {fields.description}
+                </span>
+              )}
+            </label>
+          </>
         )}
         {error && (
           <p className="error" role="alert">
@@ -95,7 +137,7 @@ function WorkspaceDialog({
             className={`button ${action.kind === "delete" ? "danger" : "primary"}`}
             disabled={busy}
           >
-            {busy ? "Saving…" : title}
+            {busy ? "Saving…" : action.kind === "edit" ? "Save changes" : title}
           </button>
         </div>
       </form>
@@ -135,8 +177,14 @@ export default function Home() {
   function handleClose() {
     setAction(null);
   }
-  function handleRename() {
-    if (active) setAction({ kind: "rename", id: active.id, name: active.name });
+  function handleEdit() {
+    if (active)
+      setAction({
+        kind: "edit",
+        id: active.id,
+        name: active.name,
+        description: active.description,
+      });
   }
   function handleDelete() {
     if (active) setAction({ kind: "delete", id: active.id, name: active.name });
@@ -149,19 +197,6 @@ export default function Home() {
   }
   return (
     <section className={styles.home} aria-label="Home">
-      <header className="pageHeader">
-        <div>
-          <span className="eyebrow">YOUR WORK, CONNECTED</span>
-          <h1>
-            Workspaces<span className="count">{total}</span>
-          </h1>
-          <p>A place to bring your agents together.</p>
-        </div>
-        <span className="localBadge">
-          <span />
-          Local workspace
-        </span>
-      </header>
       <div className={styles.workspaceBar}>
         <div className={styles.tabs} role="tablist" aria-label="Workspaces">
           {tabs.map((workspace, index) => (
@@ -223,11 +258,11 @@ export default function Home() {
         </Tooltip>
         {active && (
           <div className={styles.workspaceActions}>
-            <Tooltip content="Rename workspace">
+            <Tooltip content="Edit workspace">
               <button
                 className="iconButton"
-                aria-label="Rename workspace"
-                onClick={handleRename}
+                aria-label="Edit workspace"
+                onClick={handleEdit}
               >
                 <Pencil size={14} />
               </button>
@@ -256,29 +291,37 @@ export default function Home() {
         id="workspace-panel"
         role={active ? "tabpanel" : undefined}
         aria-labelledby={active ? `tab-${active.id}` : undefined}
-        className={styles.canvas}
+        className={styles.workspacePanel}
       >
-        {active ? (
-          <Flowboard key={active.id} workspaceId={active.id} />
-        ) : status === "loading" || status === "idle" ? (
-          <div className="centerState" role="status">
-            Loading workspaces…
-          </div>
-        ) : (
-          status !== "error" && (
-            <div className="centerState">
-              <div className="emptyIcon">
-                <Workflow size={28} />
-              </div>
-              <h2>Make room for an idea</h2>
-              <p>Create your first workspace to open a flowboard.</p>
-              <button className="button primary" onClick={handleCreate}>
-                Create workspace
-                <ArrowRight size={15} />
-              </button>
-            </div>
-          )
+        {active && (
+          <header className={`pageHeader ${styles.workspaceHeader}`}>
+            <h1>{active.name}</h1>
+            {active.description && <p>{active.description}</p>}
+          </header>
         )}
+        <div className={styles.canvas}>
+          {active ? (
+            <Flowboard key={active.id} workspaceId={active.id} />
+          ) : status === "loading" || status === "idle" ? (
+            <div className="centerState" role="status">
+              Loading workspaces…
+            </div>
+          ) : (
+            status !== "error" && (
+              <div className="centerState">
+                <div className="emptyIcon">
+                  <Workflow size={28} />
+                </div>
+                <h2>Make room for an idea</h2>
+                <p>Create your first workspace to open a flowboard.</p>
+                <button className="button primary" onClick={handleCreate}>
+                  Create workspace
+                  <ArrowRight size={15} />
+                </button>
+              </div>
+            )
+          )}
+        </div>
       </div>
       {action && <WorkspaceDialog action={action} onClose={handleClose} />}
     </section>
