@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import catalog from "@ufai/theme-catalog";
+import { relayFavicon } from "./src/branding.ts";
 
 function defaultColors(mode: "light" | "dark") {
   return `:root{color-scheme:${mode};color:var(--text);background:var(--root-background);${Object.values(
@@ -17,6 +18,19 @@ export default defineConfig({
       name: "ufai-theme-defaults",
       transformIndexHtml() {
         return [
+          {
+            tag: "link",
+            attrs: {
+              id: "ufai-favicon",
+              rel: "icon",
+              type: "image/svg+xml",
+              href: relayFavicon({
+                "logo-text": catalog.tokens["logo-text"].light,
+                "logo-secondary": catalog.tokens["logo-secondary"].light,
+              }),
+            },
+            injectTo: "head",
+          },
           {
             tag: "style",
             attrs: { id: "ufai-theme-defaults" },

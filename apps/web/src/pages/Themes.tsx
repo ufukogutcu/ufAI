@@ -10,6 +10,7 @@ import {
 } from "react";
 import { Check, Copy, LockKeyhole, Palette, Plus, Trash2 } from "lucide-react";
 import { Dialog } from "../components/Dialog";
+import { RelaySymbol } from "../components/RelaySymbol";
 import { errorMessage, RequestError } from "../api";
 import { useNavigationGuard, useUnsavedChanges } from "../navigation-guard";
 import { useTheme } from "../theme-store";
@@ -142,7 +143,7 @@ function ThemePreview({
               {region.id === "navigation" && (
                 <div className={styles.navSample}>
                   <span className={styles.logoSample}>
-                    u<span>f</span>
+                    <RelaySymbol />
                   </span>
                   <div className={styles.navActive}>Home</div>
                   <div className={styles.tabSample}>Workspace tab</div>

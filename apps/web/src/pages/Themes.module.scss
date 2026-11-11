@@ -446,17 +446,12 @@
 }
 .logoSample {
   color: var(--logo-text);
-  background: linear-gradient(
-    135deg,
-    var(--logo-gradient-start),
-    var(--logo-gradient-end)
-  );
-  border: 1px solid var(--logo-border);
-  border-radius: 5px;
-  padding: 3px 6px;
-  font-size: 16px;
-  span {
-    color: var(--logo-secondary);
+  display: inline-flex;
+  width: 34px;
+  height: 36px;
+  svg {
+    width: 100%;
+    height: 100%;
   }
 }
 .navActive {

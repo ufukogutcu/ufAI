@@ -62,6 +62,7 @@ Use the [terminology and status definitions](README.md#terminology) when explain
 - **Purpose:** Navigate the local dashboard using Home, Model Presets, Theme, and Settings.
 - **Behavior / steps:** The left sidebar starts as icons and can expand to icons and labels. Hash URLs support direct linking, refresh, and browser back/forward. Sidebar expansion and the selected workspace are saved in SQLite for the entire local setup. Shared settings load before the dashboard opens and refresh when a tab regains focus or becomes visible. Older browser preferences are ignored. Failed preference saves keep the last confirmed setting and offer Retry. URL history and unfinished forms remain temporary.
 - **Limitations:** Settings has a heading only. Appearance is configurable through [Themes](#dashboard-themes).
+- **Branding:** The sidebar uses the Relay symbol on a transparent background without a border, with the ufAI wordmark when expanded. Clicking the sidebar logo opens the [project's GitHub repository](https://github.com/ufukogutcu/ufAI) in a new tab, keeping the dashboard and unsaved drafts open. The theme preview uses the same transparent symbol. The browser favicon uses a simplified Relay symbol. Both follow the saved theme's logo colors; unsaved theme previews remain confined to the editor.
 
 ### dashboard-themes
 

@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { DashboardProvider } from "./components/DashboardProvider";
 import { Tooltip } from "./components/Tooltip";
+import { RelaySymbol } from "./components/RelaySymbol";
+import { RelayWordmark } from "./components/RelayWordmark";
 import {
   createSettingsStore,
   SettingsContext,
@@ -151,17 +153,19 @@ function Shell() {
       </a>
       <aside className={styles.sidebar} aria-label="Application sidebar">
         <a
-          href="#/home"
+          href="https://github.com/ufukogutcu/ufAI"
           className={styles.brand}
-          aria-label="ufAI Home"
-          onClick={(event) => navigate(event, "home")}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="ufAI GitHub repository (opens in a new tab)"
         >
           <span className={styles.logo}>
-            u<span>f</span>
+            <RelaySymbol />
           </span>
           {expanded && (
             <span className={styles.wordmark}>
-              ufAI<span>AGENT WORKSPACE</span>
+              <RelayWordmark />
+              <span>AGENT WORKSPACE</span>
             </span>
           )}
         </a>
