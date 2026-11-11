@@ -1,0 +1,77 @@
+.home {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.workspaceBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 25px;
+  min-height: 53px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.tabs {
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  min-width: 0;
+  scrollbar-width: thin;
+}
+.tab {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 17px 15px 15px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  max-width: 260px;
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  svg {
+    flex-shrink: 0;
+  }
+  &:hover {
+    color: var(--text);
+    background: var(--hover);
+  }
+}
+.active {
+  color: var(--accent-light);
+  border-bottom-color: var(--accent);
+  background: linear-gradient(0deg, #a794f40a, transparent);
+}
+.workspaceActions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  border-left: 1px solid var(--border);
+  padding-left: 12px;
+}
+.canvas {
+  flex: 1;
+  min-height: 0;
+}
+@media (max-width: 640px) {
+  .workspaceBar {
+    padding: 0 8px;
+    gap: 2px;
+  }
+  .workspaceActions {
+    padding-left: 4px;
+  }
+  .tab {
+    max-width: 160px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+}
