@@ -1,3 +1,4 @@
+import { Appearance } from "./Appearance";
 import { useEffect, useState } from "react";
 import { errorMessage, request, type ProviderModel } from "../api";
 import { Field } from "./FormField";
@@ -140,9 +141,9 @@ export function ModelSelect({
         </div>
       )}
       {message && (
-        <p className="fieldError" role="status">
+        <Appearance kind="fade"><p className="fieldError" role="status">
           {message}
-        </p>
+        </p></Appearance>
       )}
     </div>
   );

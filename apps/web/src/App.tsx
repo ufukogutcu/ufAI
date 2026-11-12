@@ -31,6 +31,7 @@ import Providers from "./pages/Providers";
 import { ConnectionContext, createConnectionStore } from "./connection-store";
 import Presets from "./pages/Presets";
 import styles from "./App.module.scss";
+import { Appearance } from "./components/Appearance";
 
 const pages = [
   { id: "home", label: "Home", icon: HomeIcon },
@@ -182,6 +183,7 @@ function Shell() {
       <div className={styles.mainColumn}>
         <main id="main-content" tabIndex={-1} className={styles.main}>
           {settingsError && (
+            <Appearance kind="fade">
             <div className="errorBanner" role="alert">
               {settingsError}{" "}
               <button
@@ -191,6 +193,7 @@ function Shell() {
                 Retry
               </button>
             </div>
+            </Appearance>
           )}
           {page === "home" ? (
             <Home />

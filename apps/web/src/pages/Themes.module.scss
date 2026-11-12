@@ -128,6 +128,7 @@
   }
 }
 .editingContent { overflow: hidden; display: flex; flex-direction: column; }
+.editorEntrance { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .editor {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;

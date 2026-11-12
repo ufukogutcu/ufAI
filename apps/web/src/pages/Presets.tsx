@@ -20,6 +20,7 @@ import { Dialog } from "../components/Dialog";
 import { ModelSelect } from "../components/ModelSelect";
 import { refreshOnFocus } from "../focus-refresh";
 import styles from "./Presets.module.scss";
+import { Appearance, AppearanceGroup } from "../components/Appearance";
 
 function PresetEditor({
   preset,
@@ -93,11 +94,12 @@ function PresetEditor({
     }
   }
   return (
+    <AppearanceGroup>
     <form className={styles.editor} onSubmit={handleSave} noValidate>
-      <header className={styles.editorHeading}>
+      <header className={styles.editorHeading} data-appearance-content>
         <h2>{preset ? "Edit agent preset" : "New agent preset"}</h2>
       </header>
-      <fieldset className={styles.fields} disabled={busy}>
+      <fieldset className={styles.fields} disabled={busy} data-appearance-content>
         <section className={styles.formSection}>
           <Field label="Preset name" error={fields.name}>
             {(props) => (
@@ -154,9 +156,9 @@ function PresetEditor({
             )}
           </Field>
           {connectionError && (
-            <p className="fieldError" role="status">
+            <Appearance kind="fade"><p className="fieldError" role="status">
               {connectionError}
-            </p>
+            </p></Appearance>
           )}
           <ModelSelect
             connectionId={draft.connectionId}
@@ -236,10 +238,10 @@ function PresetEditor({
             </strong>
           </p>
           {invalidThreshold ? (
-            <p className={styles.modelStatus} role="status">
+            <Appearance kind="fade"><p className={styles.modelStatus} role="status">
               This threshold exceeds the model’s current context window. Adjust
               it before using the preset.
-            </p>
+            </p></Appearance>
           ) : null}
           <p className={styles.compactionHelp}>
             Optional configuration. Agent execution and compaction are not
@@ -249,9 +251,9 @@ function PresetEditor({
       </fieldset>
       <footer className={styles.editorFooter}>
         {error && (
-          <p role="alert" className="error">
+          <Appearance kind="fade"><p role="alert" className="error">
             {error}
-          </p>
+          </p></Appearance>
         )}
         <div className={styles.footerActions}>
           <div />
@@ -269,6 +271,7 @@ function PresetEditor({
         </div>
       </footer>
     </form>
+    </AppearanceGroup>
   );
 }
 export default function Presets() {
@@ -283,6 +286,7 @@ export default function Presets() {
   const [snapshot, setSnapshot] = useState<ModelPreset | undefined>();
   const [selection, setSelection] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
+  const [createdId, setCreatedId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<ModelPreset | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -306,9 +310,17 @@ export default function Presets() {
     });
   }
   function saved(preset: ModelPreset) {
+    if (selection === "new") setCreatedId(preset.id);
     setSnapshot(preset);
     setSelection(preset.id);
     setRevision((value) => value + 1);
+  }
+  function handleLoadMore() {
+    setCreatedId(null);
+    void load(true);
+  }
+  function clearCreatedAppearance() {
+    setCreatedId(null);
   }
   async function handleDelete() {
     if (!deleting) return;
@@ -346,29 +358,33 @@ export default function Presets() {
         </button>
       </header>
       {error && (
+        <Appearance kind="fade">
         <div className="errorBanner" role="alert">
           {error}
           <button className="textButton" onClick={() => void load()}>
             Retry
           </button>
         </div>
+        </Appearance>
       )}
       <div
         className={`${styles.layout} ${selection ? styles.hasSelection : ""}`}
       >
         <aside className={styles.library} aria-label="Preset library">
           {status === "loading" && !presets.length && (
-            <p className={styles.listMessage} role="status">
+            <Appearance kind="fade"><p className={styles.listMessage} role="status">
               Loading presets…
-            </p>
+            </p></Appearance>
           )}
           {!presets.length && status === "ready" && (
+            <Appearance kind="fade">
             <p className={styles.listMessage}>No agent presets yet.</p>
+            </Appearance>
           )}
           <div className={styles.presetList}>
             {presets.map((preset) => (
-              <button
-                key={preset.id}
+              <Appearance key={preset.id} kind="fade" ready={preset.id === createdId}><button
+                onAnimationEnd={clearCreatedAppearance}
                 className={`${styles.presetItem} ${selection === preset.id ? styles.selected : ""}`}
                 aria-current={selection === preset.id ? "true" : undefined}
                 onClick={() => choose(preset.id)}
@@ -377,20 +393,20 @@ export default function Presets() {
                   <strong>{preset.name}</strong>
                   <small>{preset.modelId ?? "No model selected"}</small>
                 </span>
-              </button>
+              </button></Appearance>
             ))}
           </div>
           {offset < total && (
             <button
               className="button secondary"
               disabled={status === "loading"}
-              onClick={() => void load(true)}
+              onClick={handleLoadMore}
             >
               Load more presets
             </button>
           )}
         </aside>
-        <div className={styles.detail}>
+        <Appearance kind="selection" trigger={selection}><div className={styles.detail}>
           {selection && (selection === "new" || selected) ? (
             <>
               <div className={styles.inlineActions}>
@@ -418,10 +434,10 @@ export default function Presets() {
               </div>
               {selection !== "new" &&
                 !presets.some((p) => p.id === selection) && (
-                  <p className={styles.modelStatus} role="status">
+                  <Appearance kind="fade"><p className={styles.modelStatus} role="status">
                     This preset is no longer in the library. Your draft is still
                     shown; saving may fail if it was deleted in another session.
-                  </p>
+                  </p></Appearance>
                 )}
               <PresetEditor
                 key={`${selection}-${revision}`}
@@ -437,7 +453,7 @@ export default function Presets() {
               <p>Select a preset or create one with a name to get started.</p>
             </div>
           )}
-        </div>
+        </div></Appearance>
       </div>
       {deleting && (
         <Dialog
@@ -449,9 +465,9 @@ export default function Presets() {
             Permanently delete <strong>{deleting.name}</strong>?
           </p>
           {deleteError && (
-            <p className="error" role="alert">
+            <Appearance kind="fade"><p className="error" role="alert">
               {deleteError}
-            </p>
+            </p></Appearance>
           )}
           <div className="dialogActions">
             <button

@@ -10,6 +10,8 @@ import {
 } from "react";
 import { ArrowLeft, Check, ChevronDown, Copy, Home, LockKeyhole, Palette, Plus, Settings, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Dialog } from "../components/Dialog";
+import { Appearance, AppearanceGroup } from "../components/Appearance";
+import { Disclosure } from "../components/Disclosure";
 import { RelaySymbol } from "../components/RelaySymbol";
 import { errorMessage, RequestError } from "../api";
 import { useNavigationGuard, useUnsavedChanges } from "../navigation-guard";
@@ -357,9 +359,9 @@ function ColorControl({
         </label>
       </div>
       {invalid && (
-        <span id={`${id}-error`} className="fieldError">
+        <Appearance kind="fade"><span id={`${id}-error`} className="fieldError">
           Use #RGB, #RGBA, #RRGGBB or #RRGGBBAA.
-        </span>
+        </span></Appearance>
       )}
     </div>
   );
@@ -498,9 +500,10 @@ function ThemeEditor({
     if (record) attempt(() => onDelete(record));
   }
   return (
+    <AppearanceGroup>
     <form className={styles.editor} onSubmit={handleSave} aria-busy={busy}>
       <div className={styles.editorHeading}>
-        <div>
+        <div data-appearance-content>
           <h2>
             {locked ? "Default theme" : record ? "Edit theme" : "Create theme"}
           </h2>
@@ -510,7 +513,7 @@ function ThemeEditor({
               : "Explore each color in the preview. Changes stay here until you save."}
           </p>
         </div>
-        <span className={styles.state}>
+        <span className={styles.state} data-appearance-content>
           {locked ? (
             <>
               <LockKeyhole size={13} /> Locked
@@ -524,7 +527,7 @@ function ThemeEditor({
       </div>
       <fieldset className={styles.editorFields} disabled={busy}>
         <div className={styles.editLayout}>
-          <div className={styles.colorList} ref={controlList}>
+          <div className={styles.colorList} ref={controlList} data-appearance-content>
         <div className={styles.identity}>
           <div className="field">
             <label htmlFor={nameId}>Theme name</label>
@@ -543,9 +546,9 @@ function ThemeEditor({
               aria-describedby={nameError ? `${nameId}-error` : undefined}
             />
             {nameError && (
-              <span id={`${nameId}-error`} className="fieldError">
+              <Appearance kind="fade"><span id={`${nameId}-error`} className="fieldError">
                 {nameError}
-              </span>
+              </span></Appearance>
             )}
           </div>
           <div className="field">
@@ -586,8 +589,7 @@ function ThemeEditor({
               );
               if (!keys.length) return null;
               return (
-                <details
-                  key={group}
+                <Disclosure key={group}><details
                   open={
                     !!query ||
                     (!!selected && keys.includes(selected)) ||
@@ -614,13 +616,15 @@ function ThemeEditor({
                       onChange={handleColor}
                     />
                   ))}
-                </details>
+                </details></Disclosure>
               );
             })}
             {!matching.length && (
+              <Appearance kind="fade">
               <p className={styles.help}>
                 No matching colors. Try a component name.
               </p>
+              </Appearance>
             )}
           </div>
           <details ref={previewColumn} className={styles.previewColumn} open={previewOpen}
@@ -636,7 +640,7 @@ function ThemeEditor({
               onInspect={handleInspect}
             />
             {!!warnings.length && (
-              <details className={styles.contrast}>
+              <Disclosure><details className={styles.contrast}>
                 <summary>Contrast suggestions ({warnings.length})</summary>
                 <p>These suggestions do not prevent saving.</p>
                 <ul>
@@ -644,18 +648,18 @@ function ThemeEditor({
                     <li key={warning}>{warning}</li>
                   ))}
                 </ul>
-              </details>
+              </details></Disclosure>
             )}
           </details>
         </div>
       </fieldset>
       <div className={styles.editorActions}>
         {error && (
-          <p className="error" role="alert">
+          <Appearance kind="fade"><p className="error" role="alert">
             {error}
-          </p>
+          </p></Appearance>
         )}
-        <div className={styles.actions}>
+        <div className={styles.actions} data-appearance-content>
           {!locked && (
             <>
               <button
@@ -716,6 +720,7 @@ function ThemeEditor({
         </div>
       </div>
     </form>
+    </AppearanceGroup>
   );
 }
 
@@ -742,6 +747,7 @@ export default function Themes() {
     sequence: 0,
   }));
   const [editing, setEditing] = useState(false);
+  const [createdId, setCreatedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [baseId, setBaseId] = useState(active.id);
   const [deleting, setDeleting] = useState<Theme | null>(null);
@@ -761,6 +767,17 @@ export default function Themes() {
   }
   function handleOpen(theme: Theme) {
     attempt(() => show(theme));
+  }
+  function handleSaved(theme: Theme) {
+    if (!editor.record) setCreatedId(theme.id);
+    show(theme);
+  }
+  function handleLoadMore() {
+    setCreatedId(null);
+    void load(true);
+  }
+  function clearCreatedAppearance() {
+    setCreatedId(null);
   }
   function handleDuplicate(theme: Theme) {
     setEditing(true);
@@ -837,17 +854,19 @@ export default function Themes() {
       <div className={`${styles.content} ${editing ? styles.editingContent : ""}`}>
         {!editing && <>
         {error && (
+          <Appearance kind="fade">
           <div className={styles.notice} role="alert">
             {error}
             <button className="textButton" onClick={() => void load()}>
               Retry loading
             </button>
           </div>
+          </Appearance>
         )}
         <div className={styles.library} aria-label="Theme library">
           {choices.map((theme) => (
-            <article
-              key={theme.id}
+            <Appearance key={theme.id} kind="fade" ready={theme.id === createdId}><article
+              onAnimationEnd={clearCreatedAppearance}
               className={`${styles.card} ${active.id === theme.id ? styles.cardSelected : ""}`}
             >
               <button
@@ -910,28 +929,32 @@ export default function Themes() {
                   Duplicate
                 </button>
               </div>
-            </article>
+            </article></Appearance>
           ))}
         </div>
         {loading && (
-          <p className={styles.help} role="status">
+          <Appearance kind="fade"><p className={styles.help} role="status">
             Loading themes…
-          </p>
+          </p></Appearance>
         )}
         {!loading && offset < total && !error && (
-          <button className="button secondary" onClick={() => void load(true)}>
+          <button className="button secondary" onClick={handleLoadMore}>
             Load more themes
           </button>
         )}
         </>}
-        {editing && <ThemeEditor
+        {editing && <Appearance kind="selection" trigger={editor.record?.id ?? editor.sequence}>
+          <div className={styles.editorEntrance}>
+          <ThemeEditor
           key={editor.sequence}
           {...editor}
-          onSaved={show}
+          onSaved={handleSaved}
           onCancel={handleCancel}
           onDuplicate={handleDuplicate}
           onDelete={handleDelete}
-        />}
+        />
+          </div>
+        </Appearance>}
       </div>
       {creating && (
         <Dialog title="Create a theme" onClose={() => setCreating(false)}>
@@ -980,9 +1003,9 @@ export default function Themes() {
               : ""}
           </p>
           {deleteError && (
-            <p className="error" role="alert">
+            <Appearance kind="fade"><p className="error" role="alert">
               {deleteError}
-            </p>
+            </p></Appearance>
           )}
           <div className="dialogActions">
             <button

@@ -15,6 +15,7 @@ import { useDashboard } from "../store";
 import { Tooltip } from "./Tooltip";
 import styles from "./Flowboard.module.scss";
 import { GlassMaterial } from "./GlassMaterial";
+import { Appearance } from "./Appearance";
 
 const defaultViewport: Viewport = { x: 0, y: 0, zoom: 1 };
 
@@ -130,7 +131,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
           Drag to pan <span>·</span> Scroll to zoom
         </Panel>
       </ReactFlow>
-      <div className={styles.empty}>
+      <Appearance><div className={styles.empty}>
         <div className={styles.illustration} aria-hidden="true">
           <Workflow size={34} strokeWidth={1.25} />
         </div>
@@ -141,7 +142,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
         <p className={styles.comingSoon}>
           Agent editing and connections are coming next.
         </p>
-      </div>
+      </div></Appearance>
     </div>
   );
 }
@@ -160,21 +161,23 @@ export function Flowboard({ workspaceId }: { workspaceId: string }) {
   return (
     <>
       {error && (
+        <Appearance kind="fade">
         <div className="errorBanner" role="alert">
           {error}{" "}
           <button className="textButton" onClick={handleRetry}>
             Retry
           </button>
         </div>
+        </Appearance>
       )}
       {viewport ? (
         <ReactFlowProvider key={workspaceId}>
           <Board workspaceId={workspaceId} />
         </ReactFlowProvider>
       ) : (
-        <div className="centerState" role="status">
+        <Appearance><div className="centerState" role="status">
           {error ? "Canvas could not load." : "Loading canvas…"}
-        </div>
+        </div></Appearance>
       )}
     </>
   );

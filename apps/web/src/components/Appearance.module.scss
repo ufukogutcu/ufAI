@@ -1,0 +1,29 @@
+@use "../motion";
+
+@include motion.settle(enter);
+@include motion.settle(enterAgain);
+@include motion.entrance(dialogEnter, 6px);
+@include motion.entrance(dialogEnterAgain, 6px);
+@include motion.fade(fade);
+@include motion.fade(fadeAgain);
+
+.entrance {
+  animation: enter 140ms motion.$ease-out;
+}
+.again { animation-name: enterAgain; }
+.selection { animation: none; }
+.selectionActive {
+  :where([data-appearance-content]) { animation: enter 140ms motion.$ease-out; }
+  &.again :where([data-appearance-content]) { animation-name: enterAgain; }
+}
+.dialog {
+  animation-name: dialogEnter;
+  animation-duration: 200ms;
+  &.again { animation-name: dialogEnterAgain; }
+  &::backdrop { animation: fade 120ms motion.$ease-out; }
+}
+.fade {
+  animation-name: fade;
+  animation-duration: 120ms;
+  &.again { animation-name: fadeAgain; }
+}

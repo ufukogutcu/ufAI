@@ -15,6 +15,7 @@ import { Flowboard } from "../components/Flowboard";
 import { Tooltip } from "../components/Tooltip";
 import styles from "./Home.module.scss";
 import { GlassMaterial } from "../components/GlassMaterial";
+import { Appearance } from "../components/Appearance";
 
 type WorkspaceAction =
   | { kind: "create" }
@@ -89,9 +90,9 @@ function WorkspaceDialog({
                 }
               />
               {fields.name && (
-                <span className="fieldError" id={`${fieldId}-name-error`}>
+                <Appearance kind="fade"><span className="fieldError" id={`${fieldId}-name-error`}>
                   {fields.name}
-                </span>
+                </span></Appearance>
               )}
             </label>
             <label className="field">
@@ -110,20 +111,20 @@ function WorkspaceDialog({
                 empty.
               </span>
               {fields.description && (
-                <span
+                <Appearance kind="fade"><span
                   className="fieldError"
                   id={`${fieldId}-description-error`}
                 >
                   {fields.description}
-                </span>
+                </span></Appearance>
               )}
             </label>
           </>
         )}
         {error && (
-          <p className="error" role="alert">
+          <Appearance kind="fade"><p className="error" role="alert">
             {error}
-          </p>
+          </p></Appearance>
         )}
         <div className="dialogActions">
           <button
@@ -309,17 +310,21 @@ export default function Home() {
           )}
         </div>
         {error && (
+          <Appearance kind="fade">
           <div className="errorBanner" role="alert">
             {error}
             <button className="textButton" onClick={handleRetry}>
               Retry
             </button>
           </div>
+          </Appearance>
         )}
         {active && (
           <header className={`pageHeader ${styles.workspaceHeader}`}>
+            <Appearance trigger={active.id}><div>
             <h1>{active.name}</h1>
             {active.description && <p>{active.description}</p>}
+            </div></Appearance>
           </header>
         )}
       </div>
@@ -333,12 +338,12 @@ export default function Home() {
           {active ? (
             <Flowboard key={active.id} workspaceId={active.id} />
           ) : status === "loading" || status === "idle" ? (
-            <div className="centerState" role="status">
+            <Appearance><div className="centerState" role="status">
               Loading workspaces…
-            </div>
+            </div></Appearance>
           ) : (
             status !== "error" && (
-              <div className="centerState">
+              <Appearance><div className="centerState">
                 <div className="emptyIcon">
                   <Workflow size={28} />
                 </div>
@@ -348,7 +353,7 @@ export default function Home() {
                   Create workspace
                   <ArrowRight size={15} />
                 </button>
-              </div>
+              </div></Appearance>
             )
           )}
         </div>

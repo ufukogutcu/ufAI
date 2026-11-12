@@ -12,6 +12,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import styles from "./Tooltip.module.scss";
+import { Appearance } from "./Appearance";
 
 type Placement = "top" | "right" | "bottom" | "left";
 type TriggerProps = HTMLAttributes<HTMLElement> & {
@@ -80,6 +81,7 @@ export function Tooltip({
     clearTimers();
     tooltipHovered.current = false;
     setPhase("closed");
+    setPosition(null);
   }, [clearTimers]);
 
   function show() {
@@ -216,6 +218,7 @@ export function Tooltip({
         },
       })}
       {open && host && createPortal(
+        <Appearance kind="fade" ready={!!position}>
         <div
           ref={tooltip}
           id={id}
@@ -234,7 +237,8 @@ export function Tooltip({
           }}
         >
           {content}
-        </div>,
+        </div>
+        </Appearance>,
         host,
       )}
     </>

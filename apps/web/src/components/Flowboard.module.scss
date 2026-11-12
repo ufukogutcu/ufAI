@@ -3,15 +3,6 @@
   flex: 1;
   min-height: 0;
   position: relative;
-  background: var(--canvas);
-  &::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(ellipse at 4% 45%, color-mix(in srgb, var(--ambient-glow) 50%, transparent), transparent 50%), radial-gradient(ellipse at 80% 90%, var(--ambient-shade), transparent 60%);
-    pointer-events: none;
-    z-index: 1;
-  }
 }
 .empty {
   position: absolute;

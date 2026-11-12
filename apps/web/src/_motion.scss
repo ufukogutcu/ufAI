@@ -1,0 +1,29 @@
+// Shared entrance primitives. Individual translate preserves positioning transforms.
+$ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+@mixin settle($name) {
+  @keyframes #{$name} {
+    from { translate: 0 2px; }
+    to { translate: none; }
+  }
+}
+
+@mixin entrance($name, $distance: 4px) {
+  @keyframes #{$name} {
+    from {
+      opacity: 0;
+      translate: 0 $distance;
+    }
+    to {
+      opacity: 1;
+      translate: none;
+    }
+  }
+}
+
+@mixin fade($name) {
+  @keyframes #{$name} {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+}

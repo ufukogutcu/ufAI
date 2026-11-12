@@ -90,7 +90,24 @@
   h1 { display: block; margin: 0; font-size: 22px; letter-spacing: -0.035em; }
   p { white-space: pre-wrap; font-size: 13px; margin-top: 8px; max-width: 640px; }
 }
-.canvas { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.canvas {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  isolation: isolate;
+  background: var(--canvas);
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 4% 45%, color-mix(in srgb, var(--ambient-glow) 50%, transparent), transparent 50%), radial-gradient(ellipse at 80% 90%, var(--ambient-shade), transparent 60%);
+    pointer-events: none;
+    z-index: 1;
+  }
+  > :global(.centerState), > :global(.errorBanner) { position: relative; z-index: 2; }
+}
 .workspaceForm { display: flex; flex-direction: column; gap: 16px; }
 @media (max-width: 640px) {
   .workspaceChrome { right: 12px; }

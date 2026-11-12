@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { Tooltip } from "./Tooltip";
 import { GlassMaterial } from "./GlassMaterial";
+import { Appearance } from "./Appearance";
 import styles from "./Dialog.module.scss";
 
 export function Dialog({
@@ -29,6 +30,7 @@ export function Dialog({
     };
   }, []);
   return (
+    <Appearance kind="dialog">
     <dialog
       ref={ref}
       className={`${styles.dialog} glassSurface`}
@@ -58,5 +60,6 @@ export function Dialog({
         {children}
       </div>
     </dialog>
+    </Appearance>
   );
 }

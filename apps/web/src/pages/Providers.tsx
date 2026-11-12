@@ -30,6 +30,7 @@ import { providerOptions } from "../provider-options";
 import { useNavigationGuard, useUnsavedChanges } from "../navigation-guard";
 import { refreshOnFocus } from "../focus-refresh";
 import { Dialog } from "../components/Dialog";
+import { Appearance, AppearanceGroup } from "../components/Appearance";
 import { Field } from "../components/FormField";
 import shared from "./Presets.module.scss";
 import styles from "./Providers.module.scss";
@@ -45,7 +46,7 @@ function ModelEditor({
   connectionId: string;
   model?: ProviderModel;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (createdId?: string) => void;
   onDirty: (dirty: boolean) => void;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
@@ -85,7 +86,7 @@ function ModelEditor({
     setError("");
     setFields({});
     try {
-      await request(
+      const saved = await request<ProviderModel>(
         `/connections/${connectionId}/models${model ? `/${encodeURIComponent(model.id)}` : ""}`,
         model ? "PATCH" : "POST",
         {
@@ -95,7 +96,7 @@ function ModelEditor({
           maxOutputTokensOverride: output === "" ? null : Number(output),
         },
       );
-      onSaved();
+      onSaved(model ? undefined : saved.id);
       onClose();
     } catch (error) {
       setError(errorMessage(error));
@@ -135,9 +136,9 @@ function ModelEditor({
               : "Discard unsaved model changes?"}
           </p>
           {error && (
-            <p className="error" role="alert">
+            <Appearance kind="fade"><p className="error" role="alert">
               {error}
-            </p>
+            </p></Appearance>
           )}
           <div className="dialogActions">
             <button
@@ -235,9 +236,9 @@ function ModelEditor({
             </button>
           </fieldset>
           {error && (
-            <p className="error" role="alert">
+            <Appearance kind="fade"><p className="error" role="alert">
               {error}
-            </p>
+            </p></Appearance>
           )}
           <div className="dialogActions">
             {model && (
@@ -270,10 +271,12 @@ function ModelEditor({
 function ProviderEditor({
   connection,
   onSaved,
+  onCreated,
   onClose,
 }: {
   connection?: ProviderConnection;
   onSaved: (id: string) => void;
+  onCreated: (id: string) => void;
   onClose: () => void;
 }) {
   const [id, setId] = useState(connection?.id ?? null);
@@ -295,6 +298,7 @@ function ProviderEditor({
   const [fields, setFields] = useState<Record<string, string>>({});
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalog, setCatalog] = useState<ModelPage>({ items: [], total: 0 });
+  const [createdModelId, setCreatedModelId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [offset, setOffset] = useState(0);
   const [revision, setRevision] = useState(0);
@@ -322,6 +326,17 @@ function ProviderEditor({
     baseline !== JSON.stringify([provider, name, endpoint, apiKey]);
   useUnsavedChanges(dirty || modelDirty || (!!id && draft));
   const refreshLocal = useCallback(() => setRevision((v) => v + 1), []);
+  function handleModelSaved(createdId?: string) {
+    setCreatedModelId(createdId ?? null);
+    refreshLocal();
+  }
+  function changeModelPage(next: number) {
+    setCreatedModelId(null);
+    setOffset(next);
+  }
+  function clearCreatedModelAppearance() {
+    setCreatedModelId(null);
+  }
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -452,6 +467,7 @@ function ProviderEditor({
       throw new Error("Setup closed.");
     }
     setId(saved.id);
+    if (!id) onCreated(saved.id);
     setName(saved.name);
     setEndpoint(saved.endpoint ?? "");
     setApiKey("");
@@ -592,10 +608,10 @@ function ProviderEditor({
   return (
     <>
       <form className={shared.editor} onSubmit={finish} noValidate>
-        <header className={shared.editorHeading}>
+        <header className={shared.editorHeading} data-appearance-content>
           <h2>{draft ? "Set up Provider" : "Edit Provider"}</h2>
         </header>
-        <fieldset className={shared.fields} disabled={busy || !!testing}>
+        <fieldset className={shared.fields} disabled={busy || !!testing} data-appearance-content>
           <section
             className={`${shared.formSection} ${styles.connectionFields}`}
           >
@@ -708,14 +724,14 @@ function ProviderEditor({
               </button>
             )}
             {provider === "codex" && (
-              <div className={shared.loginArea}>
-                <p role="status">
+              <Appearance><div className={shared.loginArea}>
+                <Appearance kind="fade"><p role="status">
                   {login.status === "connected"
                     ? "Connected to ChatGPT."
                     : login.status === "pending"
                       ? "Finish signing in, then return here."
                       : (login.error ?? "Sign in with your ChatGPT account.")}
-                </p>
+                </p></Appearance>
                 {login.authUrl && login.status === "pending" && (
                   <a
                     className="button primary"
@@ -772,7 +788,7 @@ function ProviderEditor({
                     </button>
                   )}
                 </div>
-              </div>
+              </div></Appearance>
             )}
           </section>
           <section className={shared.formSection}>
@@ -798,9 +814,9 @@ function ProviderEditor({
               </button>
             </div>
             {fields.models && (
-              <p className="fieldError" role="alert">
+              <Appearance kind="fade"><p className="fieldError" role="alert">
                 {fields.models}
-              </p>
+              </p></Appearance>
             )}
             <Field label="Search models">
               {(props) => (
@@ -809,6 +825,7 @@ function ProviderEditor({
                   type="search"
                   value={query}
                   onChange={(event) => {
+                    setCreatedModelId(null);
                     setQuery(event.target.value);
                     setOffset(0);
                   }}
@@ -822,7 +839,8 @@ function ProviderEditor({
             </p>
             <div className={styles.modelList}>
               {catalog.items.map((model) => (
-                <article className={styles.modelRow} key={model.id}>
+                <Appearance kind="fade" key={model.id} ready={model.id === createdModelId}><article className={styles.modelRow} onAnimationEnd={clearCreatedModelAppearance}>
+                  <AppearanceGroup>
                   <div className={styles.modelHeading}>
                     <div>
                       <strong>{model.name}</strong>
@@ -885,7 +903,7 @@ function ProviderEditor({
                     </p>
                   )}
                   {model.lastTest && (
-                    <p
+                    <Appearance kind="fade"><p
                       className={`${styles.status} ${model.lastTest.success ? styles.success : styles.failure}`}
                       role="status"
                     >
@@ -896,9 +914,10 @@ function ProviderEditor({
                       {model.lastTest.success
                         ? model.lastTest.reply
                         : model.lastTest.error}
-                    </p>
+                    </p></Appearance>
                   )}
-                </article>
+                  </AppearanceGroup>
+                </article></Appearance>
               ))}
             </div>
             {dirty && id && (
@@ -907,16 +926,18 @@ function ProviderEditor({
               </p>
             )}
             {catalogLoading && !catalog.items.length && (
-              <p className={shared.listMessage} role="status">
+              <Appearance kind="fade"><p className={shared.listMessage} role="status">
                 Loading saved models…
-              </p>
+              </p></Appearance>
             )}
             {!catalogLoading && !catalog.items.length && (
+              <Appearance kind="fade">
               <p className={shared.listMessage}>
                 {query
                   ? "No matching models."
                   : "No models yet. Load the model list or add a model manually."}
               </p>
+              </Appearance>
             )}
             {catalog.total > 50 && (
               <div className={styles.pagination}>
@@ -924,7 +945,7 @@ function ProviderEditor({
                   type="button"
                   className="textButton"
                   disabled={!offset}
-                  onClick={() => setOffset((v) => Math.max(0, v - 50))}
+                  onClick={() => changeModelPage(Math.max(0, offset - 50))}
                 >
                   Previous
                 </button>
@@ -936,7 +957,7 @@ function ProviderEditor({
                   type="button"
                   className="textButton"
                   disabled={offset + 50 >= catalog.total}
-                  onClick={() => setOffset((v) => v + 50)}
+                  onClick={() => changeModelPage(offset + 50)}
                 >
                   Next
                 </button>
@@ -946,7 +967,7 @@ function ProviderEditor({
         </fieldset>
         <footer className={shared.editorFooter}>
           {error && (
-            <p className="error" role="alert">
+            <Appearance kind="fade"><p className="error" role="alert">
               {error}{" "}
               <button
                 type="button"
@@ -956,15 +977,15 @@ function ProviderEditor({
               >
                 Retry discovery
               </button>
-            </p>
+            </p></Appearance>
           )}
           {testing && (
-            <p className={styles.status} role="status">
+            <Appearance kind="fade"><p className={styles.status} role="status">
               Testing {testing}…{" "}
               <button type="button" className="textButton" onClick={cancelTest}>
                 Cancel test
               </button>
-            </p>
+            </p></Appearance>
           )}
           <div className={shared.footerActions}>
             {id && (
@@ -1000,7 +1021,7 @@ function ProviderEditor({
           model={modelEditor.model}
           onDirty={setModelDirty}
           onClose={() => setModelEditor(null)}
-          onSaved={refreshLocal}
+          onSaved={handleModelSaved}
         />
       )}
       {confirmDelete && (
@@ -1015,9 +1036,9 @@ function ProviderEditor({
             cleared.
           </p>
           {error && (
-            <p className="error" role="alert">
+            <Appearance kind="fade"><p className="error" role="alert">
               {error}
-            </p>
+            </p></Appearance>
           )}
           <div className="dialogActions">
             <button
@@ -1042,6 +1063,7 @@ export default function Providers() {
   const status = useConnections((state) => state.status);
   const error = useConnections((state) => state.error);
   const [selection, setSelection] = useState<string | null>(null);
+  const [createdId, setCreatedId] = useState<string | null>(null);
   const attempt = useNavigationGuard();
   useEffect(() => {
     void load();
@@ -1054,6 +1076,9 @@ export default function Providers() {
   function choose(id: string | null) {
     if (id === selection) return;
     attempt(() => setSelection(id));
+  }
+  function clearCreatedAppearance() {
+    setCreatedId(null);
   }
   return (
     <section className={shared.page} aria-label="Providers">
@@ -1077,31 +1102,35 @@ export default function Providers() {
         </button>
       </header>
       {error && (
+        <Appearance kind="fade">
         <div className="errorBanner" role="alert">
           {error}
           <button className="textButton" onClick={() => void load()}>
             Retry
           </button>
         </div>
+        </Appearance>
       )}
       <div
         className={`${shared.layout} ${selection ? shared.hasSelection : ""}`}
       >
         <aside className={shared.library} aria-label="Provider library">
           {status === "loading" && !connections.length && (
-            <p className={shared.listMessage} role="status">
+            <Appearance kind="fade"><p className={shared.listMessage} role="status">
               Loading Providers…
-            </p>
+            </p></Appearance>
           )}
           {status === "ready" && !connections.length && (
+            <Appearance kind="fade">
             <p className={shared.listMessage}>
               No Providers yet. Connect a service to get started.
             </p>
+            </Appearance>
           )}
           <div className={shared.presetList}>
             {connections.map((connection) => (
-              <button
-                key={connection.id}
+              <Appearance key={connection.id} kind="fade" ready={connection.id === createdId}><button
+                onAnimationEnd={clearCreatedAppearance}
                 className={`${shared.presetItem} ${selection === connection.id ? styles.selected : ""}`}
                 aria-current={selection === connection.id ? "true" : undefined}
                 onClick={() => choose(connection.id)}
@@ -1115,11 +1144,11 @@ export default function Providers() {
                     {connection.draft ? " · Finish setup" : ""}
                   </small>
                 </span>
-              </button>
+              </button></Appearance>
             ))}
           </div>
         </aside>
-        <div className={shared.detail}>
+        <Appearance kind="selection" trigger={selection}><div className={shared.detail}>
           {selection &&
           (selection === "new" ||
             connections.some((c) => c.id === selection)) ? (
@@ -1137,6 +1166,7 @@ export default function Providers() {
                 key={selection}
                 connection={connections.find((c) => c.id === selection)}
                 onSaved={(id) => setSelection(id)}
+                onCreated={setCreatedId}
                 onClose={() => setSelection(null)}
               />
             </>
@@ -1150,7 +1180,7 @@ export default function Providers() {
               </p>
             </div>
           )}
-        </div>
+        </div></Appearance>
       </div>
     </section>
   );

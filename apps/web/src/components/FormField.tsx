@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from "react";
+import { Appearance } from "./Appearance";
 export function Field({
   label,
   error,
@@ -16,7 +17,7 @@ export function Field({
 }) {
   const id = useId();
   return (
-    <div className="field">
+    <Appearance><div className="field">
       <label htmlFor={id}>{label}</label>
       {children({
         id,
@@ -24,10 +25,12 @@ export function Field({
         "aria-describedby": error || hint ? `${id}-help` : undefined,
       })}
       {(error || hint) && (
+        <Appearance kind="fade">
         <span id={`${id}-help`} className={error ? "fieldError" : "fieldHint"}>
           {error ?? hint}
         </span>
+        </Appearance>
       )}
-    </div>
+    </div></Appearance>
   );
 }
