@@ -3,6 +3,9 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyError } from "fastify";
 import fastifyStatic from "@fastify/static";
+import { ConnectionService } from "./connection-service.js";
+import { AgentExecution, type ExecutionOptions } from "./agent-execution.js";
+import { registerAgents } from "./agents.js";
 import { registerSettings } from "./settings.js";
 import { registerThemes } from "./themes.js";
 import { openDatabase } from "./database.js";
@@ -52,6 +55,7 @@ export function createApp(
     logger?: boolean;
     serveStatic?: boolean;
     connections?: ConnectionOptions;
+    execution?: ExecutionOptions;
   } = {},
 ) {
   const app = Fastify({
@@ -90,11 +94,16 @@ export function createApp(
   app.addHook("onClose", async () => {
     database.close();
   });
+  const connections = new ConnectionService(database, options.connections?.fetcher, options.connections?.codex);
   const validatePresetConnection = registerConnections(
     app,
     database,
     options.connections,
+    connections,
   );
+  const execution = new AgentExecution(database, connections, options.execution);
+  registerAgents(app, database, execution);
+  app.addHook("onClose", async () => execution.close());
 
   const workspaceList = database.prepare(
     "SELECT * FROM workspaces ORDER BY createdAt, id LIMIT ? OFFSET ?",
@@ -164,7 +173,10 @@ export function createApp(
   app.delete<{ Params: { id: string } }>(
     "/api/workspaces/:id",
     async (request, reply) => {
-      const removed = database.transaction(() => {
+      if (!workspaceGet.get(request.params.id)) return reply.code(404).send({ error: "Workspace not found." });
+      let removed = false;
+      await execution.deleteWorkspace(request.params.id, () => {
+      removed = database.transaction(() => {
         const workspace = workspaceGet.get(request.params.id) as
           | Workspace
           | undefined;
@@ -193,6 +205,7 @@ export function createApp(
         workspaceDelete.run(workspace.id);
         return true;
       })();
+      });
       if (!removed)
         return reply.code(404).send({ error: "Workspace not found." });
       return reply.code(204).send();

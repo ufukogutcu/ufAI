@@ -801,6 +801,30 @@
       "region": "dashboard",
       "light": "#25252e0a",
       "dark": "#00000042"
+    },
+    "agent-node-shadow": {
+      "cssVariable": "--agent-node-shadow",
+      "label": "Agent node shadow",
+      "description": "Depth beneath agent nodes on the workspace canvas.",
+      "components": [
+        "Agent node shadow"
+      ],
+      "group": "Decorative effects",
+      "region": "canvas",
+      "light": "#00000014",
+      "dark": "#00000040"
+    },
+    "agent-panel-shadow": {
+      "cssVariable": "--agent-panel-shadow",
+      "label": "Agent panel shadow",
+      "description": "Depth beneath the focused agent conversation panel.",
+      "components": [
+        "Agent panel shadow"
+      ],
+      "group": "Decorative effects",
+      "region": "canvas",
+      "light": "#0000001a",
+      "dark": "#00000066"
     }
   }
 }

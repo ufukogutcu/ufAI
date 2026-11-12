@@ -1,3 +1,4 @@
+import { useNavigationGuard } from "../navigation-guard";
 import { useSettings } from "../settings-store";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import {
@@ -11,6 +12,7 @@ import {
 import { useDashboard } from "../store";
 import { errorMessage, RequestError } from "../api";
 import { Dialog } from "../components/Dialog";
+import { useAgentStore, useAgents } from "../agent-store";
 import { Flowboard } from "../components/Flowboard";
 import { Tooltip } from "../components/Tooltip";
 import styles from "./Home.module.scss";
@@ -70,7 +72,8 @@ function WorkspaceDialog({
         {action.kind === "delete" ? (
           <p>
             Delete <strong>{action.name}</strong>? This permanently removes the
-            workspace and cannot be undone.
+            workspace, its agents, conversations, and memories, and cancels its
+            work. This cannot be undone.
           </p>
         ) : (
           <>
@@ -90,9 +93,11 @@ function WorkspaceDialog({
                 }
               />
               {fields.name && (
-                <Appearance kind="fade"><span className="fieldError" id={`${fieldId}-name-error`}>
-                  {fields.name}
-                </span></Appearance>
+                <Appearance kind="fade">
+                  <span className="fieldError" id={`${fieldId}-name-error`}>
+                    {fields.name}
+                  </span>
+                </Appearance>
               )}
             </label>
             <label className="field">
@@ -111,20 +116,24 @@ function WorkspaceDialog({
                 empty.
               </span>
               {fields.description && (
-                <Appearance kind="fade"><span
-                  className="fieldError"
-                  id={`${fieldId}-description-error`}
-                >
-                  {fields.description}
-                </span></Appearance>
+                <Appearance kind="fade">
+                  <span
+                    className="fieldError"
+                    id={`${fieldId}-description-error`}
+                  >
+                    {fields.description}
+                  </span>
+                </Appearance>
               )}
             </label>
           </>
         )}
         {error && (
-          <Appearance kind="fade"><p className="error" role="alert">
-            {error}
-          </p></Appearance>
+          <Appearance kind="fade">
+            <p className="error" role="alert">
+              {error}
+            </p>
+          </Appearance>
         )}
         <div className="dialogActions">
           <button
@@ -148,6 +157,10 @@ function WorkspaceDialog({
 }
 
 export default function Home() {
+  const guard = useNavigationGuard();
+  const agentStore = useAgentStore();
+  const agentError = useAgents((s) => s.positionError || s.error);
+  const agentConnected = useAgents((s) => s.connected);
   const workspaces = useDashboard((state) => state.workspaces);
   const activeId = useSettings(
     (state) => state.snapshot.settings.activeWorkspaceId,
@@ -178,7 +191,8 @@ export default function Home() {
       const bounds = list!.getBoundingClientRect();
       const tab = selected!.getBoundingClientRect();
       if (tab.left < bounds.left) list!.scrollLeft -= bounds.left - tab.left;
-      else if (tab.right > bounds.right) list!.scrollLeft += tab.right - bounds.right;
+      else if (tab.right > bounds.right)
+        list!.scrollLeft += tab.right - bounds.right;
     }
     function scheduleReveal() {
       cancelAnimationFrame(frame);
@@ -194,28 +208,34 @@ export default function Home() {
     };
   }, [activeId, tabs.length]);
   function select(id: string) {
-    void updateSettings({ activeWorkspaceId: id });
+    if (id !== activeId)
+      guard(() => void updateSettings({ activeWorkspaceId: id }));
   }
   useEffect(() => {
     if (status === "idle") void load();
   }, [load, status]);
   function handleCreate() {
-    setAction({ kind: "create" });
+    guard(() => setAction({ kind: "create" }));
   }
   function handleClose() {
     setAction(null);
   }
   function handleEdit() {
     if (active)
-      setAction({
-        kind: "edit",
-        id: active.id,
-        name: active.name,
-        description: active.description,
-      });
+      guard(() =>
+        setAction({
+          kind: "edit",
+          id: active.id,
+          name: active.name,
+          description: active.description,
+        }),
+      );
   }
   function handleDelete() {
-    if (active) setAction({ kind: "delete", id: active.id, name: active.name });
+    if (active)
+      guard(() =>
+        setAction({ kind: "delete", id: active.id, name: active.name }),
+      );
   }
   function handleRetry() {
     void load(!!workspaces.length);
@@ -228,7 +248,12 @@ export default function Home() {
       <div className={styles.workspaceChrome}>
         <div className={`${styles.workspaceBar} glassSurface`}>
           <GlassMaterial />
-          <div ref={tabList} className={styles.tabs} role="tablist" aria-label="Workspaces">
+          <div
+            ref={tabList}
+            className={styles.tabs}
+            role="tablist"
+            aria-label="Workspaces"
+          >
             {tabs.map((workspace, index) => (
               <button
                 key={workspace.id}
@@ -288,6 +313,15 @@ export default function Home() {
           </Tooltip>
           {active && (
             <div className={styles.workspaceActions}>
+              <button
+                className="button"
+                onClick={() =>
+                  guard(() => agentStore.setState({ createIn: active.id }))
+                }
+              >
+                <Plus size={15} />
+                Add Agent
+              </button>
               <Tooltip content="Edit workspace">
                 <button
                   className="iconButton"
@@ -309,22 +343,38 @@ export default function Home() {
             </div>
           )}
         </div>
-        {error && (
-          <Appearance kind="fade">
+        {agentError && (
           <div className="errorBanner" role="alert">
-            {error}
-            <button className="textButton" onClick={handleRetry}>
-              Retry
+            {agentError}{" "}
+            <button
+              className="textButton"
+              onClick={() => void agentStore.getState().retryPositions()}
+            >
+              Retry saves
             </button>
           </div>
+        )}
+        {!agentConnected && (
+          <p role="status">Live updates disconnected. Reconnecting…</p>
+        )}
+        {error && (
+          <Appearance kind="fade">
+            <div className="errorBanner" role="alert">
+              {error}
+              <button className="textButton" onClick={handleRetry}>
+                Retry
+              </button>
+            </div>
           </Appearance>
         )}
         {active && (
           <header className={`pageHeader ${styles.workspaceHeader}`}>
-            <Appearance trigger={active.id}><div>
-            <h1>{active.name}</h1>
-            {active.description && <p>{active.description}</p>}
-            </div></Appearance>
+            <Appearance trigger={active.id}>
+              <div>
+                <h1>{active.name}</h1>
+                {active.description && <p>{active.description}</p>}
+              </div>
+            </Appearance>
           </header>
         )}
       </div>
@@ -338,22 +388,26 @@ export default function Home() {
           {active ? (
             <Flowboard key={active.id} workspaceId={active.id} />
           ) : status === "loading" || status === "idle" ? (
-            <Appearance><div className="centerState" role="status">
-              Loading workspaces…
-            </div></Appearance>
+            <Appearance>
+              <div className="centerState" role="status">
+                Loading workspaces…
+              </div>
+            </Appearance>
           ) : (
             status !== "error" && (
-              <Appearance><div className="centerState">
-                <div className="emptyIcon">
-                  <Workflow size={28} />
+              <Appearance>
+                <div className="centerState">
+                  <div className="emptyIcon">
+                    <Workflow size={28} />
+                  </div>
+                  <h2>Make room for an idea</h2>
+                  <p>Create your first workspace to open a flowboard.</p>
+                  <button className="button primary" onClick={handleCreate}>
+                    Create workspace
+                    <ArrowRight size={15} />
+                  </button>
                 </div>
-                <h2>Make room for an idea</h2>
-                <p>Create your first workspace to open a flowboard.</p>
-                <button className="button primary" onClick={handleCreate}>
-                  Create workspace
-                  <ArrowRight size={15} />
-                </button>
-              </div></Appearance>
+              </Appearance>
             )
           )}
         </div>

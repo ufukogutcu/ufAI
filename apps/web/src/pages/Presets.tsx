@@ -242,8 +242,8 @@ function PresetEditor({
             </p></Appearance>
           ) : null}
           <p className={styles.compactionHelp}>
-            Optional configuration. Agent execution and compaction are not
-            available yet.
+            Agents compact long task conversations automatically. Leave this empty
+            to use an 80% threshold; execution may compact earlier to fit safely.
           </p>
         </section>
       </fieldset>

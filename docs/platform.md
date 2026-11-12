@@ -4,7 +4,7 @@
 
 ufAI is a local-first application for one user to organize AI agents and related work across multiple workspaces in a browser. Its intended experience includes configurable agents, communication permissions, reusable skills, instructions, and triggers.
 
-**Current availability: early functional dashboard.** Users can manage workspaces and empty flowboards, save Agent Presets and Providers, discover and test models, connect local Ollama servers, sign in to Codex with ChatGPT, inspect subscription usage and use earned resets, and customize themes. Settings currently contains a heading only. Agent editing/execution, general inference, actual compaction, messaging, triggers, and the built-in assistant are not available. Model testing sends a short prompt only.
+**Current availability: text-only agents and dashboard.** Users can manage workspaces, create agents on their flowboards, run separate task conversations, ask for live workload updates, and inspect learned memory. Agent Presets, saved Providers, model discovery/tests, Codex sign-in and usage, Ollama setup, themes, and automatic task-context compaction are available. Agents cannot use external tools, change files, contact other agents, or run scheduled/event work. Interfaces, Triggers, skills, and the built-in assistant remain planned. Settings currently contains a heading only.
 
 One local installation holds one shared setup across browser sessions. There are no ufAI application accounts or separate profiles for each browser. Sign-in connects an external provider/runtime account; it does not create a ufAI account. See the [terminology and feature-status guide](README.md) when explaining these distinctions.
 
@@ -20,7 +20,7 @@ One local installation holds one shared setup across browser sessions. There are
 ### saved-data
 
 - **Status:** implemented
-- **Purpose:** Keep saved workspaces, Agent Presets, Providers, custom themes, and application preferences on this local installation.
+- **Purpose:** Keep saved agents, task transcripts, memories, workspaces, Agent Presets, Providers, custom themes, and application preferences on this local installation.
 - **Behavior:** Saved records survive closing the browser and restarting ufAI. The selected workspace, active theme, and completed canvas pan/zoom positions are shared across browser sessions. Unsaved forms, open dialogs, and navigation history are temporary.
 - **Limitations:** Saving and viewing data requires the local application to be reachable. There is no built-in backup, import, or export tool. Connection credentials and the rest of the saved installation data must be kept together when making a manual backup. Deleting saved records requires confirmation and has no in-app undo.
 
@@ -55,14 +55,53 @@ One local installation holds one shared setup across browser sessions. There are
 - **Steps:** On Home, use the plus button to create a workspace and its tab to select it. Create and Edit workspace accept a required name and an optional description of up to 4,000 characters. The selected workspace's description appears beneath its name when provided. Edit and delete controls apply to the active workspace.
 - **Saving and switching:** Save stores both fields; Cancel discards edits, and failed saves retain entered values for retry. Creating a workspace selects it. Arrow keys, Home, and End navigate tabs. Additional workspaces load through the load-more control.
 - **Deletion:** Confirmation is required. Deleting the selected workspace selects the next neighboring workspace, then the previous one if needed. Deleting every workspace leaves an empty state; restarting ufAI does not recreate the deleted workspace.
-- **Limitations:** Workspaces currently contain names, descriptions, and empty [flowboards](#agent-canvas). Agent configuration, communication permissions, resources, and execution are not available.
+- **Limitations:** Workspaces contain agents and their [flowboards](#agent-canvas). Communication permissions, shared resources, and automatic workflows remain planned. Deleting a workspace cancels its work and removes its agents, transcripts, and memories.
 
 ### agent-canvas
 
 - **Status:** partial
 - **Purpose:** Provide a visual board for each workspace.
 - **Steps:** Drag to pan, scroll to zoom, or use the zoom and reset-view buttons. Each workspace remembers its own completed view changes across reloads and restarts.
-- **Limitations:** The board has no agent nodes, editing tools, communication connections, or execution yet. Failed view loads or saves offer Retry. An unsaved view may remain visible during a save failure, but it is not durable until the save succeeds.
+- **Limitations:** Choose Add Agent in the workspace toolbar, then open its node to configure it or chat. Drag nodes to arrange them, or focus their name button and use arrow keys. Positions are saved after movement. Agent-to-agent connection lines are not available. Failed position saves offer Retry saves; unsaved positions are not durable until saved.
+
+### agent-configuration
+
+- **Status:** partial
+- **Purpose:** Give an agent a persistent name, instructions, and live Agent Preset within one workspace.
+- **Steps:** Choose Add Agent on Home. Save its name, optional instructions, and preset, then open the node’s Configuration section to edit it. An agent may be saved without a complete preset.
+- **Limitations:** Execution requires an enabled saved model, usable credentials, and a known context window of at least 1,024 tokens. Skills and external-tool permissions are not implemented. Deleting an agent requires confirmation and removes its work and memory.
+
+### agent-execution
+
+- **Status:** implemented
+- **Purpose:** Run text-only work in separate task conversations.
+- **Steps:** Open an agent, choose Tasks, then New Task. Follow-ups stay in that task. A follow-up to a completed task reopens it. The agent decides whether it has finished or needs another response.
+- **Behavior:** One ordinary turn per agent runs at a time; other tasks queue. Different agents can run concurrently, subject to Provider capacity. Closing the panel or browser does not stop work while the local server and machine remain running. Stop cancels active and queued turns for that task. Retry restarts a failed or blocked attempt using the current preset. Original transcripts remain available after context summaries are made.
+- **Recovery:** Queued requests survive a server restart. Interrupted generation requires explicit Retry and can leave an incomplete reply. An already-saved answer is retained if its later memory update fails.
+- **Limitations:** No external tools, file operations, attachments, other-agent messages, or background actions are available. Replies and summaries can be wrong. Provider errors, output limits, and context limits can interrupt work. Recall, compaction, memory maintenance, and status replies can make extra requests to the selected Provider and consume its usage. Actual work cannot continue while the local backend is stopped or the machine is asleep.
+
+### agent-status
+
+- **Status:** implemented
+- **Purpose:** Ask what an agent is doing without interrupting its ordinary task.
+- **Steps:** Open Overview, inspect the live workload, or ask a natural-language question in Ask status. Select a listed task to inspect its conversation.
+- **Behavior:** The status conversation reads a timestamped workload snapshot and recent summaries. It cannot change ordinary tasks or learned memory.
+- **Limitations:** Status responses share Provider capacity and may wait. Running means execution is active; it is not a promise of progress or success. Status questions in a normal task composer join that task’s queue instead.
+
+### agent-memory
+
+- **Status:** partial
+- **Purpose:** Carry useful preferences and past findings between an agent’s isolated tasks.
+- **Behavior:** The agent automatically maintains a work summary and may learn lasting preferences or findings after successful replies. New tasks receive bounded shared memories and can retrieve relevant history. Memory entries link to source messages; findings are not independently verified.
+- **Steps:** Open Memory to inspect entries, view their sources, edit them, or choose Forget. Forgetting an entry preserves its original transcript and suppresses automatic updates to that remembered topic.
+- **Limitations:** Recall is selective and does not guarantee every relevant past detail will be found. Memory is scoped to one agent. A memory update can fail without losing the answer. Editing memory does not edit the agent’s configured instructions or grant permissions.
+
+### agent-compaction
+
+- **Status:** implemented
+- **Purpose:** Keep long task context within the selected model’s saved capacity.
+- **Behavior:** Older complete exchanges are summarized automatically at the preset threshold or an earlier safety limit. An empty threshold uses 80%. Recent context and the new input remain available, while original transcripts stay saved.
+- **Limitations:** Summaries can lose details. An unknown capacity must be configured on Providers before running. If a summary fails or the task still cannot fit, Retry or start a smaller New Task. Saved capacity does not enlarge the actual model window.
 
 ### model-presets
 
@@ -73,7 +112,7 @@ One local installation holds one shared setup across browser sessions. There are
 - **Compaction:** Leave the threshold empty for no configuration, or enter a percentage from 1–100 or a positive whole token count. Percentage thresholds round down with a minimum of one token; unknown context displays Unknown. Changing the threshold unit clears its value. A threshold exceeding known context shows a warning and can still be saved.
 - **Saving:** Only the name is required. Save stores the preset; failed saves retain the draft. Cancel and navigation protect unsaved edits. Returning to the library keeps it visible until you choose an item or revisit the page. Deletion requires confirmation; deleting the open preset opens the top remaining preset, or a new form if none remain. Deleting its Provider clears Provider/model selections; removing its model clears only the model selection. Names and compaction are preserved.
 - **Upgrade behavior:** Previously linked presets keep their Provider/model choices. Older unlinked presets retain their names and compaction, with Provider/model fields cleared. Conflicting historical model context windows are shown for review in Providers.
-- **Limitations:** Presets do not create, run, or trigger agents, and do not execute compaction. Incomplete presets are permitted; future agent execution will need to validate them. Changes from other sessions refresh on returning to the page; unsaved drafts remain protected.
+- **Limitations:** Presets supply live model/runtime and compaction choices to linked agents. Editing a preset affects later turns, while a running turn keeps its starting configuration. Incomplete presets may be saved but cannot run; deleting a preset leaves linked agents needing a new selection. Changes from other sessions refresh on returning to the page; unsaved drafts remain protected.
 
 ### provider-connections
 
@@ -87,16 +126,16 @@ One local installation holds one shared setup across browser sessions. There are
 - **Context:** Edit a model to see its automatic context window and optionally override it. A blank override uses the automatic value, which remains Unknown when unavailable. Refresh updates automatic context values for existing models, including previously Unknown values, while retaining manual overrides. When a known fetched context differs from a manual context, a warning beside the model shows both values. Choose Use automatic context to save that change immediately and follow future automatic updates; unsaved Provider changes are preserved. Failed changes leave the manual context in place and show an error beside the action. Reset context to automatic in Edit clears the context override when saved. Model changes save independently of the connection form.
 - **Testing:** Test sends “Reply with OK.” through the selected model. A nonempty completed assistant reply confirms that it answered; the exact wording can differ. The latest result shows its time, duration, and a short reply or error. Tests may consume provider usage. Tests have a two-minute deadline and can be cancelled; replacing credentials or endpoints clears previous results. A successful test does not measure the configured context capacity or guarantee future access.
 - **Privacy:** Credentials stay on the local backend. Saved API keys are encrypted and never returned to the browser. Provider records belong to the shared local installation. Deleting a Provider removes its local model records and credentials; it does not revoke an upstream API key.
-- **Limitations:** Discovery requires a reachable service and credentials where applicable. A model appearing in a catalog is not proof of account access. Discovery failures leave the previous saved list intact. Custom and Ollama endpoints require HTTPS except for loopback HTTP. Provider setup and prompt tests do not enable general agent execution.
+- **Limitations:** Discovery requires a reachable service and credentials where applicable. A model appearing in a catalog is not proof of account access. Discovery failures leave the previous saved list intact. Custom and Ollama endpoints require HTTPS except for loopback HTTP. To use a saved Provider for tasks, select it in an Agent Preset and link that preset to an agent.
 
 ### runtime-connections
 
 - **Status:** partial
-- **Purpose:** Connect Codex using a ChatGPT subscription for model discovery and short model tests.
+- **Purpose:** Connect Codex using a ChatGPT subscription for model discovery, short model tests, and text-only agent tasks.
 - **Steps:** Create a Codex configuration on Providers and choose Sign in with ChatGPT. Follow Continue to ChatGPT and return after sign-in. A device code is an alternative. After sign-in, ufAI tries to load models. Reconnect, cancel sign-in, or sign out from the same page.
 - **Behavior:** Codex is bundled with ufAI; a separate global CLI installation is not required. Model testing creates a temporary conversation solely for the short prompt. Signing out clears prior model-test results but keeps model configurations and preset bindings.
-- **Model context:** Discovery uses each model's default context window from the Codex catalog for that Provider, with bundled defaults as a fallback. Refresh models updates existing saved models. Context remains Unknown if neither catalog supplies a valid value. Explicit context overrides are retained. These values describe catalog defaults and do not configure runtime context capacity or enable compaction.
-- **Limitations:** Account entitlement and the bundled runtime determine availability. A subscription does not imply access to the separate OpenAI API. General Codex tasks, agent runs, and persistent conversations are not provided.
+- **Model context:** Discovery uses each model's default context window from the Codex catalog for that Provider, with bundled defaults as a fallback. Refresh models updates existing saved models. Context remains Unknown if neither catalog supplies a valid value. Explicit context overrides are retained. These values describe catalog defaults; they do not enlarge the model’s actual capacity. Agents use the saved value to budget and compact their task context.
+- **Limitations:** Account entitlement and the bundled runtime determine availability. A subscription does not imply access to the separate OpenAI API. Text-only task conversations are supported through saved Agent Presets. External Codex tools, file access, commands, and collaboration are disabled. The pinned runtime does not expose a hard output-token setting; replies use a requested budget, a text-size limit, and cancellation.
 
 ### codex-usage-dock
 
@@ -106,12 +145,12 @@ One local installation holds one shared setup across browser sessions. There are
 - **Details:** The dialog shows every reported quota bucket, used and remaining percentages, exact reset times, available credit information, and an earned-reset count with any supplied individual details. Unknown values stay unknown. Disconnected Providers remain visible with a sign-in indicator; sign in from Providers. Setup drafts do not appear in the usage menu.
 - **Refresh:** Usage refreshes when the app opens, when you return to a visible tab, when details open, and every minute while the tab is visible. Refresh in the dialog requests a fresh snapshot. A failed refresh keeps previous data with an error and its original update time. A countdown reaching zero requests another check; it does not establish that access has recovered.
 - **Use a reset:** Choose Use reset beside an available, unexpired Codex reset, then confirm consumption. When individual details are unavailable, Use next available reset lets Codex choose one. The dialog waits for the result before allowing dismissal. An uncertain request offers Retry previous reset attempt, which checks the same logical redemption rather than spending another reset. Do not assume success from a network error; refresh usage and read the returned result.
-- **Limitations:** Resets affect eligible windows only. Codex may report no eligible window or no remaining reset. Detail lists may be incomplete even when the available count is known. Credit balances and earned resets are different; credit purchasing, automatic reset use, token-history analytics, and general agent execution are not provided. Multiple Providers connected to the same external account share that account's actual allowance. Usage snapshots and open dialogs are temporary.
+- **Limitations:** Resets affect eligible windows only. Codex may report no eligible window or no remaining reset. Detail lists may be incomplete even when the available count is known. Credit balances and earned resets are different; credit purchasing, automatic reset use, and token-history analytics are not provided. Multiple Providers connected to the same external account share that account's actual allowance. Usage snapshots and open dialogs are temporary.
 
 ## Common questions
 
-- **Why is the board empty?** Agent editing and execution are not available yet. Creating a workspace or preset does not create or run an agent.
-- **Why does compaction do nothing?** Its threshold is saved configuration only; compaction execution is not available.
+- **Why is the board empty?** Add Agent creates an agent in the selected workspace. Creating a workspace or preset alone does not create an agent.
+- **Why is a task blocked?** Open its error details. Choose a complete Agent Preset, enable its model, set an unknown context window on Providers, or reconnect credentials as needed, then use Retry. ufAI never silently selects another Provider.
 - **Why won't ufAI open?** Check that the local installation is running and that the browser is using its configured address. The documentation cannot establish the current state of the user's machine.
 - **Why are models missing?** Check the selected connection and sign-in, and make sure the model is checked and saved on Providers. You can also refresh its models or add a manual model ID there. Discovery results and account access can differ.
 - **Why did my theme or workspace change in another browser?** All sessions share the same local setup. There are no separate per-browser accounts or preference profiles.
@@ -124,7 +163,7 @@ These capabilities are not available yet. This is product direction, not a relea
 
 | Capability ID | Status | Intended purpose | Current limitation |
 | --- | --- | --- | --- |
-| `agent-configuration` | planned | Configure agents with instructions, skills, permissions, and a model/runtime | Agent creation and execution are unavailable |
 | `agent-messaging` | planned | Let permitted agents communicate | Messaging and communication permissions are unavailable |
-| `agent-triggers` | planned | Start work manually, on a schedule, or from events | Agent runs, scheduling, and triggers are unavailable |
+| `agent-triggers` | planned | Start work on a schedule or from events | Manual task conversations exist; schedules and event Triggers are unavailable |
+| `agent-interfaces` | planned | Contact agents through services such as Telegram or Discord | Only ufAI conversations are available |
 | `platform-assistant` | planned | Help users understand ufAI and configure their workspaces | No built-in assistant or automatic use of these documents is connected yet |

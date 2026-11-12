@@ -1,7 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { rm } from "node:fs/promises";
 import type Database from "better-sqlite3";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type {
@@ -11,8 +8,8 @@ import type {
   ProviderConnection,
   ModelTestResult,
 } from "./contracts.js";
-import { ConnectionSecrets } from "./connection-secrets.js";
-import { CodexRuntime, type CodexAdapter } from "./codex-runtime.js";
+import { ConnectionService } from "./connection-service.js";
+import { type CodexAdapter } from "./codex-runtime.js";
 import {
   connectionProviders,
   ConnectionError,
@@ -33,7 +30,7 @@ export interface ConnectionOptions {
   discoveryTimeoutMs?: number;
   testTimeoutMs?: number;
 }
-function guard(request: FastifyRequest) {
+export function guard(request: FastifyRequest) {
   const host = request.headers.host;
   const allowedHosts = new Set([
     "localhost",
@@ -59,14 +56,9 @@ export function registerConnections(
   app: FastifyInstance,
   database: Database.Database,
   options: ConnectionOptions = {},
+  service = new ConnectionService(database, options.fetcher, options.codex),
 ) {
-  const memory = database.name === ":memory:" || !database.name;
-  const directory = memory
-    ? join(tmpdir(), `ufai-connections-${randomUUID()}`)
-    : `${database.name}.connections`;
-  const secrets = new ConnectionSecrets(memory ? null : directory);
-  const codex = options.codex ?? new CodexRuntime(join(directory, "codex"));
-  const models = new ProviderModels(database);
+  const { secrets, codex, models } = service;
   const tests = new Map<string, AbortController>();
   const testCompletions = new Map<string, Promise<void>>();
   const deleting = new Set<string>();
@@ -100,7 +92,7 @@ export function registerConnections(
     return row;
   }
   function editable(id: string) {
-    if (inFlight.has(id) || tests.has(id) || usageWork.has(id))
+    if (service.busy(id) || inFlight.has(id) || tests.has(id) || usageWork.has(id))
       throw new ConnectionError(
         "Model discovery is still running. Please retry shortly.",
         409,
@@ -356,7 +348,9 @@ export function registerConnections(
             "Model discovery is busy. Retry shortly.",
             429,
           );
+        const release = service.claim(row.id, "exclusive");
         running = (async () => {
+          try {
           const discovered =
             row.provider === "codex"
               ? await codex.models(row.id)
@@ -376,6 +370,7 @@ export function registerConnections(
                   );
           models.merge(row.id, discovered);
           return discovered;
+          } finally { release(); }
         })();
         inFlight.set(row.id, running);
         void running.finally(() => inFlight.delete(row.id)).catch(() => {});
@@ -447,6 +442,7 @@ export function registerConnections(
         );
       const model = models.get(row.id, request.params.modelId);
       if (!model) throw new ConnectionError("Model not found.", 404);
+      const release = service.claim(row.id, "exclusive");
       const controller = new AbortController();
       const timeout = setTimeout(
         () => controller.abort(),
@@ -508,6 +504,7 @@ export function registerConnections(
         models.tested(row.id, model.id, result);
       } finally {
         testCompletions.delete(row.id);
+        release();
         settle();
       }
       return result;
@@ -614,8 +611,7 @@ export function registerConnections(
       ...testCompletions.values(),
       ...usageWork.values(),
     ]);
-    await codex.close();
-    if (memory) await rm(directory, { recursive: true, force: true });
+    await service.close();
   });
   return function resolvePreset(
     input: PresetConfiguration,

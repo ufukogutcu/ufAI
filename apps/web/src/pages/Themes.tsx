@@ -213,7 +213,9 @@ function ThemePreview({
                     <GlassMaterial />
                     − &nbsp; 100% &nbsp; +
                   </span>
-                  <small>React Flow</small>
+                  <div className={styles.agentSample}>Researcher<small>Ready · 0 queued</small></div>
+                  <div className={styles.agentPanelSample}>Agent conversation</div>
+                  <small>Workspace canvas</small>
                 </div>
               )}
               {region.id === "dialog" && (

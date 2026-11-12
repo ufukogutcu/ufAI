@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
+import { migrateExecution } from "./execution-schema.js";
 
 const defaultPath = fileURLToPath(
   new URL("../../../data/ufai.sqlite", import.meta.url),
@@ -18,7 +19,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 9)
+    if (version > 10)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -179,6 +180,10 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
         `);
         database.pragma("user_version = 9");
       })();
+    if (version < 10) database.transaction(() => {
+      migrateExecution(database);
+      database.pragma("user_version = 10");
+    })();
   } catch (error) {
     database.close();
     throw error;

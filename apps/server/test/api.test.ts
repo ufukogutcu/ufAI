@@ -1,3 +1,4 @@
+import { removeExecutionTables } from "./legacy-schema.js";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -372,6 +373,7 @@ test("version 3 migration adds empty descriptions without changing existing work
   old
     .prepare("INSERT INTO workspace_viewports VALUES (?, 12, -24, 1.5)")
     .run(workspace.id);
+  removeExecutionTables(old);
   old.exec(
     "DROP TABLE provider_models; DROP INDEX model_presets_connection; ALTER TABLE model_presets DROP COLUMN connectionId; DROP TABLE connections; ALTER TABLE model_presets ADD COLUMN maxOutputTokens INTEGER; ALTER TABLE model_presets ADD COLUMN notes TEXT NOT NULL DEFAULT ''; ALTER TABLE workspaces DROP COLUMN description; PRAGMA user_version = 3;",
   );
@@ -406,12 +408,12 @@ test("newer database versions fail without downgrading schema", async (t) => {
   t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "test.sqlite");
   const db = openDatabase(path);
-  assert.equal(db.pragma("user_version", { simple: true }), 9);
+  assert.equal(db.pragma("user_version", { simple: true }), 10);
   assert.equal(db.pragma("foreign_keys", { simple: true }), 1);
-  db.pragma("user_version = 10");
+  db.pragma("user_version = 11");
   db.close();
   assert.throws(() => openDatabase(path), /newer version/);
   const inspection = new Database(path, { readonly: true });
-  assert.equal(inspection.pragma("user_version", { simple: true }), 10);
+  assert.equal(inspection.pragma("user_version", { simple: true }), 11);
   inspection.close();
 });

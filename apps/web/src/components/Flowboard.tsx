@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useRef } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -7,9 +7,22 @@ import {
   ReactFlowProvider,
   useReactFlow,
   useViewport,
+  useNodesState,
+  type NodeProps,
   type Viewport,
 } from "@xyflow/react";
 import { Minus, Plus, Scan, Workflow } from "lucide-react";
+import {
+  useAgents,
+  useAgentStore,
+  emptyNodes,
+  type AgentFlowNode,
+} from "../agent-store";
+import { AgentPanel, AgentForm } from "./AgentPanel";
+import { Dialog } from "./Dialog";
+import { refreshOnFocus } from "../focus-refresh";
+import { useNavigationGuard } from "../navigation-guard";
+import agentStyles from "./AgentPanel.module.scss";
 import { useSettings } from "../settings-store";
 import { useDashboard } from "../store";
 import { Tooltip } from "./Tooltip";
@@ -17,6 +30,54 @@ import styles from "./Flowboard.module.scss";
 import { GlassMaterial } from "./GlassMaterial";
 import { Appearance } from "./Appearance";
 
+const AgentNode = memo(function AgentNode({ data }: NodeProps<AgentFlowNode>) {
+  const agent = useAgents((s) => s.agents[data.agentId]);
+  const store = useAgentStore();
+  const guard = useNavigationGuard();
+  if (!agent) return null;
+  return (
+    <div
+      className={agentStyles.node}
+      onKeyDown={(event) => {
+        const direction: Record<string, [number, number]> = {
+          ArrowLeft: [-16, 0],
+          ArrowRight: [16, 0],
+          ArrowUp: [0, -16],
+          ArrowDown: [0, 16],
+        };
+        const step = direction[event.key];
+        if (step && event.target instanceof HTMLButtonElement) {
+          event.preventDefault();
+          event.stopPropagation();
+          void store
+            .getState()
+            .position(agent.id, agent.x + step[0], agent.y + step[1]);
+        }
+      }}
+    >
+      <button
+        className="nodrag"
+        onClick={(event) => {
+          event.stopPropagation();
+          guard(() => store.getState().select(agent.workspaceId, agent.id));
+        }}
+      >
+        {agent.name}
+      </button>
+      <p>
+        {agent.state === "running"
+          ? "Working"
+          : agent.state === "queued"
+            ? "Queued"
+            : agent.state === "idle"
+              ? "Ready"
+              : agent.state.replaceAll("_", " ")}{" "}
+        · {agent.queuedCount} queued
+      </p>
+    </div>
+  );
+});
+const nodeTypes = { agent: AgentNode };
 const defaultViewport: Viewport = { x: 0, y: 0, zoom: 1 };
 
 function ViewControls() {
@@ -70,6 +131,77 @@ function ViewControls() {
 }
 
 function Board({ workspaceId }: { workspaceId: string }) {
+  const agentStore = useAgentStore();
+  const savedNodes = useAgents((s) => s.nodes[workspaceId] ?? emptyNodes);
+  const selectedId = useAgents((s) => s.selected[workspaceId]);
+  const selected = useAgents((s) =>
+    selectedId ? s.agents[selectedId] : undefined,
+  );
+  const createOpen = useAgents((s) => s.createIn === workspaceId);
+  const [nodes, setNodes, onNodesChange] =
+    useNodesState<AgentFlowNode>(savedNodes);
+  const dragging = useRef(false);
+  const guard = useNavigationGuard();
+  const root = useRef<HTMLDivElement>(null);
+  const { screenToFlowPosition } = useReactFlow();
+  useEffect(() => {
+    if (!dragging.current) setNodes(savedNodes);
+  }, [savedNodes, setNodes]);
+  useEffect(() => {
+    void agentStore.getState().loadWorkspace(workspaceId);
+    let closed = false,
+      timer: ReturnType<typeof setTimeout> | undefined,
+      pending = false;
+    const refresh = () => {
+      if (closed || pending) return;
+      pending = true;
+      timer = setTimeout(() => {
+        pending = false;
+        if (closed) return;
+        void (async () => {
+          await agentStore.getState().loadWorkspace(workspaceId);
+          const id = agentStore.getState().selected[workspaceId];
+          if (id) await agentStore.getState().refreshAgent(id);
+          if (!closed)
+            agentStore.setState((s) => ({ eventVersion: s.eventVersion + 1 }));
+        })();
+      }, 350);
+    };
+    const events = new EventSource(
+      `/api/events?workspaceId=${encodeURIComponent(workspaceId)}`,
+    );
+    events.addEventListener("change", refresh);
+    events.addEventListener("resync", refresh);
+    events.onopen = () => {
+      agentStore.setState({ connected: true });
+      refresh();
+    };
+    events.onerror = () => agentStore.setState({ connected: false });
+    const unfocus = refreshOnFocus(async () => {
+      refresh();
+    });
+    return () => {
+      closed = true;
+      clearTimeout(timer);
+      events.close();
+      unfocus();
+    };
+  }, [agentStore, workspaceId]);
+  const handleNodeClick = useCallback(
+    (_event: React.MouseEvent, node: AgentFlowNode) => {
+      guard(() => agentStore.getState().select(workspaceId, node.id));
+    },
+    [agentStore, workspaceId, guard],
+  );
+  const handleNodeDragStop = useCallback(
+    (_event: MouseEvent | TouchEvent, node: AgentFlowNode) => {
+      dragging.current = false;
+      void agentStore
+        .getState()
+        .position(node.id, node.position.x, node.position.y);
+    },
+    [agentStore],
+  );
   const mode = useSettings((state) => state.snapshot.activeTheme.mode);
   const viewport = useDashboard((state) => state.viewports[workspaceId]);
   const saveViewport = useDashboard((state) => state.saveViewport);
@@ -107,7 +239,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
     [saveViewport, workspaceId],
   );
   return (
-    <div className={styles.board}>
+    <div className={styles.board} ref={root}>
       <ReactFlow
         defaultViewport={viewport ?? defaultViewport}
         onMoveStart={handleMoveStart}
@@ -115,9 +247,20 @@ function Board({ workspaceId }: { workspaceId: string }) {
         minZoom={0.25}
         maxZoom={2}
         colorMode={mode}
-        nodesDraggable={false}
+        nodes={nodes}
+        nodeTypes={nodeTypes}
+        onNodesChange={onNodesChange}
+        onNodeClick={handleNodeClick}
+        onNodeDragStart={() => {
+          dragging.current = true;
+        }}
+        onNodeDragStop={handleNodeDragStop}
+        nodesDraggable
+        nodesFocusable={false}
         nodesConnectable={false}
-        elementsSelectable={false}
+        elementsSelectable
+        deleteKeyCode={null}
+        autoPanOnNodeFocus
         aria-label="Workspace flowboard"
       >
         <Background
@@ -131,18 +274,46 @@ function Board({ workspaceId }: { workspaceId: string }) {
           Drag to pan <span>·</span> Scroll to zoom
         </Panel>
       </ReactFlow>
-      <Appearance><div className={styles.empty}>
-        <div className={styles.illustration} aria-hidden="true">
-          <Workflow size={34} strokeWidth={1.25} />
-        </div>
-        <h2>Your workspace starts here</h2>
-        <p>
-          A canvas for your agents and the ways they work together.
-        </p>
-        <p className={styles.comingSoon}>
-          Agent editing and connections are coming next.
-        </p>
-      </div></Appearance>
+      {!savedNodes.length && (
+        <Appearance>
+          <div className={styles.empty}>
+            <div className={styles.illustration} aria-hidden="true">
+              <Workflow size={34} strokeWidth={1.25} />
+            </div>
+            <h2>Your workspace starts here</h2>
+            <p>A canvas for your agents and the ways they work together.</p>
+            <p className={styles.comingSoon}>
+              Add an agent from the workspace toolbar to start a conversation.
+            </p>
+          </div>
+        </Appearance>
+      )}
+      {selected && (
+        <AgentPanel
+          key={selected.id}
+          agent={selected}
+          onClose={() => agentStore.getState().select(workspaceId, null)}
+        />
+      )}
+      {createOpen && (
+        <Dialog
+          title="New agent"
+          onClose={() => guard(() => agentStore.setState({ createIn: null }))}
+        >
+          <AgentForm
+            onSave={async (values) => {
+              const bounds = root.current!.getBoundingClientRect();
+              const position = screenToFlowPosition({
+                x: bounds.left + bounds.width * 0.45,
+                y: bounds.top + bounds.height * 0.5,
+              });
+              await agentStore
+                .getState()
+                .create(workspaceId, { ...values, ...position });
+            }}
+          />
+        </Dialog>
+      )}
     </div>
   );
 }
@@ -162,12 +333,12 @@ export function Flowboard({ workspaceId }: { workspaceId: string }) {
     <>
       {error && (
         <Appearance kind="fade">
-        <div className="errorBanner" role="alert">
-          {error}{" "}
-          <button className="textButton" onClick={handleRetry}>
-            Retry
-          </button>
-        </div>
+          <div className="errorBanner" role="alert">
+            {error}{" "}
+            <button className="textButton" onClick={handleRetry}>
+              Retry
+            </button>
+          </div>
         </Appearance>
       )}
       {viewport ? (
@@ -175,9 +346,11 @@ export function Flowboard({ workspaceId }: { workspaceId: string }) {
           <Board workspaceId={workspaceId} />
         </ReactFlowProvider>
       ) : (
-        <Appearance><div className="centerState" role="status">
-          {error ? "Canvas could not load." : "Loading canvas…"}
-        </div></Appearance>
+        <Appearance>
+          <div className="centerState" role="status">
+            {error ? "Canvas could not load." : "Loading canvas…"}
+          </div>
+        </Appearance>
       )}
     </>
   );
