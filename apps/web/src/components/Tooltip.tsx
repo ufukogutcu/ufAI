@@ -31,10 +31,12 @@ const gap = 8;
 export function Tooltip({
   content,
   placement = "top",
+  hoverDelayMs = 400,
   children,
 }: {
   content: string;
   placement?: Placement;
+  hoverDelayMs?: number;
   children: ReactElement<TriggerProps, string>;
 }) {
   const id = useId();
@@ -183,7 +185,7 @@ export function Tooltip({
           if (dismissed.current || phase === "open") return;
           clearTimeout(openingTimer.current);
           setPhase("waiting");
-          openingTimer.current = setTimeout(show, 400);
+          openingTimer.current = setTimeout(show, hoverDelayMs);
         },
         onPointerLeave(event) {
           children.props.onPointerLeave?.(event);

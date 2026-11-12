@@ -44,7 +44,7 @@ One local installation holds one shared setup across browser sessions. There are
 
 - **Status:** implemented
 - **Purpose:** Explain icons and other compact controls.
-- **Behavior:** Hover or focus a control to see its label or help. Escape dismisses a tooltip; inside a dialog, the first Escape dismisses the tooltip before another Escape closes the dialog.
+- **Behavior:** Hover or focus a control to see its label or help. Left page-menu labels appear after 100 ms of hover; other tooltips wait 400 ms. Keyboard focus shows tooltips immediately. Escape dismisses a tooltip; inside a dialog, the first Escape dismisses the tooltip before another Escape closes the dialog.
 - **Limitations:** Disabled controls and touch hover do not show tooltips. Keyboard labels remain available independently.
 
 ### workspaces

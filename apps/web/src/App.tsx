@@ -166,7 +166,7 @@ function Shell() {
           }
         />
         {pages.map((item) => (
-          <Tooltip key={item.id} content={item.label} placement="right">
+          <Tooltip key={item.id} content={item.label} placement="right" hoverDelayMs={100}>
             <a
               href={`#/${item.id}`}
               className={`${styles.navItem} ${page === item.id ? styles.active : ""}`}
