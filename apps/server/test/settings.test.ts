@@ -310,7 +310,7 @@ test("version 2 migration preserves data; all settings survive reopening by inde
   });
   await server.close();
   const storage = new Database(databasePath);
-  assert.equal(storage.pragma("user_version", { simple: true }), 6);
+  assert.equal(storage.pragma("user_version", { simple: true }), 7);
   assert.equal(
     (
       storage

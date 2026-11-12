@@ -60,7 +60,6 @@ export interface ConnectionInput {
   name: string;
   endpoint?: string | null;
   apiKey?: string;
-  isDefault?: boolean;
   draft?: boolean;
 }
 export interface ProviderConnection {
@@ -68,7 +67,6 @@ export interface ProviderConnection {
   provider: ConnectionProvider;
   name: string;
   endpoint: string | null;
-  isDefault: boolean;
   hasCredential: boolean;
   draft: boolean;
   createdAt: string;

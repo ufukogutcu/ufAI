@@ -376,16 +376,6 @@
   color: var(--faint);
   margin: 14px 0 18px;
 }
-.checkLabel {
-  min-height: var(--control-height);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  input {
-    width: auto;
-  }
-}
 .loginArea {
   margin-top: 18px;
   padding-top: 12px;

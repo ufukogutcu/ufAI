@@ -64,21 +64,12 @@ export function createConnectionStore() {
       revision++;
       set((state) => ({
         connections: [
-          ...state.connections
-            .filter((item) => item.id !== saved.id)
-            .map((item) =>
-              saved.isDefault &&
-              item.provider === saved.provider &&
-              item.isDefault
-                ? { ...item, isDefault: false }
-                : item,
-            ),
+          ...state.connections.filter((item) => item.id !== saved.id),
           saved,
         ],
         status: "ready",
         error: "",
       }));
-      // Read repaired defaults from the server after a mutation, without replacing local drafts.
       await inFlight;
       await get().load();
       return saved;

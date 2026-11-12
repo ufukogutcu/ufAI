@@ -283,12 +283,11 @@ function ProviderEditor({
   const [name, setName] = useState(connection?.name ?? "");
   const [endpoint, setEndpoint] = useState(connection?.endpoint ?? "");
   const [apiKey, setApiKey] = useState("");
-  const [isDefault, setDefault] = useState(connection?.isDefault ?? false);
   const [hasCredential, setHasCredential] = useState(
     connection?.hasCredential ?? false,
   );
   const [baseline, setBaseline] = useState(() =>
-    JSON.stringify([provider, name, endpoint, "", isDefault]),
+    JSON.stringify([provider, name, endpoint, ""]),
   );
   const [draft, setDraft] = useState(connection?.draft ?? true);
   const [busy, setBusy] = useState(false);
@@ -320,7 +319,7 @@ function ProviderEditor({
   const testController = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   const dirty =
-    baseline !== JSON.stringify([provider, name, endpoint, apiKey, isDefault]);
+    baseline !== JSON.stringify([provider, name, endpoint, apiKey]);
   useUnsavedChanges(dirty || modelDirty || (!!id && draft));
   const refreshLocal = useCallback(() => setRevision((v) => v + 1), []);
   useEffect(() => {
@@ -444,7 +443,6 @@ function ProviderEditor({
           }
         : {}),
       ...(apiKey ? { apiKey } : {}),
-      isDefault,
       ...(id ? {} : { draft: true }),
     });
     resource.current.id = saved.id;
@@ -457,7 +455,6 @@ function ProviderEditor({
     setName(saved.name);
     setEndpoint(saved.endpoint ?? "");
     setApiKey("");
-    setDefault(saved.isDefault);
     setHasCredential(saved.hasCredential);
     setBaseline(
       JSON.stringify([
@@ -465,7 +462,6 @@ function ProviderEditor({
         saved.name,
         saved.endpoint ?? "",
         "",
-        saved.isDefault,
       ]),
     );
     return saved.id;
@@ -598,9 +594,7 @@ function ProviderEditor({
       <form className={shared.editor} onSubmit={finish} noValidate>
         <header className={shared.editorHeading}>
           <h2>{draft ? "Set up Provider" : "Edit Provider"}</h2>
-          <span className={shared.saved}>
-            {draft ? "Setup draft" : "Saved"}
-          </span>
+          {!draft && <span className={shared.saved}>Saved</span>}
         </header>
         <fieldset className={shared.fields} disabled={busy || !!testing}>
           <section
@@ -702,14 +696,6 @@ function ProviderEditor({
                 )}
               </Field>
             )}
-            <label className={shared.checkLabel}>
-              <input
-                type="checkbox"
-                checked={isDefault}
-                onChange={(event) => setDefault(event.target.checked)}
-              />
-              Default configuration for this provider type
-            </label>
             {provider !== "codex" && (
               <button
                 type="button"

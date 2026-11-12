@@ -551,7 +551,10 @@ test("migration 6 preserves linked models, conflicting historical limits, and un
   const path = join(directory, "state.sqlite");
   const db = openDatabase(path);
   db.exec(`DROP TABLE provider_models; ALTER TABLE connections DROP COLUMN draft;
-    INSERT INTO connections VALUES ('saved', 'openai', 'Saved', NULL, NULL, 1, 'created', 'updated');
+    ALTER TABLE connections ADD COLUMN isDefault INTEGER NOT NULL DEFAULT 0 CHECK (isDefault IN (0, 1));
+    CREATE UNIQUE INDEX connections_default ON connections(provider) WHERE isDefault = 1;
+    INSERT INTO connections (id, provider, name, endpoint, credential, isDefault, createdAt, updatedAt)
+    VALUES ('saved', 'openai', 'Saved', NULL, NULL, 1, 'created', 'updated');
     INSERT INTO model_presets VALUES ('one', 'One', 'provider', 'openai', NULL, 'same', 1000, 100, 'saved', 'percentage', 80, 'created', 'updated');
     INSERT INTO model_presets VALUES ('two', 'Two', 'provider', 'openai', NULL, 'same', 2000, 200, 'saved', NULL, NULL, 'created', 'updated');
     INSERT INTO model_presets VALUES ('three', 'Three', 'provider', 'openai', NULL, 'unique', 3000, 300, 'saved', NULL, NULL, 'created', 'updated');

@@ -34,7 +34,7 @@ async function add(
   return result.json();
 }
 
-test("connections preserve defaults and preset bindings; deletion unlinks without substituting accounts", async (t) => {
+test("connections remain independent and deletion unlinks presets without substituting accounts", async (t) => {
   const app = providerApp();
   t.after(() => app.close());
   const first = await add(app);
@@ -44,13 +44,15 @@ test("connections preserve defaults and preset bindings; deletion unlinks withou
     url: `/api/connections/${first.id}/models`,
     payload: { id: "manual" },
   });
-  await app.inject({
-    method: "PATCH",
-    url: `/api/connections/${first.id}`,
-    payload: { draft: false },
-  });
-  assert.equal(first.isDefault, true);
-  assert.equal(second.isDefault, false);
+  const finalized = (
+    await app.inject({
+      method: "PATCH",
+      url: `/api/connections/${first.id}`,
+      payload: { draft: false },
+    })
+  ).json();
+  assert.equal("isDefault" in first, false);
+  assert.equal("isDefault" in second, false);
   const preset = (
     await app.inject({
       method: "POST",
@@ -62,12 +64,15 @@ test("connections preserve defaults and preset bindings; deletion unlinks withou
   const changed = await app.inject({
     method: "PATCH",
     url: `/api/connections/${second.id}`,
-    payload: { isDefault: true, name: "Other" },
+    payload: { name: "Other" },
   });
   assert.equal(changed.statusCode, 200);
-  let items = (await app.inject("/api/connections")).json().items;
-  assert.equal(items.filter((c: any) => c.isDefault).length, 1);
-  assert.equal(items.find((c: any) => c.id === second.id).isDefault, true);
+  const items = (await app.inject("/api/connections")).json().items;
+  assert.ok(items.every((item: object) => !("isDefault" in item)));
+  assert.deepEqual(
+    items.find((item: { id: string }) => item.id === first.id),
+    finalized,
+  );
   assert.equal(
     (await app.inject("/api/model-presets")).json().items[0].connectionId,
     first.id,
@@ -89,21 +94,32 @@ test("connections preserve defaults and preset bindings; deletion unlinks withou
     integrationKind: null,
     modelId: null,
   });
-  await app.inject({
-    method: "PATCH",
-    url: `/api/connections/${second.id}`,
-    payload: { isDefault: false },
-  });
-  items = (await app.inject("/api/connections")).json().items;
-  assert.equal(items[0].isDefault, true);
+  assert.deepEqual((await app.inject("/api/connections")).json().items, [
+    changed.json(),
+  ]);
   const third = await add(app, { name: "Third" });
   await app.inject({ method: "DELETE", url: `/api/connections/${second.id}` });
-  assert.equal(
-    (await app.inject("/api/connections"))
-      .json()
-      .items.find((c: any) => c.id === third.id).isDefault,
-    true,
-  );
+  assert.deepEqual((await app.inject("/api/connections")).json().items, [third]);
+});
+
+test("removed default selection is rejected on creation and updates", async (t) => {
+  const app = providerApp();
+  t.after(() => app.close());
+  const connection = await add(app);
+  for (const isDefault of [true, false]) {
+    for (const method of ["POST", "PATCH"] as const) {
+      const result = await app.inject({
+        method,
+        url: `/api/connections${method === "PATCH" ? `/${connection.id}` : ""}`,
+        payload: { provider: "openai", name: "Changed", apiKey: key, isDefault },
+      });
+      assert.equal(result.statusCode, 400);
+      assert.equal(result.json().fields.isDefault, "Unknown field.");
+    }
+  }
+  assert.deepEqual((await app.inject("/api/connections")).json().items, [
+    connection,
+  ]);
 });
 
 test("invalid connection input, mismatched bindings, and cross-origin requests are rejected", async (t) => {
@@ -567,6 +583,86 @@ test("Codex routes handle sign-in, device fallback, cancellation, logout and san
     `remove:${id}`,
     "close",
   ]);
+});
+
+test("migration 7 removes provider defaults and preserves configuration, catalogs, bindings and settings across reopen", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "ufai-v6-migration-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const path = join(directory, "test.sqlite");
+  const secrets = new ConnectionSecrets(`${path}.connections`);
+  let db = openDatabase(path);
+  const credential = secrets.encrypt(key, "saved");
+  db.prepare(`INSERT INTO connections
+    (id, provider, name, endpoint, credential, draft, createdAt, updatedAt)
+    VALUES ('saved', 'openai', 'Saved', NULL, ?, 0, 'created', 'updated')`).run(
+    credential,
+  );
+  db.exec(`
+    INSERT INTO connections (id, provider, name, endpoint, credential, draft, createdAt, updatedAt)
+    VALUES ('second', 'openai', 'Second', NULL, NULL, 0, 'created', 'updated'),
+      ('setup', 'codex', 'Unfinished setup', NULL, NULL, 1, 'created', 'updated');
+    INSERT INTO provider_models (connectionId, id, name, discoveredContextWindow,
+      discoveredMaxOutputTokens, contextWindowOverride, maxOutputTokensOverride,
+      manual, available, lastTest, legacyLimits)
+    VALUES ('saved', 'manual', 'Saved model', 10000, 1000, 8000, 800, 1, 0,
+      '{"success":true,"testedAt":"tested","durationMs":5,"reply":"OK","error":null}',
+      '[{"contextWindow":9000,"maxOutputTokens":900}]'),
+      ('second', 'other', 'Other model', NULL, NULL, NULL, NULL, 1, 1, NULL, '[]');
+    INSERT INTO model_presets (id, name, integrationKind, provider, modelId,
+      connectionId, compactionMode, compactionValue, createdAt, updatedAt)
+    VALUES ('linked', 'Linked', 'provider', 'openai', 'manual', 'saved',
+      'percentage', 80, 'created', 'updated');
+    UPDATE app_settings SET activeThemeId = 'dark-mode';
+    INSERT INTO workspace_viewports SELECT id, 120, -80, 1.25 FROM workspaces;
+  `);
+  function snapshot(database: Database.Database) {
+    return [
+      "connections",
+      "provider_models",
+      "model_presets",
+      "workspaces",
+      "app_settings",
+      "workspace_viewports",
+      "themes",
+    ].map((table) =>
+      database.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),
+    );
+  }
+  const expected = snapshot(db);
+  // Restore the removed v6 column and index to exercise an existing installation.
+  db.exec(`
+    ALTER TABLE connections ADD COLUMN isDefault INTEGER NOT NULL DEFAULT 0 CHECK (isDefault IN (0, 1));
+    CREATE UNIQUE INDEX connections_default ON connections(provider) WHERE isDefault = 1;
+    UPDATE connections SET isDefault = 1 WHERE id IN ('saved', 'setup');
+    PRAGMA user_version = 6;
+  `);
+  db.close();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    db = openDatabase(path);
+    try {
+      assert.equal(db.pragma("user_version", { simple: true }), 7);
+      assert.deepEqual(db.pragma("foreign_key_check"), []);
+      assert.equal(
+        db.prepare(
+          "SELECT name FROM pragma_table_info('connections') WHERE name = 'isDefault'",
+        ).get(),
+        undefined,
+      );
+      assert.equal(
+        db.prepare(
+          "SELECT name FROM sqlite_master WHERE name = 'connections_default'",
+        ).get(),
+        undefined,
+      );
+      assert.deepEqual(snapshot(db), expected);
+      const saved = db
+        .prepare("SELECT credential FROM connections WHERE id = 'saved'")
+        .get() as { credential: string };
+      assert.equal(secrets.decrypt(saved.credential, "saved"), key);
+    } finally {
+      db.close();
+    }
+  }
 });
 
 test("migration 5 removes notes and preserves legacy records, settings and timestamps", async (t) => {

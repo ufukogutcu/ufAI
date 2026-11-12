@@ -23,8 +23,7 @@ import { ProviderModels } from "./provider-models.js";
 import { discoverOllama, testApiModel } from "./provider-inference.js";
 import { InputError, objectBody, pagination } from "./validation.js";
 
-type Row = Omit<ProviderConnection, "isDefault" | "hasCredential" | "draft"> & {
-  isDefault: number;
+type Row = Omit<ProviderConnection, "hasCredential" | "draft"> & {
   draft: number;
   credential: string | null;
 };
@@ -82,7 +81,6 @@ export function registerConnections(
     provider: row.provider,
     name: row.name,
     endpoint: row.endpoint,
-    isDefault: !!row.isDefault,
     draft: !!row.draft,
     hasCredential:
       row.provider === "codex" ? codex.hasCredential(row.id) : !!row.credential,
@@ -116,7 +114,6 @@ export function registerConnections(
           "name",
           "endpoint",
           "apiKey",
-          "isDefault",
           "draft",
         ].includes(key)
       )
@@ -136,12 +133,6 @@ export function registerConnections(
       input.name.length > 120
     )
       fields.name = "Enter a name between 1 and 120 characters.";
-    if (
-      input.isDefault !== undefined &&
-      typeof input.isDefault !== "boolean" &&
-      !(existing && patch.isDefault === undefined)
-    )
-      fields.isDefault = "Choose true or false.";
     let endpoint: string | null = null;
     if (input.provider === "openai-compatible" || input.provider === "ollama") {
       if (input.provider === "ollama" && !input.endpoint)
@@ -217,20 +208,14 @@ export function registerConnections(
         typeof patch.apiKey === "string"
           ? secrets.encrypt(patch.apiKey.trim(), id)
           : (existing?.credential ?? null),
-      isDefault:
-        patch.isDefault === undefined
-          ? (existing?.isDefault ?? 0)
-          : patch.isDefault
-            ? 1
-            : 0,
       createdAt: existing?.createdAt ?? new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
   }
   const upsert =
-    database.prepare(`INSERT INTO connections (id, provider, name, endpoint, credential, isDefault, draft, createdAt, updatedAt)
-    VALUES (@id, @provider, @name, @endpoint, @credential, @isDefault, @draft, @createdAt, @updatedAt)
-    ON CONFLICT(id) DO UPDATE SET name=@name, endpoint=@endpoint, credential=@credential, isDefault=@isDefault, draft=@draft, updatedAt=@updatedAt`);
+    database.prepare(`INSERT INTO connections (id, provider, name, endpoint, credential, draft, createdAt, updatedAt)
+    VALUES (@id, @provider, @name, @endpoint, @credential, @draft, @createdAt, @updatedAt)
+    ON CONFLICT(id) DO UPDATE SET name=@name, endpoint=@endpoint, credential=@credential, draft=@draft, updatedAt=@updatedAt`);
   function save(row: Row): ProviderConnection {
     return database.transaction(() => {
       const previous = get.get(row.id) as Row | undefined;
@@ -240,29 +225,7 @@ export function registerConnections(
           previous.credential !== row.credential)
       )
         models.invalidate(row.id);
-      const first = database
-        .prepare(
-          "SELECT id FROM connections WHERE provider = ? AND id != ? ORDER BY createdAt, id LIMIT 1",
-        )
-        .get(row.provider, row.id) as { id: string } | undefined;
-      if (!first) row.isDefault = 1;
-      if (row.isDefault)
-        database
-          .prepare("UPDATE connections SET isDefault = 0 WHERE provider = ?")
-          .run(row.provider);
       upsert.run(row);
-      // Every nonempty provider group always retains exactly one default.
-      if (
-        !row.isDefault &&
-        !database
-          .prepare(
-            "SELECT id FROM connections WHERE provider = ? AND isDefault = 1",
-          )
-          .get(row.provider)
-      )
-        database
-          .prepare("UPDATE connections SET isDefault = 1 WHERE id = ?")
-          .run(first!.id);
       return publicRow(required(row.id));
     })();
   }
@@ -313,13 +276,6 @@ export function registerConnections(
             )
             .run(row.id);
           database.prepare("DELETE FROM connections WHERE id = ?").run(row.id);
-          if (row.isDefault)
-            database
-              .prepare(
-                `UPDATE connections SET isDefault = 1 WHERE id =
-          (SELECT id FROM connections WHERE provider = ? ORDER BY createdAt, id LIMIT 1)`,
-              )
-              .run(row.provider);
         })();
       } finally {
         deleting.delete(row.id);

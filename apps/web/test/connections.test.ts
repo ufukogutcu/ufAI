@@ -13,7 +13,6 @@ const connection: ProviderConnection = {
   name: "Primary",
   endpoint: null,
   hasCredential: true,
-  isDefault: true,
   draft: false,
   createdAt: "now",
   updatedAt: "now",
