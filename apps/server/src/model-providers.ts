@@ -9,7 +9,7 @@ export class ConnectionError extends Error {
   }
 }
 export const providerEndpoints: Record<
-  Exclude<ConnectionProvider, "codex" | "openai-compatible">,
+  Exclude<ConnectionProvider, "codex" | "openai-compatible" | "ollama">,
   string
 > = {
   openai: "https://api.openai.com/v1",
@@ -26,6 +26,7 @@ export const connectionProviders = new Set<string>([
   ...Object.keys(providerEndpoints),
   "openai-compatible",
   "codex",
+  "ollama",
 ]);
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -97,7 +98,7 @@ export function normalizeModel(
 
 // One deadline covers network reads and every page; no upstream error bodies are exposed.
 export async function discoverApiModels(
-  provider: Exclude<ConnectionProvider, "codex">,
+  provider: Exclude<ConnectionProvider, "codex" | "ollama">,
   endpoint: string,
   apiKey: string | null,
   fetcher: typeof fetch = fetch,

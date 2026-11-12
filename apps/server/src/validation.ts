@@ -1,4 +1,4 @@
-import type { PresetInput, WorkspaceInput } from "./contracts.js";
+import type { PresetConfiguration, WorkspaceInput } from "./contracts.js";
 
 export class InputError extends Error {
   constructor(public fields: Record<string, string>) {
@@ -54,44 +54,18 @@ export function workspaceInput(
   return { name, description };
 }
 
-const inputKeys = new Set([
-  "name",
-  "integrationKind",
-  "provider",
-  "customProviderName",
-  "modelId",
-  "contextWindow",
-  "maxOutputTokens",
-  "connectionId",
-  "compaction",
-]);
-const providers = new Set([
-  "openai",
-  "anthropic",
-  "google",
-  "openrouter",
-  "xai",
-  "deepseek",
-  "mistral",
-  "groq",
-  "together",
-  "ollama",
-  "openai-compatible",
-  "codex",
-  "custom",
-]);
-
+// Provider identity and limits are resolved from saved records, never preset overrides.
 export function presetInput(
   body: unknown,
-  existing?: PresetInput,
-): PresetInput {
+  existing?: PresetConfiguration,
+): PresetConfiguration {
   const patch = objectBody(body);
-  const input = { ...existing, ...patch } as Record<string, unknown>;
+  const input = { ...existing, ...patch };
   const fields: Record<string, string> = {};
   for (const key of Object.keys(patch))
-    if (!inputKeys.has(key)) fields[key] = "Unknown field.";
+    if (!["name", "connectionId", "modelId", "compaction"].includes(key))
+      fields[key] = "Unknown field.";
   const name = text(input.name, "name", 120, fields);
-  const modelId = text(input.modelId, "modelId", 200, fields);
   const connectionId = input.connectionId ?? null;
   if (
     connectionId !== null &&
@@ -99,54 +73,15 @@ export function presetInput(
       !connectionId ||
       connectionId.length > 100)
   )
-    fields.connectionId = "Choose a saved connection, or leave unlinked.";
-  if (
-    input.integrationKind !== "provider" &&
-    input.integrationKind !== "runtime"
-  )
-    fields.integrationKind = "Choose an integration kind.";
-  if (typeof input.provider !== "string" || !providers.has(input.provider))
-    fields.provider = "Choose a provider or runtime.";
-  else if (
-    input.provider !== "custom" &&
-    (input.provider === "codex") !== (input.integrationKind === "runtime")
-  )
-    fields.provider = "Choose an option matching the integration kind.";
-  let customProviderName: string | null = null;
-  if (input.provider === "custom")
-    customProviderName = text(
-      input.customProviderName,
-      "customProviderName",
-      120,
-      fields,
-    );
-  else if (input.customProviderName != null)
-    fields.customProviderName = "Only custom integrations have a custom name.";
-  function tokens(value: unknown, field: string): number | null {
-    if (value == null) return null;
-    if (
-      typeof value !== "number" ||
-      !Number.isSafeInteger(value) ||
-      value < 1
-    ) {
-      fields[field] = "Enter a positive safe integer, or leave empty.";
-      return null;
-    }
-    return value;
-  }
-  const contextWindow = tokens(input.contextWindow, "contextWindow");
-  const maxOutputTokens = tokens(input.maxOutputTokens, "maxOutputTokens");
-  if (contextWindow && maxOutputTokens && maxOutputTokens > contextWindow)
-    fields.maxOutputTokens = "Must not exceed the context window.";
-  const raw =
-    input.compaction === undefined
-      ? { mode: "percentage", value: 80 }
-      : input.compaction;
-  let compaction: PresetInput["compaction"] = { mode: "percentage", value: 80 };
-  if (!raw || typeof raw !== "object" || Array.isArray(raw))
-    fields.compaction = "Choose a compaction mode and value.";
-  else {
-    const c = raw as Record<string, unknown>;
+    fields.connectionId = "Choose a saved Provider, or leave empty.";
+  const rawModel = input.modelId ?? null;
+  let modelId: string | null = null;
+  if (rawModel !== null && rawModel !== "")
+    modelId = text(rawModel, "modelId", 200, fields);
+  if (!connectionId) modelId = null;
+  let compaction: PresetConfiguration["compaction"] = null;
+  if (input.compaction != null) {
+    const c = objectBody(input.compaction);
     if (Object.keys(c).some((key) => key !== "mode" && key !== "value"))
       fields.compaction = "Unknown compaction field.";
     if (c.mode !== "percentage" && c.mode !== "tokens")
@@ -158,24 +93,20 @@ export function presetInput(
       (c.mode === "percentage" && c.value > 100)
     )
       fields["compaction.value"] =
-        c.mode === "percentage"
-          ? "Enter a whole percentage from 1 to 100."
-          : "Enter a positive safe integer.";
-    else if (c.mode === "tokens" && contextWindow && c.value > contextWindow)
-      fields["compaction.value"] = "Must not exceed the context window.";
-    if (c.mode === "percentage" || c.mode === "tokens")
-      compaction = { mode: c.mode, value: c.value as number };
+        "Enter a positive whole token count, or a percentage from 1 to 100.";
+    else if (c.mode === "percentage" || c.mode === "tokens")
+      compaction = { mode: c.mode, value: c.value };
   }
   if (Object.keys(fields).length) throw new InputError(fields);
   return {
     name,
-    modelId,
     connectionId: connectionId as string | null,
-    integrationKind: input.integrationKind as PresetInput["integrationKind"],
-    provider: input.provider as PresetInput["provider"],
-    customProviderName,
-    contextWindow,
-    maxOutputTokens,
+    modelId,
+    integrationKind: null,
+    provider: null,
+    customProviderName: null,
+    contextWindow: null,
+    maxOutputTokens: null,
     compaction,
   };
 }

@@ -99,3 +99,53 @@ test("idle cleanup releases processes and the simultaneous runtime limit is enfo
   ]);
   assert.throws(() => pending.runtime.status("four"), /busy/);
 });
+
+test("Codex test uses an ephemeral restricted turn and handles same-chunk completion with process cleanup", async (t) => {
+  const { runtime, children } = await setup(t);
+  await runtime.login("one", false);
+  assert.equal(
+    await runtime.test("one", "test-model", new AbortController().signal),
+    "OK",
+  );
+  assert.ok(
+    children.every(
+      (child) => child.exitCode !== null || child.signalCode !== null,
+    ),
+  );
+  assert.equal(runtime.hasCredential("one"), true);
+});
+test("Codex test rejects empty replies, failures, tool requests, approvals, malformed events, and process exits", async (t) => {
+  for (const mode of [
+    "test-empty",
+    "test-failed",
+    "test-tool",
+    "test-approval",
+    "test-malformed",
+    "test-exit",
+  ]) {
+    const { runtime, children } = await setup(t, mode);
+    await runtime.login("one", false);
+    await assert.rejects(
+      runtime.test("one", "test-model", new AbortController().signal),
+      /text reply|tool|approval|stopped/,
+    );
+    assert.ok(
+      children.every(
+        (child) => child.exitCode !== null || child.signalCode !== null,
+      ),
+    );
+  }
+});
+test("Codex test cancellation settles the active turn and closes the child", async (t) => {
+  const { runtime, children } = await setup(t, "test-hang");
+  await runtime.login("one", false);
+  await assert.rejects(
+    runtime.test("one", "test-model", AbortSignal.timeout(50)),
+    /stopped|cancelled/,
+  );
+  assert.ok(
+    children.every(
+      (child) => child.exitCode !== null || child.signalCode !== null,
+    ),
+  );
+});

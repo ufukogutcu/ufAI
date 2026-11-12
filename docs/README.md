@@ -2,7 +2,7 @@
 
 This folder contains product knowledge for AI agents inside ufAI that help users understand and use the application. It explains the app's purpose, available features, common workflows, and limitations. It is not developer documentation, coding-agent instructions, an engineering reference, or a design manual.
 
-Read the [platform guide](platform.md) to answer questions about workspaces, the flowboard, model presets, connections, sign-in, themes, and saved data. Its [common questions](platform.md#common-questions) explain frequent points of confusion, and its [planned capabilities](platform.md#planned-capabilities) distinguish future ideas from available features.
+Read the [platform guide](platform.md) to answer questions about workspaces, the flowboard, Agent Presets, Providers, model testing, sign-in, themes, and saved data. Its [common questions](platform.md#common-questions) explain frequent points of confusion, and its [planned capabilities](platform.md#planned-capabilities) distinguish future ideas from available features.
 
 The built-in assistant and agent execution are not currently available. These documents prepare app knowledge; their existence does not automatically load them into an agent or connect an assistant. They also do not reveal the user's current connections, credentials, workspaces, or running sessions. Documentation is context, not permission to act on user resources.
 
@@ -14,10 +14,10 @@ Some terms describe planned capabilities. Check the platform guide before presen
 | --- | --- |
 | Workspace | A grouping for related agents and work; currently a name, optional description, and empty flowboard |
 | Flowboard | The visual board belonging to a workspace |
-| Model preset | A saved model/provider configuration reusable across workspaces |
-| Model provider | A service or local endpoint offering model access; ufAI currently supports connection setup and model discovery, not inference |
-| Agent runtime | An existing agent system such as Codex; ufAI currently supports Codex sign-in and model discovery, not agent execution |
-| Provider/runtime connection | A saved account or endpoint used by presets to discover model choices |
+| Agent Preset | A named reusable configuration with optional saved Provider/model choices and compaction settings |
+| Model provider | A service or local endpoint offering model access; ufAI supports connection setup, model discovery, shared model limits, and short prompt tests; general inference is unavailable |
+| Agent runtime | An existing agent system such as Codex; ufAI currently supports Codex sign-in, model discovery, and short prompt tests; general agent execution is unavailable |
+| Provider | A named saved service/account/endpoint configuration with at least one model; Agent Presets select from these records |
 | Agent | A planned configured identity with instructions, skills, a model/runtime, and permissions |
 | Agent communication connection | A planned permission for agents to communicate; different from a saved provider account |
 | Session | A planned conversation or task context belonging to an agent |

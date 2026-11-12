@@ -255,16 +255,13 @@ test("version 2 migration preserves data; all settings survive reopening by inde
       url: "/api/model-presets",
       payload: {
         name: "Kept preset",
-        integrationKind: "provider",
-        provider: "openai",
-        modelId: "model",
       },
     })
   ).json();
   await server.close();
   const old = new Database(databasePath);
   old.exec(
-    "DROP INDEX model_presets_connection; ALTER TABLE model_presets DROP COLUMN connectionId; DROP TABLE connections; ALTER TABLE model_presets ADD COLUMN notes TEXT NOT NULL DEFAULT ''; DROP TABLE workspace_viewports; DROP TABLE app_settings; ALTER TABLE workspaces DROP COLUMN description; PRAGMA user_version = 2;",
+    "DROP TABLE provider_models; DROP INDEX model_presets_connection; ALTER TABLE model_presets DROP COLUMN connectionId; DROP TABLE connections; ALTER TABLE model_presets ADD COLUMN notes TEXT NOT NULL DEFAULT ''; DROP TABLE workspace_viewports; DROP TABLE app_settings; ALTER TABLE workspaces DROP COLUMN description; PRAGMA user_version = 2;",
   );
   old.close();
   server = createApp({ databasePath, serveStatic: false });
@@ -313,7 +310,7 @@ test("version 2 migration preserves data; all settings survive reopening by inde
   });
   await server.close();
   const storage = new Database(databasePath);
-  assert.equal(storage.pragma("user_version", { simple: true }), 5);
+  assert.equal(storage.pragma("user_version", { simple: true }), 6);
   assert.equal(
     (
       storage

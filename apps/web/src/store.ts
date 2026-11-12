@@ -55,6 +55,7 @@ function merge<T extends { id: string; createdAt: string }>(
 }
 
 export function createDashboardStore(settings: SettingsStore) {
+  let presetRevision = 0;
   const viewportLoads = new Map<string, Promise<void>>();
   const viewportWrites = new Map<string, Promise<void>>();
   const viewportRevisions = new Map<string, number>();
@@ -98,18 +99,44 @@ export function createDashboardStore(settings: SettingsStore) {
     },
     loadPresets: async (more = false) => {
       if (get().presetStatus === "loading") return;
-      set({ presetStatus: "loading", presetError: "" });
+      const started = presetRevision;
       const offset = more ? get().presetOffset : 0;
+      const target = more ? offset + 100 : Math.max(100, get().presetOffset);
+      set({ presetStatus: "loading", presetError: "" });
       try {
-        const page = await getPage<ModelPreset>("/model-presets", offset);
-        set((state) => ({
-          presets: more ? merge(state.presets, page.items) : page.items,
-          presetTotal: page.total,
-          presetOffset: offset + page.items.length,
-          presetStatus: "ready",
-        }));
+        const items: ModelPreset[] = [];
+        let nextOffset = offset;
+        let total = 0;
+        do {
+          const page = await getPage<ModelPreset>("/model-presets", nextOffset);
+          if (started !== presetRevision) return;
+          items.push(...page.items);
+          total = page.total;
+          nextOffset += page.items.length;
+          if (!page.items.length) break;
+        } while (nextOffset < target && nextOffset < total);
+        set((state) => {
+          const previous = new Map(
+            state.presets.map((preset) => [preset.id, preset]),
+          );
+          const refreshed = items.map((preset) => {
+            const saved = previous.get(preset.id);
+            return saved && JSON.stringify(saved) === JSON.stringify(preset)
+              ? saved
+              : preset;
+          });
+          return {
+            presets: more ? merge(state.presets, refreshed) : refreshed,
+            presetTotal: total,
+            presetOffset: nextOffset,
+            presetStatus: "ready",
+          };
+        });
       } catch (error) {
-        set({ presetStatus: "error", presetError: errorMessage(error) });
+        if (started === presetRevision)
+          set({ presetStatus: "error", presetError: errorMessage(error) });
+      } finally {
+        if (started !== presetRevision) set({ presetStatus: "ready" });
       }
     },
     beginViewportInteraction: (id) => {
@@ -269,7 +296,9 @@ export function createDashboardStore(settings: SettingsStore) {
         id ? "PATCH" : "POST",
         input,
       );
+      presetRevision++;
       set((state) => ({
+        presetError: "",
         presets: merge(state.presets, [preset]),
         presetTotal: state.presetTotal + (id ? 0 : 1),
         presetOffset:
@@ -281,6 +310,7 @@ export function createDashboardStore(settings: SettingsStore) {
     },
     deletePreset: async (id) => {
       await request(`/model-presets/${id}`, "DELETE");
+      presetRevision++;
       set((state) => ({
         presets: state.presets.filter((p) => p.id !== id),
         presetTotal: state.presetTotal - 1,

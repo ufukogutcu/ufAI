@@ -2,7 +2,7 @@
 
 An open-source, local-first application for one user to organize AI agents in multiple workspaces through a browser interface. One local backend and SQLite database hold the shared setup across browser sessions.
 
-**Status: early functional dashboard.** The application includes floating page navigation, saved workspace tabs with empty pannable flowboards, a project-wide model preset library, and locked light/dark defaults with custom themes backed by SQLite. Settings is an empty page. Saved API connections, model discovery, and bundled Codex subscription sign-in are available from the preset editor. Agent editing/execution, local-provider setup, compaction execution, skills, messaging, and triggers remain planned.
+**Status: early functional dashboard.** The application includes floating page navigation, saved workspace tabs with empty pannable flowboards, project-wide Agent Presets and Providers libraries, and locked light/dark defaults with custom themes backed by SQLite. Settings is an empty page. Saved API connections, bundled Codex subscription sign-in, dedicated Ollama setup, model discovery/manual catalogs, shared model limits, and short model tests are available on Providers. Agent editing/execution, general inference, compaction execution, skills, messaging, and triggers remain planned.
 
 ## Stack
 
@@ -63,18 +63,19 @@ data/                 Generated local database; ignored by Git
 
 API keys are encrypted using a local key under `<database filename>.connections/`; Codex maintains isolated sign-in credentials inside that directory. Keep it with the database when backing up or moving ufAI, and keep these generated files out of Git.
 
-SQLite is created at `data/ufai.sqlite` on server startup, with WAL mode and foreign-key enforcement enabled. Versioned migrations create workspace, model preset, and custom theme tables, and seed one Default workspace once. Deleting the last workspace leaves an empty state; restarting does not recreate it. The connection closes during graceful shutdown.
+SQLite is created at `data/ufai.sqlite` on server startup, with WAL mode and foreign-key enforcement enabled. Versioned migrations create workspace, Agent Preset, Provider/model catalog, theme, application-settings, and viewport tables, and seed one Default workspace once. Deleting the last workspace leaves an empty state; restarting does not recreate it. The connection closes during graceful shutdown.
 
 ## Dashboard
 
 - **Home:** create, rename, and delete workspaces; switch between empty flowboards with pan, zoom, and reset controls. Board viewports are saved per workspace in SQLite after pan/zoom interactions.
-- **Model Presets:** create, edit, and delete shared model configurations. Choose an API provider or Codex subscription, save a connection, and search its available models, with manual IDs as a fallback. Additional accounts stay under Connection options; Codex is included with ufAI and needs no separate CLI install. Compaction defaults to 80% of context and can use an absolute token limit instead. These values are configuration only.
+- **Providers:** configure named API, Codex subscription, custom OpenAI-compatible, and local Ollama connections. Discover or manually add models, refresh the saved catalog, edit shared context/output limits, and send a short test prompt. Saving requires at least one model, while discovery and testing remain optional. Codex is bundled and needs no separate CLI install.
+- **Agent Presets:** create, edit, and delete reusable agent configurations. Only a name is required; choose a saved Provider/model and optional percentage or absolute-token compaction threshold when ready. Model limits are shared through Providers. These presets do not execute agents or compaction.
 - **Theme:** permanent Light Mode and Dark Mode, a shared Light Mode default, and custom theme creation/duplication/editing with a contained visual preview. Custom themes and the active selection persist in SQLite for the whole local setup.
 - **Settings:** empty page reserved for later work.
 
-Pages use hash URLs, including `#/home` and `#/model-presets`. Workspace, preset, and custom theme records survive server restarts. Selected-workspace, active-theme, and canvas viewport preferences also survive restarts in SQLite. Settings load on open and refresh when returning to a tab. Old browser preferences are ignored; new settings start with Light Mode and the first existing workspace. Unsaved drafts and URL history remain temporary. Application accounts and multi-user tenancy are outside the product scope.
+Pages use hash URLs, including `#/home`, `#/providers`, and `#/agent-presets` (`#/model-presets` remains an alias). Workspace, preset, and custom theme records survive server restarts. Selected-workspace, active-theme, and canvas viewport preferences also survive restarts in SQLite. Settings load on open and refresh when returning to a tab. Old browser preferences are ignored; new settings start with Light Mode and the first existing workspace. Unsaved drafts and URL history remain temporary. Application accounts and multi-user tenancy are outside the product scope.
 
-`npm test` runs API/database integration, client-state, theme/settings/catalog, connection/discovery/Codex lifecycle, and preset calculation/validation checks using temporary databases.
+`npm test` runs API/database integration, client-state, theme/settings/catalog, provider catalogs, model tests, discovery/Codex lifecycle, and preset calculation/validation checks using temporary databases.
 
 ## Knowledge for ufAI app agents
 

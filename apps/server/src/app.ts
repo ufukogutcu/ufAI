@@ -8,7 +8,12 @@ import { registerThemes } from "./themes.js";
 import { openDatabase } from "./database.js";
 import { registerConnections, type ConnectionOptions } from "./connections.js";
 import { ConnectionError } from "./model-providers.js";
-import type { ModelPreset, Workspace, PresetInput } from "./contracts.js";
+import type {
+  Compaction,
+  ModelPreset,
+  Workspace,
+  PresetConfiguration,
+} from "./contracts.js";
 import {
   InputError,
   pagination,
@@ -17,22 +22,27 @@ import {
 } from "./validation.js";
 
 type PresetRow = Omit<ModelPreset, "compaction"> & {
-  compactionMode: ModelPreset["compaction"]["mode"];
-  compactionValue: number;
+  compactionMode: Compaction["mode"] | null;
+  compactionValue: number | null;
 };
 function fromRow(row: PresetRow): ModelPreset {
   const { compactionMode, compactionValue, ...rest } = row;
   return {
     ...rest,
-    compaction: { mode: compactionMode, value: compactionValue },
+    compaction:
+      compactionMode && compactionValue !== null
+        ? { mode: compactionMode, value: compactionValue }
+        : null,
   };
 }
-function toRow(input: PresetInput) {
+function toRow(input: PresetConfiguration) {
   const { compaction, ...rest } = input;
   return {
     ...rest,
-    compactionMode: compaction.mode,
-    compactionValue: compaction.value,
+    contextWindow: null,
+    maxOutputTokens: null,
+    compactionMode: compaction?.mode ?? null,
+    compactionValue: compaction?.value ?? null,
   };
 }
 
@@ -214,13 +224,14 @@ export function createApp(
   app.get("/api/model-presets", async (request) => {
     const { limit, offset } = pagination(request.query);
     return {
-      items: (presetList.all(limit, offset) as PresetRow[]).map(fromRow),
+      items: (presetList.all(limit, offset) as PresetRow[]).map((row) =>
+        validatePresetConnection(fromRow(row)),
+      ),
       total: (presetCount.get() as { total: number }).total,
     };
   });
   app.post("/api/model-presets", async (request, reply) => {
-    const input = presetInput(request.body);
-    validatePresetConnection(input);
+    const input = validatePresetConnection(presetInput(request.body));
     const now = new Date().toISOString();
     const preset: ModelPreset = {
       ...input,
@@ -241,22 +252,25 @@ export function createApp(
     async (request, reply) => {
       const row = presetGet.get(request.params.id) as PresetRow | undefined;
       if (!row)
-        return reply.code(404).send({ error: "Model preset not found." });
-      const input = presetInput(request.body, fromRow(row));
-      validatePresetConnection(input);
+        return reply.code(404).send({ error: "Agent preset not found." });
+      const input = validatePresetConnection(
+        presetInput(request.body, fromRow(row)),
+      );
       presetUpdate.run({
         ...toRow(input),
         id: row.id,
         updatedAt: new Date().toISOString(),
       });
-      return fromRow(presetGet.get(row.id) as PresetRow);
+      return validatePresetConnection(
+        fromRow(presetGet.get(row.id) as PresetRow),
+      );
     },
   );
   app.delete<{ Params: { id: string } }>(
     "/api/model-presets/:id",
     async (request, reply) => {
       if (!presetDelete.run(request.params.id).changes)
-        return reply.code(404).send({ error: "Model preset not found." });
+        return reply.code(404).send({ error: "Agent preset not found." });
       return reply.code(204).send();
     },
   );

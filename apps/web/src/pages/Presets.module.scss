@@ -262,6 +262,9 @@
 }
 .modelPicker {
   margin-top: 16px;
+  > :global(.field) + :global(.field) {
+    margin-top: 12px;
+  }
 }
 .inlineActions {
   display: flex;
@@ -414,8 +417,13 @@
   display: none !important;
 }
 @media (max-width: 1100px) {
-  .page { padding-right: 32px; }
-  .layout { grid-template-columns: 220px minmax(0, 1fr); gap: 24px; }
+  .page {
+    padding-right: 32px;
+  }
+  .layout {
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 24px;
+  }
 }
 @media (max-width: 1024px) {
   .layout {
@@ -441,8 +449,12 @@
   }
 }
 @media (max-width: 640px) {
-  .page { padding: 42px 16px 16px calc(var(--shell-gutter) + 8px); }
-  .detail { border-radius: var(--radius-panel); }
+  .page {
+    padding: 42px 16px 16px calc(var(--shell-gutter) + 8px);
+  }
+  .detail {
+    border-radius: var(--radius-panel);
+  }
   .twoColumns,
   .compactionControls {
     grid-template-columns: 1fr;
@@ -470,11 +482,20 @@
 }
 
 @media (max-height: 600px) {
-  .page { display: block; overflow-y: auto; }
-  .layout { min-height: 500px; }
-  .detail { height: 560px; }
+  .page {
+    display: block;
+    overflow-y: auto;
+  }
+  .layout {
+    min-height: 500px;
+  }
+  .detail {
+    height: 560px;
+  }
 }
 
 @media (any-pointer: coarse) {
-  .modelOptions li { min-height: 44px; }
+  .modelOptions li {
+    min-height: 44px;
+  }
 }

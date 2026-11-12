@@ -10,12 +10,7 @@ import { ConnectionSecrets } from "../src/connection-secrets.js";
 import type { CodexAdapter } from "../src/codex-runtime.js";
 import { discoverApiModels } from "../src/model-providers.js";
 
-const basic = {
-  name: "Test",
-  provider: "openai",
-  integrationKind: "provider",
-  modelId: "manual",
-};
+const basic = { name: "Test", modelId: "manual" };
 const key = "test-private-api-key";
 function providerApp(fetcher?: typeof fetch) {
   return createApp({
@@ -44,6 +39,16 @@ test("connections preserve defaults and preset bindings; deletion unlinks withou
   t.after(() => app.close());
   const first = await add(app);
   const second = await add(app, { name: "Second" });
+  await app.inject({
+    method: "POST",
+    url: `/api/connections/${first.id}/models`,
+    payload: { id: "manual" },
+  });
+  await app.inject({
+    method: "PATCH",
+    url: `/api/connections/${first.id}`,
+    payload: { draft: false },
+  });
   assert.equal(first.isDefault, true);
   assert.equal(second.isDefault, false);
   const preset = (
@@ -77,7 +82,13 @@ test("connections preserve defaults and preset bindings; deletion unlinks withou
     204,
   );
   const kept = (await app.inject("/api/model-presets")).json().items[0];
-  assert.deepEqual(kept, { ...preset, connectionId: null });
+  assert.deepEqual(kept, {
+    ...preset,
+    connectionId: null,
+    provider: null,
+    integrationKind: null,
+    modelId: null,
+  });
   await app.inject({
     method: "PATCH",
     url: `/api/connections/${second.id}`,
@@ -100,7 +111,7 @@ test("invalid connection input, mismatched bindings, and cross-origin requests a
   t.after(() => app.close());
   const connection = await add(app);
   for (const payload of [
-    { provider: "ollama", name: "Local", apiKey: key },
+    { provider: "not-real", name: "Invalid", apiKey: key },
     { provider: "codex", name: "Codex", apiKey: key },
     { provider: "openai", name: "No key" },
     { provider: "openai", name: "Key", apiKey: "a\nb" },
@@ -134,7 +145,7 @@ test("invalid connection input, mismatched bindings, and cross-origin requests a
       JSON.stringify(payload),
     );
   for (const payload of [
-    { ...basic, provider: "google", connectionId: connection.id },
+    { ...basic, connectionId: connection.id },
     { ...basic, connectionId: "missing" },
     { ...basic, connectionId: 2 },
   ]) {
@@ -226,7 +237,13 @@ test("API credentials are encrypted, connection-bound, replaceable, and durable 
     connections: { fetcher },
   });
   assert.equal(
-    (await app.inject(`/api/connections/${connection.id}/models`)).statusCode,
+    (
+      await app.inject({
+        method: "POST",
+        url: `/api/connections/${connection.id}/models/refresh`,
+        payload: {},
+      })
+    ).statusCode,
     200,
   );
   assert.deepEqual(seen, [`Bearer ${key}`]);
@@ -240,7 +257,11 @@ test("API credentials are encrypted, connection-bound, replaceable, and durable 
     ).statusCode,
     200,
   );
-  await app.inject(`/api/connections/${connection.id}/models`);
+  await app.inject({
+    method: "POST",
+    url: `/api/connections/${connection.id}/models/refresh`,
+    payload: {},
+  });
   assert.equal(seen[1], "Bearer replacement");
   assert.equal(
     (await readFile(databasePath)).includes(Buffer.from(key)),
@@ -319,7 +340,11 @@ test("all API adapters use the correct authentication and normalize model metada
         ? { endpoint: "https://custom.example/v1/" }
         : {}),
     });
-    const result = await app.inject(`/api/connections/${connection.id}/models`);
+    const result = await app.inject({
+      method: "POST",
+      url: `/api/connections/${connection.id}/models/refresh`,
+      payload: {},
+    });
     assert.equal(result.statusCode, 200, `${provider}: ${result.body}`);
     assert.equal(result.json().items.length, 1);
     assert.equal(result.body.includes(key), false);
@@ -433,8 +458,16 @@ test("identical discovery calls coalesce and edits cannot change credentials dur
   });
   t.after(() => app.close());
   const connection = await add(app);
-  const first = app.inject(`/api/connections/${connection.id}/models`);
-  const second = app.inject(`/api/connections/${connection.id}/models`);
+  const first = app.inject({
+    method: "POST",
+    url: `/api/connections/${connection.id}/models/refresh`,
+    payload: {},
+  });
+  const second = app.inject({
+    method: "POST",
+    url: `/api/connections/${connection.id}/models/refresh`,
+    payload: {},
+  });
   await ready;
   const blocked = await app.inject({
     method: "PATCH",
@@ -467,6 +500,7 @@ test("Codex routes handle sign-in, device fallback, cancellation, logout and san
     logout: async (id) => {
       actions.push(`logout:${id}`);
     },
+    test: async () => "OK",
     models: async () => [
       {
         id: "codex-model",
@@ -510,7 +544,13 @@ test("Codex routes handle sign-in, device fallback, cancellation, logout and san
   );
   await app.inject({ method: "DELETE", url: `/api/connections/${id}/login` });
   assert.equal(
-    (await app.inject(`/api/connections/${id}/models`)).json().items[0].id,
+    (
+      await app.inject({
+        method: "POST",
+        url: `/api/connections/${id}/models/refresh`,
+        payload: {},
+      })
+    ).json().items[0].id,
     "codex-model",
   );
   await app.inject({
@@ -534,7 +574,7 @@ test("migration 5 removes notes and preserves legacy records, settings and times
   t.after(() => rm(directory, { recursive: true, force: true }));
   const databasePath = join(directory, "test.sqlite");
   const old = openDatabase(databasePath);
-  old.exec(`DROP INDEX model_presets_connection; ALTER TABLE model_presets DROP COLUMN connectionId; DROP TABLE connections;
+  old.exec(`DROP TABLE provider_models; DROP INDEX model_presets_connection; ALTER TABLE model_presets DROP COLUMN connectionId; DROP TABLE connections;
     ALTER TABLE model_presets ADD COLUMN notes TEXT NOT NULL DEFAULT '';
     INSERT INTO model_presets (id, name, integrationKind, provider, customProviderName, modelId, contextWindow, maxOutputTokens, compactionMode, compactionValue, createdAt, updatedAt, notes)
     VALUES ('kept', 'Old local', 'provider', 'ollama', NULL, 'local-model', 1000, 100, 'percentage', 80, 'created', 'updated', 'obsolete');
@@ -545,7 +585,9 @@ test("migration 5 removes notes and preserves legacy records, settings and times
   t.after(() => app.close());
   const preset = (await app.inject("/api/model-presets")).json().items[0];
   assert.equal(preset.id, "kept");
-  assert.equal(preset.provider, "ollama");
+  assert.equal(preset.provider, null);
+  assert.equal(preset.modelId, null);
+  assert.equal(preset.contextWindow, null);
   assert.equal(preset.createdAt, "created");
   assert.equal(preset.updatedAt, "updated");
   assert.equal(preset.connectionId, null);

@@ -7,8 +7,9 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type {
   ConnectionProvider,
   DiscoveredModel,
-  PresetInput,
+  PresetConfiguration,
   ProviderConnection,
+  ModelTestResult,
 } from "./contracts.js";
 import { ConnectionSecrets } from "./connection-secrets.js";
 import { CodexRuntime, type CodexAdapter } from "./codex-runtime.js";
@@ -18,16 +19,20 @@ import {
   discoverApiModels,
   providerEndpoints,
 } from "./model-providers.js";
+import { ProviderModels } from "./provider-models.js";
+import { discoverOllama, testApiModel } from "./provider-inference.js";
 import { InputError, objectBody, pagination } from "./validation.js";
 
-type Row = Omit<ProviderConnection, "isDefault" | "hasCredential"> & {
+type Row = Omit<ProviderConnection, "isDefault" | "hasCredential" | "draft"> & {
   isDefault: number;
+  draft: number;
   credential: string | null;
 };
 export interface ConnectionOptions {
   fetcher?: typeof fetch;
   codex?: CodexAdapter;
   discoveryTimeoutMs?: number;
+  testTimeoutMs?: number;
 }
 function guard(request: FastifyRequest) {
   const host = request.headers.host;
@@ -62,6 +67,9 @@ export function registerConnections(
     : `${database.name}.connections`;
   const secrets = new ConnectionSecrets(memory ? null : directory);
   const codex = options.codex ?? new CodexRuntime(join(directory, "codex"));
+  const models = new ProviderModels(database);
+  const tests = new Map<string, AbortController>();
+  const testCompletions = new Map<string, Promise<void>>();
   const deleting = new Set<string>();
   const inFlight = new Map<string, Promise<DiscoveredModel[]>>();
   const get = database.prepare("SELECT * FROM connections WHERE id = ?");
@@ -75,6 +83,7 @@ export function registerConnections(
     name: row.name,
     endpoint: row.endpoint,
     isDefault: !!row.isDefault,
+    draft: !!row.draft,
     hasCredential:
       row.provider === "codex" ? codex.hasCredential(row.id) : !!row.credential,
     createdAt: row.createdAt,
@@ -91,7 +100,7 @@ export function registerConnections(
     return row;
   }
   function editable(id: string) {
-    if (inFlight.has(id))
+    if (inFlight.has(id) || tests.has(id))
       throw new ConnectionError(
         "Model discovery is still running. Please retry shortly.",
         409,
@@ -102,7 +111,14 @@ export function registerConnections(
     const fields: Record<string, string> = {};
     for (const key of Object.keys(patch))
       if (
-        !["provider", "name", "endpoint", "apiKey", "isDefault"].includes(key)
+        ![
+          "provider",
+          "name",
+          "endpoint",
+          "apiKey",
+          "isDefault",
+          "draft",
+        ].includes(key)
       )
         fields[key] = "Unknown field.";
     const input = { ...existing, ...patch };
@@ -127,7 +143,9 @@ export function registerConnections(
     )
       fields.isDefault = "Choose true or false.";
     let endpoint: string | null = null;
-    if (input.provider === "openai-compatible") {
+    if (input.provider === "openai-compatible" || input.provider === "ollama") {
+      if (input.provider === "ollama" && !input.endpoint)
+        input.endpoint = "http://localhost:11434";
       try {
         if (typeof input.endpoint !== "string" || input.endpoint.length > 2000)
           throw new Error();
@@ -172,14 +190,27 @@ export function registerConnections(
       !existing?.credential &&
       !patch.apiKey &&
       input.provider !== "codex" &&
-      input.provider !== "openai-compatible"
+      input.provider !== "openai-compatible" &&
+      input.provider !== "ollama"
     )
       fields.apiKey = "Enter an API key.";
+    if (patch.draft !== undefined && typeof patch.draft !== "boolean")
+      fields.draft = "Choose true or false.";
+    if (patch.draft === false && (!existing || !models.count(existing.id)))
+      fields.models = "Add at least one model before saving the Provider.";
+    if (existing && !existing.draft && patch.draft === true)
+      fields.draft = "Saved Providers cannot become setup drafts.";
     if (Object.keys(fields).length) throw new InputError(fields);
     const id = existing?.id ?? randomUUID();
     return {
       id,
       provider: input.provider as ConnectionProvider,
+      draft:
+        patch.draft === undefined
+          ? (existing?.draft ?? 1)
+          : patch.draft
+            ? 1
+            : 0,
       name: (input.name as string).trim(),
       endpoint,
       credential:
@@ -197,11 +228,18 @@ export function registerConnections(
     };
   }
   const upsert =
-    database.prepare(`INSERT INTO connections (id, provider, name, endpoint, credential, isDefault, createdAt, updatedAt)
-    VALUES (@id, @provider, @name, @endpoint, @credential, @isDefault, @createdAt, @updatedAt)
-    ON CONFLICT(id) DO UPDATE SET name=@name, endpoint=@endpoint, credential=@credential, isDefault=@isDefault, updatedAt=@updatedAt`);
+    database.prepare(`INSERT INTO connections (id, provider, name, endpoint, credential, isDefault, draft, createdAt, updatedAt)
+    VALUES (@id, @provider, @name, @endpoint, @credential, @isDefault, @draft, @createdAt, @updatedAt)
+    ON CONFLICT(id) DO UPDATE SET name=@name, endpoint=@endpoint, credential=@credential, isDefault=@isDefault, draft=@draft, updatedAt=@updatedAt`);
   function save(row: Row): ProviderConnection {
     return database.transaction(() => {
+      const previous = get.get(row.id) as Row | undefined;
+      if (
+        previous &&
+        (previous.endpoint !== row.endpoint ||
+          previous.credential !== row.credential)
+      )
+        models.invalidate(row.id);
       const first = database
         .prepare(
           "SELECT id FROM connections WHERE provider = ? AND id != ? ORDER BY createdAt, id LIMIT 1",
@@ -259,11 +297,21 @@ export function registerConnections(
     "/api/connections/:id",
     async (request, reply) => {
       const row = required(request.params.id);
-      editable(row.id);
+      if (!row.draft) editable(row.id);
       deleting.add(row.id);
       try {
+        tests.get(row.id)?.abort();
+        await Promise.allSettled([
+          inFlight.get(row.id),
+          testCompletions.get(row.id),
+        ]);
         if (row.provider === "codex") await codex.remove(row.id);
         database.transaction(() => {
+          database
+            .prepare(
+              "UPDATE model_presets SET connectionId = NULL, modelId = NULL, provider = NULL, integrationKind = NULL, customProviderName = NULL, contextWindow = NULL, maxOutputTokens = NULL WHERE connectionId = ?",
+            )
+            .run(row.id);
           database.prepare("DELETE FROM connections WHERE id = ?").run(row.id);
           if (row.isDefault)
             database
@@ -279,49 +327,214 @@ export function registerConnections(
       return reply.code(204).send();
     },
   );
+  function key(row: Row): string | null {
+    try {
+      return row.credential ? secrets.decrypt(row.credential, row.id) : null;
+    } catch {
+      throw new ConnectionError(
+        "Cannot unlock this Provider's key. Replace the API key and retry.",
+        503,
+      );
+    }
+  }
+  function endpoint(row: Row): string {
+    return row.provider === "openai-compatible" || row.provider === "ollama"
+      ? row.endpoint!
+      : row.provider === "codex"
+        ? ""
+        : providerEndpoints[row.provider];
+  }
   app.get<{ Params: { id: string } }>(
     "/api/connections/:id/models",
     async (request) => {
+      required(request.params.id);
+      const { limit, offset } = pagination(request.query);
+      const query = (request.query as { q?: unknown }).q;
+      if (
+        query !== undefined &&
+        (typeof query !== "string" || query.length > 300)
+      )
+        throw new InputError({ q: "Enter at most 300 search characters." });
+      return models.list(
+        request.params.id,
+        limit,
+        offset,
+        typeof query === "string" ? query : "",
+      );
+    },
+  );
+  app.post<{ Params: { id: string } }>(
+    "/api/connections/:id/models/refresh",
+    async (request) => {
       const row = required(request.params.id);
+      if (tests.has(row.id))
+        throw new ConnectionError(
+          "A model test is running. Retry shortly.",
+          409,
+        );
       let running = inFlight.get(row.id);
       if (!running) {
         if (inFlight.size >= 4)
           throw new ConnectionError(
-            "Model discovery is busy. Please retry shortly.",
+            "Model discovery is busy. Retry shortly.",
             429,
           );
         running = (async () => {
-          if (row.provider === "codex") return codex.models(row.id);
-          let apiKey: string | null = null;
-          try {
-            if (row.credential)
-              apiKey = secrets.decrypt(row.credential, row.id);
-          } catch {
-            throw new ConnectionError(
-              "Cannot unlock this connection's API key. Replace the key in Manage connection.",
-              503,
-            );
-          }
-          const endpoint =
-            row.provider === "openai-compatible"
-              ? row.endpoint!
-              : providerEndpoints[row.provider];
-          return discoverApiModels(
-            row.provider,
-            endpoint,
-            apiKey,
-            options.fetcher,
-            options.discoveryTimeoutMs,
-          );
+          const discovered =
+            row.provider === "codex"
+              ? await codex.models(row.id)
+              : row.provider === "ollama"
+                ? await discoverOllama(
+                    endpoint(row),
+                    key(row),
+                    options.fetcher,
+                    options.discoveryTimeoutMs,
+                  )
+                : await discoverApiModels(
+                    row.provider,
+                    endpoint(row),
+                    key(row),
+                    options.fetcher,
+                    options.discoveryTimeoutMs,
+                  );
+          models.merge(row.id, discovered);
+          return discovered;
         })();
         inFlight.set(row.id, running);
-        void running
-          .finally(() => {
-            inFlight.delete(row.id);
-          })
-          .catch(() => {});
+        void running.finally(() => inFlight.delete(row.id)).catch(() => {});
       }
-      return { items: await running };
+      await running;
+      return models.list(row.id, 100, 0);
+    },
+  );
+  app.post<{ Params: { id: string } }>(
+    "/api/connections/:id/models",
+    async (request, reply) => {
+      required(request.params.id);
+      editable(request.params.id);
+      return reply.code(201).send(models.save(request.params.id, request.body));
+    },
+  );
+  app.get<{ Params: { id: string; modelId: string } }>(
+    "/api/connections/:id/models/:modelId",
+    async (request) => {
+      required(request.params.id);
+      const model = models.get(request.params.id, request.params.modelId);
+      if (!model) throw new ConnectionError("Model not found.", 404);
+      return model;
+    },
+  );
+  app.patch<{ Params: { id: string; modelId: string } }>(
+    "/api/connections/:id/models/:modelId",
+    async (request) => {
+      required(request.params.id);
+      editable(request.params.id);
+      return models.save(
+        request.params.id,
+        request.body,
+        request.params.modelId,
+      );
+    },
+  );
+  app.delete<{ Params: { id: string; modelId: string } }>(
+    "/api/connections/:id/models/:modelId",
+    async (request, reply) => {
+      const row = required(request.params.id);
+      editable(row.id);
+      models.remove(row.id, request.params.modelId, !!row.draft);
+      return reply.code(204).send();
+    },
+  );
+  app.delete<{ Params: { id: string } }>(
+    "/api/connections/:id/test",
+    async (request, reply) => {
+      required(request.params.id);
+      tests.get(request.params.id)?.abort();
+      await testCompletions.get(request.params.id);
+      return reply.code(204).send();
+    },
+  );
+  app.post<{ Params: { id: string; modelId: string } }>(
+    "/api/connections/:id/models/:modelId/test",
+    async (request, reply) => {
+      const row = required(request.params.id);
+      if (tests.has(row.id) || tests.size >= 4)
+        throw new ConnectionError(
+          "Model testing is busy. Retry after the current test finishes.",
+          429,
+        );
+      if (inFlight.has(row.id))
+        throw new ConnectionError(
+          "Model discovery is running. Retry shortly.",
+          409,
+        );
+      const model = models.get(row.id, request.params.modelId);
+      if (!model) throw new ConnectionError("Model not found.", 404);
+      const controller = new AbortController();
+      const timeout = setTimeout(
+        () => controller.abort(),
+        options.testTimeoutMs ?? 120_000,
+      );
+      tests.set(row.id, controller);
+      let settle!: () => void;
+      testCompletions.set(
+        row.id,
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+      );
+      const disconnected = () => {
+        if (!reply.raw.writableEnded) controller.abort();
+      };
+      reply.raw.on("close", disconnected);
+      const started = Date.now();
+      const result: ModelTestResult = {
+        success: false,
+        testedAt: new Date().toISOString(),
+        durationMs: 0,
+        reply: "",
+        error: null,
+      };
+      try {
+        const text =
+          row.provider === "codex"
+            ? await codex.test(row.id, model.id, controller.signal)
+            : await testApiModel(
+                row.provider,
+                endpoint(row),
+                key(row),
+                model.id,
+                model.maxOutputTokens,
+                controller.signal,
+                options.fetcher,
+              );
+        if (controller.signal.aborted)
+          throw new ConnectionError(
+            "The model test was cancelled or timed out.",
+            504,
+          );
+        if (!text.trim())
+          throw new ConnectionError("The model returned no assistant text.");
+        result.success = true;
+        result.reply = text.slice(0, 300);
+      } catch (error) {
+        result.error =
+          error instanceof ConnectionError
+            ? error.message
+            : "The model test failed. Check the connection and retry.";
+      } finally {
+        clearTimeout(timeout);
+        tests.delete(row.id);
+        reply.raw.removeListener("close", disconnected);
+      }
+      result.durationMs = Date.now() - started;
+      try {
+        models.tested(row.id, model.id, result);
+      } finally {
+        testCompletions.delete(row.id);
+        settle();
+      }
+      return result;
     },
   );
   const runtimeRow = (id: string) => {
@@ -349,6 +562,8 @@ export function registerConnections(
         (body.deviceCode !== undefined && typeof body.deviceCode !== "boolean")
       )
         throw new InputError({ deviceCode: "Choose true or false." });
+      editable(request.params.id);
+      models.invalidate(request.params.id);
       return codex.login(request.params.id, body.deviceCode === true);
     },
   );
@@ -366,25 +581,52 @@ export function registerConnections(
       runtimeRow(request.params.id);
       editable(request.params.id);
       await codex.logout(request.params.id);
+      models.invalidate(request.params.id);
       return reply.code(204).send();
     },
   );
   app.addHook("onClose", async () => {
-    await Promise.allSettled(inFlight.values());
+    for (const controller of tests.values()) controller.abort();
+    await Promise.allSettled([
+      ...inFlight.values(),
+      ...testCompletions.values(),
+    ]);
     await codex.close();
     if (memory) await rm(directory, { recursive: true, force: true });
   });
-  return function validatePresetConnection(input: PresetInput) {
-    if (!input.connectionId) return;
+  return function resolvePreset(
+    input: PresetConfiguration,
+  ): PresetConfiguration {
+    if (!input.connectionId)
+      return {
+        ...input,
+        connectionId: null,
+        modelId: null,
+        provider: null,
+        integrationKind: null,
+        customProviderName: null,
+        contextWindow: null,
+        maxOutputTokens: null,
+      };
     const connection = get.get(input.connectionId) as Row | undefined;
-    if (
-      !connection ||
-      connection.provider !== input.provider ||
-      (connection.provider === "codex") !==
-        (input.integrationKind === "runtime")
-    )
+    if (!connection || connection.draft)
       throw new InputError({
-        connectionId: "Choose a connection matching this provider.",
+        connectionId: "Choose a saved Provider, or leave empty.",
       });
+    const model = input.modelId
+      ? models.get(connection.id, input.modelId)
+      : undefined;
+    if (input.modelId && !model)
+      throw new InputError({
+        modelId: "Choose a model saved in this Provider.",
+      });
+    return {
+      ...input,
+      provider: connection.provider,
+      integrationKind: connection.provider === "codex" ? "runtime" : "provider",
+      customProviderName: null,
+      contextWindow: model?.contextWindow ?? null,
+      maxOutputTokens: model?.maxOutputTokens ?? null,
+    };
   };
 }

@@ -10,6 +10,8 @@ export type {
   ConnectionInput,
   ConnectionProvider,
   DiscoveredModel,
+  ProviderModel,
+  ModelTestResult,
   CodexLoginStatus,
 } from "../../server/src/contracts";
 

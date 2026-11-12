@@ -31,29 +31,37 @@ export interface Workspace extends WorkspaceInput {
 
 export interface PresetInput {
   name: string;
-  integrationKind: IntegrationKind;
-  provider: ProviderId;
+  connectionId?: string | null;
+  modelId?: string | null;
+  compaction?: Compaction | null;
+}
+
+export interface PresetConfiguration {
+  name: string;
+  integrationKind: IntegrationKind | null;
+  provider: ProviderId | null;
   customProviderName: string | null;
-  modelId: string;
+  modelId: string | null;
   contextWindow: number | null;
   maxOutputTokens: number | null;
   connectionId: string | null;
-  compaction: Compaction;
+  compaction: Compaction | null;
 }
 
-export interface ModelPreset extends PresetInput {
+export interface ModelPreset extends PresetConfiguration {
   id: string;
   createdAt: string;
   updatedAt: string;
 }
 
-export type ConnectionProvider = Exclude<ProviderId, "ollama" | "custom">;
+export type ConnectionProvider = Exclude<ProviderId, "custom">;
 export interface ConnectionInput {
   provider: ConnectionProvider;
   name: string;
   endpoint?: string | null;
   apiKey?: string;
   isDefault?: boolean;
+  draft?: boolean;
 }
 export interface ProviderConnection {
   id: string;
@@ -62,6 +70,7 @@ export interface ProviderConnection {
   endpoint: string | null;
   isDefault: boolean;
   hasCredential: boolean;
+  draft: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -70,6 +79,27 @@ export interface DiscoveredModel {
   name: string;
   contextWindow: number | null;
   maxOutputTokens: number | null;
+}
+export interface ModelTestResult {
+  success: boolean;
+  testedAt: string;
+  durationMs: number;
+  reply: string;
+  error: string | null;
+}
+export interface ProviderModel extends DiscoveredModel {
+  connectionId: string;
+  discoveredContextWindow: number | null;
+  discoveredMaxOutputTokens: number | null;
+  contextWindowOverride: number | null;
+  maxOutputTokensOverride: number | null;
+  manual: boolean;
+  available: boolean;
+  lastTest: ModelTestResult | null;
+  legacyLimits: {
+    contextWindow: number | null;
+    maxOutputTokens: number | null;
+  }[];
 }
 export interface CodexLoginStatus {
   status: "disconnected" | "pending" | "connected" | "error";

@@ -1,8 +1,15 @@
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+} from "react";
 import {
   Home as HomeIcon,
   Palette,
   Settings,
+  Server,
   SlidersHorizontal,
 } from "lucide-react";
 import { DashboardProvider } from "./components/DashboardProvider";
@@ -20,18 +27,22 @@ import { ThemeProvider } from "./components/ThemeProvider";
 import type { SettingsResponse } from "../../server/src/contracts";
 import Themes from "./pages/Themes";
 import Home from "./pages/Home";
+import Providers from "./pages/Providers";
+import { ConnectionContext, createConnectionStore } from "./connection-store";
 import Presets from "./pages/Presets";
 import styles from "./App.module.scss";
 
 const pages = [
   { id: "home", label: "Home", icon: HomeIcon },
-  { id: "model-presets", label: "Model Presets", icon: SlidersHorizontal },
+  { id: "providers", label: "Providers", icon: Server },
+  { id: "agent-presets", label: "Agent Presets", icon: SlidersHorizontal },
   { id: "theme", label: "Theme", icon: Palette },
   { id: "settings", label: "Settings", icon: Settings },
 ] as const;
 type PageId = (typeof pages)[number]["id"];
 function readPage(): PageId {
   const hash = window.location.hash.replace(/^#\/?/, "");
+  if (hash === "model-presets") return "agent-presets";
   return pages.find((page) => page.id === hash)?.id ?? "home";
 }
 
@@ -140,12 +151,19 @@ function Shell() {
       >
         <RelaySymbol />
       </a>
-      <nav aria-label="Main navigation" className={`${styles.dock} glassSurface`}>
+      <nav
+        aria-label="Main navigation"
+        className={`${styles.dock} glassSurface`}
+      >
         <GlassMaterial />
         <span
           className={styles.selection}
           aria-hidden="true"
-          style={{ "--nav-index": pages.findIndex((item) => item.id === page) } as CSSProperties}
+          style={
+            {
+              "--nav-index": pages.findIndex((item) => item.id === page),
+            } as CSSProperties
+          }
         />
         {pages.map((item) => (
           <Tooltip key={item.id} content={item.label} placement="right">
@@ -176,8 +194,10 @@ function Shell() {
           )}
           {page === "home" ? (
             <Home />
-          ) : page === "model-presets" ? (
+          ) : page === "agent-presets" ? (
             <Presets />
+          ) : page === "providers" ? (
+            <Providers />
           ) : page === "theme" ? (
             <Themes />
           ) : (
@@ -195,15 +215,18 @@ function Shell() {
   );
 }
 export default function App({ initial }: { initial: SettingsResponse }) {
+  const [connections] = useState(createConnectionStore);
   const [settings] = useState(() => createSettingsStore(initial));
   return (
     <SettingsContext.Provider value={settings}>
       <ThemeProvider>
-        <DashboardProvider>
-          <UnsavedChangesProvider>
-            <Shell />
-          </UnsavedChangesProvider>
-        </DashboardProvider>
+        <ConnectionContext.Provider value={connections}>
+          <DashboardProvider>
+            <UnsavedChangesProvider>
+              <Shell />
+            </UnsavedChangesProvider>
+          </DashboardProvider>
+        </ConnectionContext.Provider>
       </ThemeProvider>
     </SettingsContext.Provider>
   );

@@ -4,6 +4,7 @@ import { rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import type { CodexLoginStatus, DiscoveredModel } from "./contracts.js";
+import { TEST_PROMPT } from "./provider-inference.js";
 import { ConnectionError } from "./model-providers.js";
 
 export interface CodexAdapter {
@@ -12,6 +13,7 @@ export interface CodexAdapter {
   cancel(id: string): Promise<void>;
   logout(id: string): Promise<void>;
   models(id: string): Promise<DiscoveredModel[]>;
+  test(id: string, modelId: string, signal: AbortSignal): Promise<string>;
   hasCredential(id: string): boolean;
   remove(id: string): Promise<void>;
   close(): Promise<void>;
@@ -95,6 +97,12 @@ class CodexClient {
       timer: NodeJS.Timeout;
     }
   >();
+  private activeTest?: {
+    threadId: string;
+    text: string;
+    resolve: (text: string) => void;
+    reject: (error: Error) => void;
+  };
   private buffer = "";
   private stopped = false;
   private idle?: NodeJS.Timeout;
@@ -134,7 +142,11 @@ class CodexClient {
   private touch() {
     clearTimeout(this.idle);
     this.idle = setTimeout(() => {
-      if (this.loginResult.status === "pending" || this.pending.size)
+      if (
+        this.loginResult.status === "pending" ||
+        this.pending.size ||
+        this.activeTest
+      )
         this.touch();
       else this.stop();
     }, this.idleMs);
@@ -172,6 +184,60 @@ class CodexClient {
       }
       const message = parsed as Record<string, unknown>;
       const params = object(message.params);
+      if (this.activeTest && message.method && message.id !== undefined) {
+        this.activeTest.reject(
+          new ConnectionError(
+            "Codex requested a tool or approval during the text-only test.",
+          ),
+        );
+        this.stop();
+        return;
+      }
+      if (this.activeTest && params.threadId === this.activeTest.threadId) {
+        const item = object(params.item);
+        if (
+          message.method === "item/agentMessage/delta" &&
+          typeof params.delta === "string"
+        ) {
+          this.activeTest.text += params.delta;
+          if (this.activeTest.text.length > 64 * 1024) {
+            this.stop();
+            return;
+          }
+        }
+        if (
+          (message.method === "item/started" &&
+            item.type !== "agentMessage" &&
+            item.type !== "reasoning" &&
+            item.type !== "userMessage") ||
+          (message.id !== undefined && message.method)
+        ) {
+          this.activeTest.reject(
+            new ConnectionError(
+              "Codex requested a tool during the text-only model test.",
+            ),
+          );
+          this.stop();
+          return;
+        }
+        if (
+          message.method === "item/completed" &&
+          item.type === "agentMessage" &&
+          typeof item.text === "string"
+        )
+          this.activeTest.text = item.text;
+        if (message.method === "turn/completed") {
+          const turn = object(params.turn);
+          if (turn.status === "completed" && this.activeTest.text.trim())
+            this.activeTest.resolve(this.activeTest.text.trim().slice(0, 300));
+          else
+            this.activeTest.reject(
+              new ConnectionError(
+                "Codex did not complete a text reply. Retry the model test.",
+              ),
+            );
+        }
+      }
       if (typeof message.id === "number" && this.pending.has(message.id)) {
         const request = this.pending.get(message.id)!;
         this.pending.delete(message.id);
@@ -422,9 +488,79 @@ class CodexClient {
     }
     throw new ConnectionError("Codex returned too many model pages.");
   }
+  async test(modelId: string, signal: AbortSignal): Promise<string> {
+    if (signal.aborted)
+      throw new ConnectionError("The model test was cancelled.", 504);
+    const abort = () => {
+      this.stop();
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    try {
+      if ((await this.status()).status !== "connected")
+        throw new ConnectionError(
+          "Sign in with ChatGPT before testing a Codex model.",
+          401,
+        );
+      const result = object(
+        await this.rpc("thread/start", {
+          model: modelId,
+          ephemeral: true,
+          approvalPolicy: "never",
+          sandbox: "read-only",
+          baseInstructions:
+            "You are a connection test. Reply with OK. Do not use tools.",
+          developerInstructions:
+            "Reply with a short text answer only. Do not access files or run tools.",
+          config: {
+            web_search: "disabled",
+            features: {
+              shell_tool: false,
+              apply_patch_freeform: false,
+              multi_agent: false,
+              apps: false,
+              hooks: false,
+              goals: false,
+              memories: false,
+            },
+            mcp_servers: {},
+          },
+        }),
+      );
+      const threadId = object(result.thread).id;
+      if (typeof threadId !== "string")
+        throw new ConnectionError("Codex returned an invalid test thread.");
+      let resolve!: (text: string) => void;
+      let reject!: (error: Error) => void;
+      const completed = new Promise<string>((a, b) => {
+        resolve = a;
+        reject = b;
+      });
+      // Attach immediately: notifications may share a chunk with the turn/start response.
+      void completed.catch(() => {});
+      this.activeTest = { threadId, text: "", resolve, reject };
+      await this.rpc("turn/start", {
+        threadId,
+        model: modelId,
+        input: [{ type: "text", text: TEST_PROMPT }],
+        approvalPolicy: "never",
+      });
+      return await completed;
+    } finally {
+      signal.removeEventListener("abort", abort);
+      this.activeTest = undefined;
+      // Ephemeral test conversations and any interrupted work live only in this process.
+      await this.stop();
+    }
+  }
   stop() {
     if (this.stopped) return this.exited;
     this.stopped = true;
+    this.activeTest?.reject(
+      new ConnectionError(
+        "Codex test stopped or was cancelled. Retry when ready.",
+        503,
+      ),
+    );
     clearTimeout(this.idle);
     clearTimeout(this.loginTimer);
     for (const request of this.pending.values()) {
@@ -500,6 +636,9 @@ export class CodexRuntime implements CodexAdapter {
   }
   models(id: string) {
     return this.client(id).models();
+  }
+  test(id: string, modelId: string, signal: AbortSignal) {
+    return this.client(id).test(modelId, signal);
   }
   async remove(id: string) {
     await this.clients.get(id)?.stop();

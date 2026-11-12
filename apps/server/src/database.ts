@@ -18,7 +18,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 5)
+    if (version > 6)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -100,6 +100,52 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
           CREATE INDEX model_presets_connection ON model_presets(connectionId);
         `);
         database.pragma("user_version = 5");
+      })();
+    if (version < 6)
+      database.transaction(() => {
+        database.exec(`
+          ALTER TABLE connections ADD COLUMN draft INTEGER NOT NULL DEFAULT 0;
+          CREATE TABLE provider_models (
+            connectionId TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+            id TEXT NOT NULL, name TEXT NOT NULL,
+            discoveredContextWindow INTEGER, discoveredMaxOutputTokens INTEGER,
+            contextWindowOverride INTEGER, maxOutputTokensOverride INTEGER,
+            manual INTEGER NOT NULL DEFAULT 0, available INTEGER NOT NULL DEFAULT 1,
+            lastTest TEXT, legacyLimits TEXT NOT NULL DEFAULT '[]',
+            PRIMARY KEY (connectionId, id)
+          );
+          INSERT INTO provider_models (connectionId, id, name, manual, available,
+            contextWindowOverride, maxOutputTokensOverride, legacyLimits)
+          SELECT connectionId, modelId, modelId, 1, 0,
+            CASE WHEN count(DISTINCT coalesce(contextWindow, -1)) = 1 THEN max(contextWindow) END,
+            CASE WHEN count(DISTINCT coalesce(maxOutputTokens, -1)) = 1 THEN max(maxOutputTokens) END,
+            CASE WHEN count(DISTINCT coalesce(contextWindow, -1)) > 1
+                   OR count(DISTINCT coalesce(maxOutputTokens, -1)) > 1
+              THEN json_group_array(json_object('contextWindow', contextWindow, 'maxOutputTokens', maxOutputTokens))
+              ELSE '[]' END
+          FROM model_presets WHERE connectionId IS NOT NULL GROUP BY connectionId, modelId;
+          UPDATE connections SET draft = 1 WHERE NOT EXISTS
+            (SELECT 1 FROM provider_models WHERE connectionId = connections.id);
+          ALTER TABLE model_presets RENAME TO old_model_presets;
+          CREATE TABLE model_presets (
+            id TEXT PRIMARY KEY, name TEXT NOT NULL,
+            integrationKind TEXT, provider TEXT, customProviderName TEXT, modelId TEXT,
+            contextWindow INTEGER, maxOutputTokens INTEGER,
+            connectionId TEXT REFERENCES connections(id) ON DELETE SET NULL,
+            compactionMode TEXT, compactionValue INTEGER,
+            createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
+          );
+          INSERT INTO model_presets SELECT id, name,
+            CASE WHEN connectionId IS NOT NULL THEN integrationKind END,
+            CASE WHEN connectionId IS NOT NULL THEN provider END, NULL,
+            CASE WHEN connectionId IS NOT NULL THEN modelId END,
+            NULL, NULL, connectionId, compactionMode, compactionValue, createdAt, updatedAt
+            FROM old_model_presets;
+          DROP TABLE old_model_presets;
+          CREATE INDEX model_presets_created ON model_presets(createdAt, id);
+          CREATE INDEX model_presets_connection ON model_presets(connectionId);
+        `);
+        database.pragma("user_version = 6");
       })();
   } catch (error) {
     database.close();

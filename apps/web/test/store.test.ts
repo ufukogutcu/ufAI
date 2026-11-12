@@ -55,12 +55,10 @@ test("workspace creates and edits refresh selected details, preserve unrelated r
   assert.equal(store.getState().workspaces[0], original);
   const before = store.getState().workspaces;
   await assert.rejects(
-    store
-      .getState()
-      .updateWorkspace(created.id, {
-        name: "Not saved",
-        description: "x".repeat(4001),
-      }),
+    store.getState().updateWorkspace(created.id, {
+      name: "Not saved",
+      description: "x".repeat(4001),
+    }),
   );
   assert.equal(store.getState().workspaces, before);
   assert.equal(settings.getState().snapshot.activeWorkspace, updated);
@@ -104,12 +102,19 @@ test("paginated loads preserve selection and unrelated record identities", async
 test("preset state changes only after a successful server response", async (t) => {
   const input = draftToInput({
     ...draftFromPreset(),
-    provider: "openai" as const,
     name: "Test",
     modelId: "model",
   });
   const record: ModelPreset = {
-    ...input,
+    name: input.name,
+    connectionId: null,
+    modelId: null,
+    compaction: null,
+    provider: null,
+    integrationKind: null,
+    customProviderName: null,
+    contextWindow: null,
+    maxOutputTokens: null,
     id: "preset",
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -148,4 +153,67 @@ test("deleting an active workspace uses the backend neighbor and clears its view
   await store.getState().deleteWorkspace(id);
   assert.notEqual(settings.getState().snapshot.settings.activeWorkspaceId, id);
   assert.equal(store.getState().viewports[id], undefined);
+});
+
+function presetRecord(id: string): ModelPreset {
+  return {
+    id,
+    name: id,
+    connectionId: null,
+    modelId: null,
+    compaction: null,
+    provider: null,
+    integrationKind: null,
+    customProviderName: null,
+    contextWindow: null,
+    maxOutputTokens: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+}
+test("preset focus refresh retains all loaded pages and unchanged record identities", async (t) => {
+  const records = Array.from({ length: 150 }, (_, i) =>
+    presetRecord(`preset-${String(i).padStart(3, "0")}`),
+  );
+  const offsets: number[] = [];
+  t.mock.method(globalThis, "fetch", async (url: string) => {
+    const offset = Number(
+      new URL(url, "http://localhost").searchParams.get("offset"),
+    );
+    offsets.push(offset);
+    return Response.json({
+      items: records.slice(offset, offset + 100),
+      total: records.length,
+    });
+  });
+  const store = createDashboardStore(createSettingsStore(initialSettings()));
+  await store.getState().loadPresets();
+  await store.getState().loadPresets(true);
+  const last = store.getState().presets[149];
+  await store.getState().loadPresets();
+  assert.equal(store.getState().presets.length, 150);
+  assert.equal(store.getState().presets[149], last);
+  assert.deepEqual(offsets, [0, 100, 0, 100]);
+});
+test("an old preset refresh cannot overwrite a newer successful save", async (t) => {
+  let finish!: (response: Response) => void;
+  const old = new Promise<Response>((resolve) => {
+    finish = resolve;
+  });
+  const record = presetRecord("preset");
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (_url: string, options?: RequestInit) =>
+      options?.method === "PATCH"
+        ? Response.json({ ...record, name: "New" })
+        : old,
+  );
+  const store = createDashboardStore(createSettingsStore(initialSettings()));
+  const loading = store.getState().loadPresets();
+  await store.getState().savePreset(record.id, { name: "New" });
+  finish(Response.json({ items: [record], total: 1 }));
+  await loading;
+  assert.equal(store.getState().presets[0]?.name, "New");
+  assert.equal(store.getState().presetStatus, "ready");
 });

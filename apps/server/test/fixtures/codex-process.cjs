@@ -80,6 +80,77 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       fs.rmSync(path.join(home, "auth.json"), { force: true });
       result({});
       break;
+    case "thread/start":
+      if (
+        request.params.ephemeral !== true ||
+        request.params.sandbox !== "read-only" ||
+        request.params.approvalPolicy !== "never" ||
+        request.params.config.features.shell_tool !== false
+      ) {
+        send({ id: request.id, error: { message: "unsafe test setup" } });
+      } else result({ thread: { id: "test-thread" } });
+      break;
+    case "turn/start": {
+      if (request.params.input[0].text !== "Reply with OK.") {
+        send({ id: request.id, error: { message: "wrong prompt" } });
+        break;
+      }
+      const events = [
+        { id: request.id, result: { turn: { id: "test-turn" } } },
+      ];
+      if (mode === "test-exit") {
+        process.exit(1);
+        break;
+      }
+      if (mode === "test-malformed") {
+        process.stdout.write("invalid\n");
+        break;
+      }
+      if (mode === "test-hang") {
+        result({ turn: { id: "test-turn" } });
+        break;
+      }
+      if (mode === "test-tool")
+        events.push({
+          method: "item/started",
+          params: {
+            threadId: "test-thread",
+            item: { type: "commandExecution" },
+          },
+        });
+      else if (mode === "test-approval")
+        events.push({
+          id: 999,
+          method: "item/commandExecution/requestApproval",
+          params: {},
+        });
+      else {
+        events.push({
+          method: "item/completed",
+          params: {
+            threadId: "test-thread",
+            item: {
+              type: "agentMessage",
+              text: mode === "test-empty" ? "" : "OK",
+            },
+          },
+        });
+        events.push({
+          method: "turn/completed",
+          params: {
+            threadId: "test-thread",
+            turn: {
+              id: "test-turn",
+              status: mode === "test-failed" ? "failed" : "completed",
+            },
+          },
+        });
+      }
+      process.stdout.write(
+        events.map((value) => JSON.stringify(value)).join("\n") + "\n",
+      );
+      break;
+    }
     case "model/list":
       result(
         request.params.cursor

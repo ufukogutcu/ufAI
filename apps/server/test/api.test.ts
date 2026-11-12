@@ -8,12 +8,7 @@ import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
 import type { ModelPreset, Workspace } from "../src/contracts.js";
 
-const basicPreset = {
-  name: "Coding",
-  integrationKind: "provider",
-  provider: "openai",
-  modelId: "example-model",
-};
+const basicPreset = { name: "Coding" };
 function memoryApp() {
   return createApp({ databasePath: ":memory:", serveStatic: false });
 }
@@ -195,88 +190,52 @@ test("workspace input and list bounds return actionable errors", async (t) => {
   assert.equal(typeof malformed.json().error, "string");
 });
 
-test("preset CRUD, defaults, partial patch and integration distinction", async (t) => {
+test("agent presets allow name-only records, nullable compaction, partial patch and pagination", async (t) => {
   const app = memoryApp();
   t.after(() => app.close());
-  assert.deepEqual((await app.inject("/api/model-presets")).json(), {
-    items: [],
-    total: 0,
-  });
   const response = await app.inject({
     method: "POST",
     url: "/api/model-presets",
-    payload: basicPreset,
+    payload: { name: "  Coding  " },
   });
   assert.equal(response.statusCode, 201);
   const preset = response.json<ModelPreset>();
-  assert.deepEqual(preset.compaction, { mode: "percentage", value: 80 });
-  assert.equal(preset.contextWindow, null);
-  assert.equal(preset.maxOutputTokens, null);
-  assert.equal(preset.connectionId, null);
-  assert.equal("notes" in preset, false);
-  const updated = await app.inject({
+  assert.equal(preset.name, "Coding");
+  for (const key of [
+    "connectionId",
+    "provider",
+    "integrationKind",
+    "modelId",
+    "contextWindow",
+    "maxOutputTokens",
+    "compaction",
+  ] as const)
+    assert.equal(preset[key], null);
+  const changed = await app.inject({
     method: "PATCH",
     url: `/api/model-presets/${preset.id}`,
-    payload: {
-      contextWindow: 1000,
-      maxOutputTokens: 200,
-      compaction: { mode: "tokens", value: 800 },
-    },
+    payload: { compaction: { mode: "tokens", value: 900 } },
   });
-  assert.equal(updated.statusCode, 200);
-  assert.equal(updated.json().modelId, "example-model");
-  const smaller = await app.inject({
-    method: "PATCH",
-    url: `/api/model-presets/${preset.id}`,
-    payload: { contextWindow: 500 },
-  });
-  assert.equal(smaller.statusCode, 400);
-  assert.ok(smaller.json().fields["compaction.value"]);
-  assert.equal(
-    (await app.inject("/api/model-presets")).json().items[0].contextWindow,
-    1000,
-  );
-  const switched = await app.inject({
-    method: "PATCH",
-    url: `/api/model-presets/${preset.id}`,
-    payload: {
-      contextWindow: 500,
-      compaction: { mode: "percentage", value: 80 },
-    },
-  });
-  assert.equal(switched.statusCode, 200);
+  assert.equal(changed.statusCode, 200);
+  assert.deepEqual(changed.json().compaction, { mode: "tokens", value: 900 });
   assert.equal(
     (
       await app.inject({
-        method: "POST",
-        url: "/api/model-presets",
-        payload: {
-          ...basicPreset,
-          integrationKind: "runtime",
-          provider: "codex",
-        },
+        method: "PATCH",
+        url: `/api/model-presets/${preset.id}`,
+        payload: { compaction: null },
       })
-    ).statusCode,
-    201,
+    ).json().compaction,
+    null,
   );
-  assert.equal(
-    (
-      await app.inject({
-        method: "POST",
-        url: "/api/model-presets",
-        payload: {
-          ...basicPreset,
-          integrationKind: "runtime",
-          provider: "custom",
-          customProviderName: "My runtime",
-        },
-      })
-    ).statusCode,
-    201,
-  );
+  await app.inject({
+    method: "POST",
+    url: "/api/model-presets",
+    payload: { name: "Other", connectionId: null, modelId: null },
+  });
   const page = (await app.inject("/api/model-presets?limit=1&offset=1")).json();
   assert.equal(page.items.length, 1);
-  assert.equal(page.total, 3);
+  assert.equal(page.total, 2);
   assert.equal(
     (
       await app.inject({
@@ -306,32 +265,26 @@ test("preset CRUD, defaults, partial patch and integration distinction", async (
     404,
   );
 });
-
-test("preset validation rejects invalid tokens, percentages, integrations and protected fields", async (t) => {
+test("agent presets reject malformed supplied values, derived metadata and protected fields", async (t) => {
   const app = memoryApp();
   t.after(() => app.close());
   const cases: [Record<string, unknown>, string][] = [
     [{ name: "" }, "name"],
-    [{ modelId: "" }, "modelId"],
-    [{ provider: "unknown" }, "provider"],
-    [{ provider: "codex" }, "provider"],
-    [{ integrationKind: "runtime" }, "provider"],
-    [{ provider: "custom" }, "customProviderName"],
-    [{ customProviderName: "Unexpected" }, "customProviderName"],
-    [{ contextWindow: 0 }, "contextWindow"],
-    [{ contextWindow: 1.5 }, "contextWindow"],
-    [{ contextWindow: Number.MAX_SAFE_INTEGER + 1 }, "contextWindow"],
-    [{ contextWindow: "1000" }, "contextWindow"],
-    [{ maxOutputTokens: -1 }, "maxOutputTokens"],
-    [{ contextWindow: 100, maxOutputTokens: 101 }, "maxOutputTokens"],
+    [{ name: "x".repeat(121) }, "name"],
+    [{ modelId: 1 }, "modelId"],
+    [{ provider: "openai" }, "provider"],
+    [{ integrationKind: "runtime" }, "integrationKind"],
+    [{ contextWindow: 1000 }, "contextWindow"],
+    [{ maxOutputTokens: 10 }, "maxOutputTokens"],
+    [{ connectionId: 2 }, "connectionId"],
+    [{ connectionId: "missing" }, "connectionId"],
     [{ compaction: { mode: "percentage", value: 101 } }, "compaction.value"],
     [{ compaction: { mode: "percentage", value: 1.2 } }, "compaction.value"],
     [{ compaction: { mode: "tokens", value: 0 } }, "compaction.value"],
     [
-      { contextWindow: 10, compaction: { mode: "tokens", value: 11 } },
+      { compaction: { mode: "tokens", value: Number.MAX_SAFE_INTEGER + 1 } },
       "compaction.value",
     ],
-    [{ compaction: null }, "compaction"],
     [{ compaction: { mode: "invalid", value: 80 } }, "compaction.mode"],
     [
       { compaction: { mode: "percentage", value: 80, extra: true } },
@@ -341,13 +294,13 @@ test("preset validation rejects invalid tokens, percentages, integrations and pr
     [{ notes: "removed" }, "notes"],
   ];
   for (const [patch, field] of cases) {
-    const response = await app.inject({
+    const result = await app.inject({
       method: "POST",
       url: "/api/model-presets",
-      payload: { ...basicPreset, ...patch },
+      payload: { name: "Test", ...patch },
     });
-    assert.equal(response.statusCode, 400, JSON.stringify(patch));
-    assert.ok(response.json().fields[field], `${field}: ${response.body}`);
+    assert.equal(result.statusCode, 400, JSON.stringify(patch));
+    assert.ok(result.json().fields[field], result.body);
   }
   assert.equal((await app.inject("/api/model-presets")).json().total, 0);
 });
@@ -421,7 +374,7 @@ test("version 3 migration adds empty descriptions without changing existing work
     .prepare("INSERT INTO workspace_viewports VALUES (?, 12, -24, 1.5)")
     .run(workspace.id);
   old.exec(
-    "DROP INDEX model_presets_connection; ALTER TABLE model_presets DROP COLUMN connectionId; DROP TABLE connections; ALTER TABLE model_presets ADD COLUMN notes TEXT NOT NULL DEFAULT ''; ALTER TABLE workspaces DROP COLUMN description; PRAGMA user_version = 3;",
+    "DROP TABLE provider_models; DROP INDEX model_presets_connection; ALTER TABLE model_presets DROP COLUMN connectionId; DROP TABLE connections; ALTER TABLE model_presets ADD COLUMN notes TEXT NOT NULL DEFAULT ''; ALTER TABLE workspaces DROP COLUMN description; PRAGMA user_version = 3;",
   );
   old.close();
   let app = createApp({ databasePath, serveStatic: false });
@@ -454,12 +407,12 @@ test("newer database versions fail without downgrading schema", async (t) => {
   t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "test.sqlite");
   const db = openDatabase(path);
-  assert.equal(db.pragma("user_version", { simple: true }), 5);
+  assert.equal(db.pragma("user_version", { simple: true }), 6);
   assert.equal(db.pragma("foreign_keys", { simple: true }), 1);
-  db.pragma("user_version = 6");
+  db.pragma("user_version = 7");
   db.close();
   assert.throws(() => openDatabase(path), /newer version/);
   const inspection = new Database(path, { readonly: true });
-  assert.equal(inspection.pragma("user_version", { simple: true }), 6);
+  assert.equal(inspection.pragma("user_version", { simple: true }), 7);
   inspection.close();
 });

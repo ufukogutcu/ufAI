@@ -5,14 +5,7 @@ import {
   createModelLoader,
   type ModelDiscoveryState,
 } from "../src/model-discovery.js";
-import {
-  draftFromPreset,
-  draftToInput,
-  selectProvider,
-  selectModel,
-  validateDraft,
-  providerOptions,
-} from "../src/preset-form.js";
+import { providerOptions } from "../src/provider-options.js";
 import type { DiscoveredModel, ProviderConnection } from "../src/api.js";
 const connection: ProviderConnection = {
   id: "primary",
@@ -21,6 +14,7 @@ const connection: ProviderConnection = {
   endpoint: null,
   hasCredential: true,
   isDefault: true,
+  draft: false,
   createdAt: "now",
   updatedAt: "now",
 };
@@ -35,48 +29,18 @@ function deferred<T>() {
 }
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
-test("new presets require an explicit provider; provider and model changes reset only model details", () => {
-  const draft = draftFromPreset();
-  assert.equal(draft.provider, "");
-  assert.ok(validateDraft(draft).provider);
-  const selected = selectProvider(
-    {
-      ...draft,
-      name: "Kept",
-      modelId: "old",
-      contextWindow: "500",
-      maxOutputTokens: "100",
-    },
-    "openai",
-    "provider",
-    [connection],
-  );
-  assert.equal(selected.connectionId, "primary");
-  assert.equal(selected.modelId, "");
-  assert.equal(selected.contextWindow, "");
-  assert.equal(selected.name, "Kept");
-  assert.equal(selected.compactionValue, "80");
-  const model = {
-    id: "new",
-    name: "New",
-    contextWindow: 1000,
-    maxOutputTokens: 200,
-  };
-  const chosen = selectModel(selected, model.id, [model]);
-  assert.equal(chosen.contextWindow, "1000");
-  assert.equal(chosen.maxOutputTokens, "200");
-  assert.equal(selectModel(chosen, "new", [model]), chosen);
-  const manual = selectModel(chosen, "manual", []);
-  assert.equal(manual.contextWindow, "");
-  assert.equal(manual.maxOutputTokens, "");
-  assert.equal("notes" in draftToInput(manual), false);
+test("Provider options retain API and subscription choices and add dedicated Ollama", () => {
   assert.deepEqual(
     providerOptions.filter((p) => p.kind === "runtime").map((p) => p.id),
     ["codex"],
   );
   assert.equal(
-    providerOptions.some((p) => p.id === "ollama" || p.id === "custom"),
-    false,
+    providerOptions.some((p) => p.id === "ollama"),
+    true,
+  );
+  assert.equal(
+    providerOptions.some((p) => p.id === "openai-compatible"),
+    true,
   );
 });
 test("model discovery ignores old responses and cancellation; errors preserve manual choices", async () => {
