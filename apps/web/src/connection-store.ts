@@ -33,9 +33,20 @@ export function createConnectionStore() {
       if (inFlight) return inFlight;
       const started = revision;
       set({ status: "loading", error: "" });
-      inFlight = request<{ items: ProviderConnection[] }>(
-        "/connections?limit=100",
-      )
+      inFlight = (async () => {
+        const items: ProviderConnection[] = [];
+        let offset = 0;
+        while (true) {
+          const page = await request<{ items: ProviderConnection[]; total?: number }>(
+            `/connections?limit=100${offset ? `&offset=${offset}` : ""}`,
+          );
+          items.push(...page.items);
+          offset += page.items.length;
+          if (page.items.length < 100 || (page.total !== undefined && offset >= page.total)) break;
+          if (revision !== started) return { items: [] };
+        }
+        return { items: [...new Map(items.map((item) => [item.id, item])).values()] };
+      })()
         .then(({ items }) => {
           if (revision === started)
             set((state) => ({

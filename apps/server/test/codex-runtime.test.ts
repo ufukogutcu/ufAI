@@ -111,7 +111,7 @@ test("idle cleanup releases processes and the simultaneous runtime limit is enfo
     pending.runtime.login("two", true),
     pending.runtime.login("three", true),
   ]);
-  assert.throws(() => pending.runtime.status("four"), /busy/);
+  await assert.rejects(pending.runtime.status("four"), /busy/);
 });
 
 test("Codex test uses an ephemeral restricted turn and handles same-chunk completion with process cleanup", async (t) => {
@@ -201,4 +201,87 @@ test("Codex catalog helpers are stopped and awaited on runtime close and connect
     assert.ok(children.every((child) => child.exitCode !== null || child.signalCode !== null));
     if (action === "remove") await assert.rejects(access(join(directory, "one")));
   }
+});
+
+test("Codex usage normalizes plan, windows, credits and detailed reset inventory; reads coalesce and cache", async (t) => {
+  const { runtime, homes } = await setup(t);
+  await runtime.login("one", false);
+  const first = runtime.usage("one");
+  assert.equal(runtime.usage("one"), first);
+  const snapshot = await first;
+  assert.equal(snapshot.planType, "pro");
+  assert.equal(snapshot.defaultLimit?.primary?.usedPercent, 25);
+  assert.equal(snapshot.defaultLimit?.secondary?.windowDurationMins, 10080);
+  assert.equal(snapshot.defaultLimit?.credits?.balance, "123.45");
+  assert.equal(snapshot.resetCredits?.availableCount, 2);
+  assert.equal(snapshot.resetCredits?.credits, null);
+  const detailed = await runtime.usage("one", true);
+  assert.equal(detailed.resetCredits?.credits?.[0]?.id, "reset-1");
+  assert.equal(await runtime.usage("one"), detailed);
+  const path = join(homes[0]!, "usage-response.json");
+  await writeFile(path, JSON.stringify({ rateLimits: { secondary: { usedPercent: 80, windowDurationMins: 10080 } }, rateLimitsByLimitId: { reserve: { limitId: "reserve", primary: { usedPercent: 10 } } } }));
+  assert.equal(await runtime.usage("one", true), detailed);
+  const refreshed = await runtime.usage("one", true, true);
+  assert.equal(refreshed.defaultLimit?.primary, null);
+  assert.equal(refreshed.defaultLimit?.secondary?.usedPercent, 80);
+  assert.equal(refreshed.defaultLimit?.secondary?.resetsAt, null);
+  assert.equal(refreshed.limits.length, 2);
+  assert.equal(refreshed.resetCredits, null);
+});
+
+test("Codex idle clients can be evicted to read usage for more than three Providers", async (t) => {
+  const { runtime, children } = await setup(t);
+  for (const id of ["one", "two", "three", "four", "five"]) {
+    await runtime.login(id, false);
+    assert.equal((await runtime.usage(id)).planType, "pro");
+    assert.ok(children.filter((child) => child.exitCode === null && child.signalCode === null).length <= 3);
+  }
+  assert.equal((await runtime.status("one")).status, "connected", "credentials survive eviction");
+});
+
+test("Codex reset outcomes use idempotency keys, refresh cache, and invalidate on logout", async (t) => {
+  const { runtime } = await setup(t);
+  await runtime.login("one", false);
+  const snapshot = await runtime.usage("one");
+  const input = { idempotencyKey: "test-attempt", creditId: "reset-1" };
+  assert.equal(await runtime.consumeReset("one", input), "reset");
+  assert.equal(await runtime.consumeReset("one", input), "alreadyRedeemed");
+  assert.notEqual(await runtime.usage("one"), snapshot);
+  await runtime.logout("one");
+  await assert.rejects(runtime.usage("one"), /Sign in/);
+  for (const [mode, outcome] of [["reset-empty", "nothingToReset"], ["reset-none", "noCredit"]]) {
+    const { runtime: other } = await setup(t, mode);
+    await other.login("one", false);
+    assert.equal(await other.consumeReset("one", { idempotencyKey: "another-attempt" }), outcome);
+  }
+});
+
+test("Codex usage is bounded, protects active clients, and rejects stale or private error responses", async (t) => {
+  const { runtime } = await setup(t, "usage-hang", 150);
+  await runtime.login("one", false);
+  await runtime.login("two", false);
+  await runtime.login("three", false);
+  const one = runtime.usage("one");
+  const two = runtime.usage("two");
+  const waiting = Promise.allSettled([one, two]);
+  await assert.rejects(runtime.usage("three"), /busy/);
+  await assert.rejects(runtime.consumeReset("one", { idempotencyKey: "busy" }), /pending/);
+  await runtime.close();
+  assert.ok((await waiting).every((result) => result.status === "rejected"));
+  for (const mode of ["usage-error", "usage-notification"]) {
+    const { runtime: other } = await setup(t, mode);
+    await other.login("one", false);
+    await assert.rejects(other.usage("one"), (error: Error) => !error.message.includes("PRIVATE") && /Retry|retry/.test(error.message));
+  }
+});
+
+test("removal prevents an awaiting usage acquisition from recreating the deleted runtime", async (t) => {
+  const { runtime, directory, children } = await setup(t);
+  for (const id of ["one", "two", "three", "four"]) await runtime.login(id, false);
+  const pending = runtime.usage("one");
+  const rejected = assert.rejects(pending, /removed|shutting/);
+  await runtime.remove("one");
+  await rejected;
+  await assert.rejects(access(join(directory, "one")));
+  assert.ok(children.filter((child) => child.exitCode === null && child.signalCode === null).length <= 3);
 });

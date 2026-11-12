@@ -33,15 +33,20 @@ export function Tooltip({
   content,
   placement = "top",
   hoverDelayMs = 400,
+  live = false,
+  multiline = false,
   children,
 }: {
   content: string;
   placement?: Placement;
   hoverDelayMs?: number;
+  live?: boolean;
+  multiline?: boolean;
   children: ReactElement<TriggerProps, string>;
 }) {
   const id = useId();
   const trigger = useRef<HTMLElement | null>(null);
+  const focusFrame = useRef<number>(0);
   const tooltip = useRef<HTMLDivElement | null>(null);
   const openingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const closingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -104,11 +109,13 @@ export function Tooltip({
     hide();
   }
 
+  useEffect(() => () => cancelAnimationFrame(focusFrame.current), []);
+  const resetContent = live ? "" : content;
   useEffect(() => {
     hide();
     dismissed.current = false;
     return clearTimers;
-  }, [content, enabled, hide, clearTimers]);
+  }, [resetContent, enabled, hide, clearTimers]);
 
   useEffect(() => {
     if (!active) return;
@@ -200,11 +207,19 @@ export function Tooltip({
           children.props.onFocus?.(event);
           if (!event.currentTarget.matches(":focus-visible")) return;
           focused.current = true;
-          show();
+          if (live) {
+            // Let keyboard-triggered overflow scrolling settle before opening the live tooltip.
+            event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
+            cancelAnimationFrame(focusFrame.current);
+            focusFrame.current = requestAnimationFrame(() => {
+              if (focused.current && !dismissed.current) show();
+            });
+          } else show();
         },
         onBlur(event) {
           children.props.onBlur?.(event);
           focused.current = false;
+          cancelAnimationFrame(focusFrame.current);
           dismissed.current = false;
           hide();
         },
@@ -223,7 +238,7 @@ export function Tooltip({
           ref={tooltip}
           id={id}
           role="tooltip"
-          className={`${styles.tooltip} ${position ? "" : styles.measuring}`}
+          className={`${styles.tooltip} ${multiline ? styles.multiline : ""} ${position ? "" : styles.measuring}`}
           style={position ?? undefined}
           onPointerEnter={(event) => {
             if (event.pointerType !== "mouse") return;

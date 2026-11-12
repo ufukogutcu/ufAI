@@ -4,7 +4,7 @@
 
 ufAI is a local-first application for one user to organize AI agents and related work across multiple workspaces in a browser. Its intended experience includes configurable agents, communication permissions, reusable skills, instructions, and triggers.
 
-**Current availability: early functional dashboard.** Users can manage workspaces and empty flowboards, save Agent Presets and Providers, discover and test models, connect local Ollama servers, sign in to Codex with ChatGPT, and customize themes. Settings currently contains a heading only. Agent editing/execution, general inference, actual compaction, messaging, triggers, and the built-in assistant are not available. Model testing sends a short prompt only.
+**Current availability: early functional dashboard.** Users can manage workspaces and empty flowboards, save Agent Presets and Providers, discover and test models, connect local Ollama servers, sign in to Codex with ChatGPT, inspect subscription usage and use earned resets, and customize themes. Settings currently contains a heading only. Agent editing/execution, general inference, actual compaction, messaging, triggers, and the built-in assistant are not available. Model testing sends a short prompt only.
 
 One local installation holds one shared setup across browser sessions. There are no ufAI application accounts or separate profiles for each browser. Sign-in connects an external provider/runtime account; it does not create a ufAI account. See the [terminology and feature-status guide](README.md) when explaining these distinctions.
 
@@ -97,6 +97,16 @@ One local installation holds one shared setup across browser sessions. There are
 - **Behavior:** Codex is bundled with ufAI; a separate global CLI installation is not required. Model testing creates a temporary conversation solely for the short prompt. Signing out clears prior model-test results but keeps model configurations and preset bindings.
 - **Model context:** Discovery uses each model's default context window from the Codex catalog for that Provider, with bundled defaults as a fallback. Refresh models updates existing saved models. Context remains Unknown if neither catalog supplies a valid value. Explicit context overrides are retained. These values describe catalog defaults and do not configure runtime context capacity or enable compaction.
 - **Limitations:** Account entitlement and the bundled runtime determine availability. A subscription does not imply access to the separate OpenAI API. General Codex tasks, agent runs, and persistent conversations are not provided.
+
+### codex-usage-dock
+
+- **Status:** implemented
+- **Purpose:** Inspect subscription usage separately for each saved Codex Provider and use eligible earned resets.
+- **Steps:** Save a Codex Provider to see its usage button beneath the page icons on the left. The two menus are centered together; long usage lists scroll, and the entire stack can scroll on short screens. Each button shows percent used for the account's reported default windows, such as 5h and 7d, or only 7d when that is all the account supplies. Hover or keyboard focus shows the Provider name, plan, credits, reset countdowns, and last update. Select the button to open detailed usage without leaving the current page or losing form drafts.
+- **Details:** The dialog shows every reported quota bucket, used and remaining percentages, exact reset times, available credit information, and an earned-reset count with any supplied individual details. Unknown values stay unknown. Disconnected Providers remain visible with a sign-in indicator; sign in from Providers. Setup drafts do not appear in the usage menu.
+- **Refresh:** Usage refreshes when the app opens, when you return to a visible tab, when details open, and every minute while the tab is visible. Refresh in the dialog requests a fresh snapshot. A failed refresh keeps previous data with an error and its original update time. A countdown reaching zero requests another check; it does not establish that access has recovered.
+- **Use a reset:** Choose Use reset beside an available, unexpired Codex reset, then confirm consumption. When individual details are unavailable, Use next available reset lets Codex choose one. The dialog waits for the result before allowing dismissal. An uncertain request offers Retry previous reset attempt, which checks the same logical redemption rather than spending another reset. Do not assume success from a network error; refresh usage and read the returned result.
+- **Limitations:** Resets affect eligible windows only. Codex may report no eligible window or no remaining reset. Detail lists may be incomplete even when the available count is known. Credit balances and earned resets are different; credit purchasing, automatic reset use, token-history analytics, and general agent execution are not provided. Multiple Providers connected to the same external account share that account's actual allowance. Usage snapshots and open dialogs are temporary.
 
 ## Common questions
 

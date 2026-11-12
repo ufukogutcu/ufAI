@@ -42,6 +42,7 @@ import {
   type ProviderCategory,
 } from "../provider-options";
 import { useNavigationGuard, useUnsavedChanges } from "../navigation-guard";
+import { useCodexUsage } from "../codex-usage-store";
 import { refreshOnFocus } from "../focus-refresh";
 import { Dialog } from "../components/Dialog";
 import { Appearance, AppearanceGroup } from "../components/Appearance";
@@ -419,6 +420,7 @@ function ProviderEditor({
   onClose: () => void;
   onDeleted: () => void;
 }) {
+  const invalidateUsage = useCodexUsage((state) => state.invalidate);
   const [id, setId] = useState(connection?.id ?? null);
   const [provider, setProvider] = useState<ConnectionProvider | null>(
     connection?.provider ?? null,
@@ -718,6 +720,7 @@ function ProviderEditor({
     setFields({});
     try {
       const current = await persist();
+      invalidateUsage(current);
       discoverAfterLogin.current = true;
       setLogin(
         await request<CodexLoginStatus>(
@@ -863,6 +866,7 @@ function ProviderEditor({
     setError("");
     try {
       await request(`/connections/${id}/logout`, "POST", {});
+      invalidateUsage(id, true);
       setLogin({ status: "disconnected" });
       setHasCredential(false);
       refreshLocal();

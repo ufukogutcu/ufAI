@@ -2,7 +2,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, chmodSync, mkdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import type { CodexLoginStatus, DiscoveredModel } from "./contracts.js";
+import type { CodexLoginStatus, DiscoveredModel, CodexUsageSnapshot, CodexResetInput, CodexResetOutcome } from "./contracts.js";
 import { TEST_PROMPT } from "./provider-inference.js";
 import { ConnectionError } from "./model-providers.js";
 import {
@@ -11,6 +11,7 @@ import {
   type CodexLauncher,
   type CodexCatalogLauncher,
 } from "./codex-process.js";
+import { normalizeCodexUsage } from "./codex-usage.js";
 import { readCodexContexts } from "./codex-catalog.js";
 
 export { launchCodex, type CodexLauncher } from "./codex-process.js";
@@ -24,6 +25,8 @@ export interface CodexAdapter {
   test(id: string, modelId: string, signal: AbortSignal): Promise<string>;
   hasCredential(id: string): boolean;
   remove(id: string): Promise<void>;
+  usage(id: string, details?: boolean, refresh?: boolean): Promise<CodexUsageSnapshot>;
+  consumeReset(id: string, input: CodexResetInput): Promise<CodexResetOutcome>;
   close(): Promise<void>;
 }
 function object(value: unknown): Record<string, unknown> {
@@ -63,6 +66,7 @@ class CodexClient {
     private onStop: () => void,
     private rpcTimeout: number,
     private idleMs: number,
+    private onUsageChanged: () => void,
   ) {
     this.exited = new Promise((resolve) => proc.once("close", () => resolve()));
     proc.stdout.setEncoding("utf8");
@@ -129,6 +133,7 @@ class CodexClient {
       }
       const message = parsed as Record<string, unknown>;
       const params = object(message.params);
+      if (message.method === "account/rateLimits/updated" || message.method === "account/updated") this.onUsageChanged();
       if (this.activeTest && message.method && message.id !== undefined) {
         this.activeTest.reject(
           new ConnectionError(
@@ -376,6 +381,28 @@ class CodexClient {
     await this.rpc("account/logout");
     this.loginResult = { status: "disconnected" };
   }
+  get busy() {
+    return this.stopped || this.loginStarting || this.loginResult.status === "pending" || this.pending.size > 0 || !!this.activeTest;
+  }
+  async accountUsage(details: boolean): Promise<CodexUsageSnapshot> {
+    await this.ready;
+    const deadline = Date.now() + this.rpcTimeout;
+    const result = object(await this.rpc("account/read", { refreshToken: false }));
+    if (object(result.account).type !== "chatgpt")
+      throw new ConnectionError("Sign in with ChatGPT to view usage.", 401);
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new ConnectionError("Codex usage timed out. Please retry.", 504);
+    const usage = await this.rpc("account/rateLimits/read", { excludeResetCreditDetails: !details }, remaining);
+    return normalizeCodexUsage(result.account, usage);
+  }
+  async consumeReset(input: CodexResetInput): Promise<CodexResetOutcome> {
+    if ((await this.status()).status !== "connected")
+      throw new ConnectionError("Sign in with ChatGPT before using a reset.", 401);
+    const result = object(await this.rpc("account/rateLimitResetCredit/consume", input));
+    if (!["reset", "alreadyRedeemed", "nothingToReset", "noCredit"].includes(String(result.outcome)))
+      throw new ConnectionError("Codex returned an unknown reset result. Retry the same attempt.");
+    return result.outcome as CodexResetOutcome;
+  }
   async models(deadline: number): Promise<DiscoveredModel[]> {
     if ((await this.status(deadline)).status !== "connected")
       throw new ConnectionError(
@@ -531,6 +558,12 @@ class CodexClient {
 export class CodexRuntime implements CodexAdapter {
   private clients = new Map<string, CodexClient>();
   private closed = false;
+  private removing = new Set<string>();
+  private operations = new Map<string, number>();
+  private usageRevision = new Map<string, number>();
+  private usageCache = new Map<string, { snapshot: CodexUsageSnapshot; details: boolean; expiresAt: number }>();
+  private usageReads = new Map<string, { details: boolean; promise: Promise<CodexUsageSnapshot> }>();
+  private resetOperations = new Map<string, Promise<CodexResetOutcome>>();
   private owned = new Set<CodexClient>();
   private discoveries = new Map<
     string,
@@ -544,15 +577,18 @@ export class CodexRuntime implements CodexAdapter {
     private catalogLauncher: CodexCatalogLauncher = launchCodexCatalog,
     private catalogTimeoutMs = 3000,
   ) {}
-  private client(id: string) {
-    if (this.closed) throw new ConnectionError("Codex is shutting down.", 503);
+  private async client(id: string): Promise<CodexClient> {
+    if (this.closed || this.removing.has(id)) throw new ConnectionError("Codex is shutting down or being removed.", 503);
     let client = this.clients.get(id);
     if (client) return client;
-    if (this.clients.size >= 3)
-      throw new ConnectionError(
-        "Other Codex connections are busy. Please retry shortly.",
-        429,
-      );
+    while (this.owned.size >= 3) {
+      const idle = [...this.clients.entries()].find(([key, value]) => !value.busy && !this.operations.has(key));
+      if (!idle) throw new ConnectionError("Other Codex connections are busy. Please retry shortly.", 429);
+      await idle[1].stop();
+      if (this.closed || this.removing.has(id)) throw new ConnectionError("Codex is shutting down or being removed.", 503);
+    }
+    client = this.clients.get(id);
+    if (client) return client;
     const home = join(this.directory, id);
     mkdirSync(home, { recursive: true, mode: 0o700 });
     chmodSync(this.directory, 0o700);
@@ -562,34 +598,81 @@ export class CodexRuntime implements CodexAdapter {
       () => this.clients.delete(id),
       this.rpcTimeout,
       this.idleMs,
+      () => this.invalidateUsage(id),
     );
     this.clients.set(id, client);
     this.owned.add(client);
     void client.exited.then(() => this.owned.delete(client!));
     return client;
   }
+  private async withClient<T>(id: string, action: (client: CodexClient) => Promise<T>): Promise<T> {
+    this.operations.set(id, (this.operations.get(id) ?? 0) + 1);
+    try { return await action(await this.client(id)); }
+    finally {
+      const count = (this.operations.get(id) ?? 1) - 1;
+      if (count) this.operations.set(id, count);
+      else this.operations.delete(id);
+    }
+  }
+  private invalidateUsage(id: string) {
+    this.usageCache.delete(id);
+    this.usageRevision.set(id, (this.usageRevision.get(id) ?? 0) + 1);
+  }
+  usage(id: string, details = false, refresh = false): Promise<CodexUsageSnapshot> {
+    if (this.closed) return Promise.reject(new ConnectionError("Codex is shutting down.", 503));
+    if (this.resetOperations.has(id)) return Promise.reject(new ConnectionError("A reset is pending. Please wait.", 409));
+    const running = this.usageReads.get(id);
+    if (running) return details && !running.details
+      ? running.promise.then(() => this.usage(id, true, refresh)) : running.promise;
+    const cached = this.usageCache.get(id);
+    if (!refresh && cached && cached.expiresAt > Date.now() && (!details || cached.details)) return Promise.resolve(cached.snapshot);
+    if (this.usageReads.size >= 2) return Promise.reject(new ConnectionError("Usage refresh is busy. Please retry shortly.", 429));
+    const revision = this.usageRevision.get(id) ?? 0;
+    const promise = this.withClient(id, (client) => client.accountUsage(details)).then((snapshot) => {
+      if ((this.usageRevision.get(id) ?? 0) !== revision)
+        throw new ConnectionError("Usage changed while refreshing. Please retry.", 409);
+      for (const [key, value] of this.usageCache) if (value.expiresAt <= Date.now()) this.usageCache.delete(key);
+      if (this.usageCache.size >= 128) this.usageCache.delete(this.usageCache.keys().next().value!);
+      this.usageCache.set(id, { snapshot, details, expiresAt: Date.now() + 30000 });
+      return snapshot;
+    });
+    this.usageReads.set(id, { details, promise });
+    void promise.finally(() => this.usageReads.delete(id)).catch(() => {});
+    return promise;
+  }
+  consumeReset(id: string, input: CodexResetInput): Promise<CodexResetOutcome> {
+    if (this.resetOperations.has(id) || this.usageReads.has(id)) return Promise.reject(new ConnectionError("Usage work is pending. Please wait.", 409));
+    this.invalidateUsage(id);
+    const promise = this.withClient(id, (client) => client.consumeReset(input)).finally(() => {
+      this.invalidateUsage(id);
+      this.resetOperations.delete(id);
+    });
+    this.resetOperations.set(id, promise);
+    return promise;
+  }
   hasCredential(id: string) {
     return existsSync(join(this.directory, id, "auth.json"));
   }
   status(id: string) {
-    return this.client(id).status();
+    return this.withClient(id, (client) => client.status());
   }
   login(id: string, deviceCode: boolean) {
-    return this.client(id).login(deviceCode);
+    this.invalidateUsage(id);
+    return this.withClient(id, (client) => client.login(deviceCode));
   }
   cancel(id: string) {
     return this.clients.get(id)?.cancel() ?? Promise.resolve();
   }
   logout(id: string) {
-    return this.client(id).logout();
+    this.invalidateUsage(id);
+    return this.withClient(id, (client) => client.logout());
   }
   models(id: string): Promise<DiscoveredModel[]> {
     const running = this.discoveries.get(id);
     if (running) return running.promise;
-    const client = this.client(id);
     const controller = new AbortController();
     const deadline = Date.now() + this.rpcTimeout;
-    const promise = (async () => {
+    const promise = this.withClient(id, async (client) => {
       const models = await client.models(deadline);
       const contexts = await readCodexContexts(
         join(this.directory, id),
@@ -603,22 +686,28 @@ export class CodexRuntime implements CodexAdapter {
         ...model,
         contextWindow: contexts.get(model.id) ?? null,
       }));
-    })();
+    });
     this.discoveries.set(id, { controller, promise });
     void promise.finally(() => this.discoveries.delete(id)).catch(() => {});
     return promise;
   }
   test(id: string, modelId: string, signal: AbortSignal) {
-    return this.client(id).test(modelId, signal);
+    return this.withClient(id, (client) => client.test(modelId, signal));
   }
   async remove(id: string) {
+    this.removing.add(id);
     const discovery = this.discoveries.get(id);
     discovery?.controller.abort();
     await Promise.allSettled([
       this.clients.get(id)?.stop(),
       discovery?.promise,
+      this.usageReads.get(id)?.promise,
+      this.resetOperations.get(id),
     ]);
-    await rm(join(this.directory, id), { recursive: true, force: true });
+    this.invalidateUsage(id);
+    this.usageRevision.delete(id);
+    try { await rm(join(this.directory, id), { recursive: true, force: true }); }
+    finally { this.removing.delete(id); }
   }
   async close() {
     this.closed = true;
@@ -627,6 +716,10 @@ export class CodexRuntime implements CodexAdapter {
     await Promise.allSettled([
       ...[...this.owned].map((client) => client.stop()),
       ...discoveries.map((discovery) => discovery.promise),
+      ...[...this.usageReads.values()].map((read) => read.promise),
+      ...this.resetOperations.values(),
     ]);
+    this.usageCache.clear();
+    this.usageRevision.clear();
   }
 }

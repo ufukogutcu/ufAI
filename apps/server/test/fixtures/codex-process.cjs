@@ -33,7 +33,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
   }
   switch (request.method) {
     case "account/read":
-      result({ account: loggedIn ? { type: "chatgpt" } : null });
+      result({ account: loggedIn ? { type: "chatgpt", planType: "pro" } : null });
       break;
     case "account/login/start": {
       const loginId = "login-1";
@@ -149,6 +149,27 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       process.stdout.write(
         events.map((value) => JSON.stringify(value)).join("\n") + "\n",
       );
+      break;
+    }
+    case "account/rateLimits/read": {
+      const file = path.join(home, "usage-response.json");
+      if (mode === "usage-hang") break;
+      if (mode === "usage-error") { send({ id: request.id, error: { message: "PRIVATE-USAGE-ERROR" } }); break; }
+      const data = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {
+        rateLimits: { limitId: "codex", primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 2000000000 }, secondary: { usedPercent: 45, windowDurationMins: 10080, resetsAt: 2000600000 }, credits: { balance: "123.45", hasCredits: true, unlimited: false } },
+        rateLimitResetCredits: { availableCount: 2, credits: request.params.excludeResetCreditDetails ? null : [{ id: "reset-1", resetType: "codexRateLimits", status: "available", grantedAt: 1700000000, expiresAt: 2000000000, title: "Earned reset" }] },
+      };
+      if (mode === "usage-notification") send({ method: "account/rateLimits/updated", params: { rateLimits: {} } });
+      result(data);
+      break;
+    }
+    case "account/rateLimitResetCredit/consume": {
+      const file = path.join(home, "reset-attempts.json");
+      const keys = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : [];
+      const duplicate = keys.includes(request.params.idempotencyKey);
+      keys.push(request.params.idempotencyKey);
+      fs.writeFileSync(file, JSON.stringify(keys));
+      result({ outcome: duplicate ? "alreadyRedeemed" : mode === "reset-empty" ? "nothingToReset" : mode === "reset-none" ? "noCredit" : "reset" });
       break;
     }
     case "model/list":

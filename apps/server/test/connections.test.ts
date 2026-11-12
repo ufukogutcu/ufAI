@@ -501,6 +501,8 @@ test("identical discovery calls coalesce and edits cannot change credentials dur
 test("Codex routes handle sign-in, device fallback, cancellation, logout and sanitized model results", async (t) => {
   const actions: string[] = [];
   const codex: CodexAdapter = {
+    usage: async () => { throw new Error("unused"); },
+    consumeReset: async () => "noCredit",
     status: async () => ({ status: "disconnected" }),
     hasCredential: () => false,
     login: async (id, device) => {

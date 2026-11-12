@@ -1,0 +1,85 @@
+.dock {
+  position: relative;
+  width: var(--dock-width);
+  border-radius: var(--radius-floating);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 64px;
+  max-height: 40%;
+  padding: var(--dock-padding-block) 0;
+}
+.buttons {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  max-height: calc(40dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 var(--dock-padding);
+  scroll-padding: 4px;
+  scrollbar-width: none;
+}
+.usageButton {
+  position: relative;
+  flex-shrink: 0;
+  width: var(--nav-target-size);
+  min-height: 44px;
+  padding: 5px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  &:hover { background: var(--secondary-hover); }
+  &:focus-visible { outline-offset: -2px; }
+}
+.compactWindow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 12px;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  > span { color: var(--muted); }
+  strong { font-size: 13px; font-weight: 600; }
+}
+.staleMark { position: absolute; right: 0; top: 0; color: var(--warning); }
+.modalBody { display: grid; gap: 16px; min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+.summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.updated { font-size: 12px; }
+.section {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  display: grid;
+  gap: 12px;
+  h3 { margin: 0; font-size: 16px; font-weight: 600; }
+  p { margin: 0; }
+}
+.window {
+  font-variant-numeric: tabular-nums;
+  > div { display: flex; flex-direction: column; gap: 4px; }
+  p { font-size: 12px; margin-top: 4px; }
+}
+.credit { display: grid; gap: 8px; padding: 12px 0; border-top: 1px solid var(--border); }
+.confirmation { border: 1px solid var(--border-strong); border-radius: var(--radius-control); padding: 12px; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.modalBody .error { color: var(--error-text); }
+@media (any-pointer: coarse) { .usageButton { min-height: 44px; } }
+@media (max-height: 520px) {
+  .dock { max-height: none; }
+  .buttons { max-height: none; }
+}
+.compactWindow > span, .compactWindow > strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

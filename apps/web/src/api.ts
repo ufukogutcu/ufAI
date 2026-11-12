@@ -15,6 +15,13 @@ export type {
   SelectionImpact,
   ModelTestResult,
   CodexLoginStatus,
+  CodexUsageSnapshot,
+  CodexUsageWindow,
+  CodexUsageLimit,
+  CodexCredits,
+  CodexResetCredit,
+  CodexResetInput,
+  CodexResetOutcome,
 } from "../../server/src/contracts";
 
 export class RequestError extends Error {

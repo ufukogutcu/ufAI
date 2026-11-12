@@ -31,6 +31,8 @@ import Providers from "./pages/Providers";
 import { ConnectionContext, createConnectionStore } from "./connection-store";
 import Presets from "./pages/Presets";
 import styles from "./App.module.scss";
+import { CodexUsageDock } from "./components/CodexUsageDock";
+import { CodexUsageContext, createCodexUsageStore } from "./codex-usage-store";
 import { Appearance } from "./components/Appearance";
 
 const pages = [
@@ -152,6 +154,7 @@ function Shell() {
       >
         <RelaySymbol />
       </a>
+      <div className={styles.dockStack}>
       <nav
         aria-label="Main navigation"
         className={`${styles.dock} glassSurface`}
@@ -180,6 +183,8 @@ function Shell() {
           </Tooltip>
         ))}
       </nav>
+      <CodexUsageDock />
+      </div>
       <div className={styles.mainColumn}>
         <main id="main-content" tabIndex={-1} className={styles.main}>
           {settingsError && (
@@ -219,16 +224,19 @@ function Shell() {
 }
 export default function App({ initial }: { initial: SettingsResponse }) {
   const [connections] = useState(createConnectionStore);
+  const [usage] = useState(createCodexUsageStore);
   const [settings] = useState(() => createSettingsStore(initial));
   return (
     <SettingsContext.Provider value={settings}>
       <ThemeProvider>
         <ConnectionContext.Provider value={connections}>
+          <CodexUsageContext.Provider value={usage}>
           <DashboardProvider>
             <UnsavedChangesProvider>
               <Shell />
             </UnsavedChangesProvider>
           </DashboardProvider>
+          </CodexUsageContext.Provider>
         </ConnectionContext.Provider>
       </ThemeProvider>
     </SettingsContext.Provider>

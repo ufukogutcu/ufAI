@@ -154,3 +154,44 @@ export interface WorkspaceViewport {
   y: number;
   zoom: number;
 }
+
+export interface CodexUsageWindow {
+  usedPercent: number;
+  windowDurationMins: number | null;
+  resetsAt: number | null;
+}
+export interface CodexCredits {
+  balance: string | null;
+  hasCredits: boolean;
+  unlimited: boolean;
+}
+export interface CodexUsageLimit {
+  id: string;
+  name: string | null;
+  primary: CodexUsageWindow | null;
+  secondary: CodexUsageWindow | null;
+  credits: CodexCredits | null;
+  reachedType: string | null;
+}
+export interface CodexResetCredit {
+  id: string;
+  resetType: "codexRateLimits" | "unknown";
+  status: "available" | "redeeming" | "redeemed" | "unknown";
+  grantedAt: number | null;
+  expiresAt: number | null;
+  title: string | null;
+  description: string | null;
+}
+export interface CodexUsageSnapshot {
+  planType: string | null;
+  defaultLimit: CodexUsageLimit | null;
+  limits: CodexUsageLimit[];
+  resetCredits: { availableCount: number; credits: CodexResetCredit[] | null } | null;
+  ordinaryUsageAllowed: boolean | null;
+  fetchedAt: string;
+}
+export interface CodexResetInput {
+  idempotencyKey: string;
+  creditId?: string;
+}
+export type CodexResetOutcome = "reset" | "alreadyRedeemed" | "nothingToReset" | "noCredit";

@@ -71,6 +71,8 @@ export function registerConnections(
   const testCompletions = new Map<string, Promise<void>>();
   const deleting = new Set<string>();
   const inFlight = new Map<string, Promise<DiscoveredModel[]>>();
+  const usageWork = new Map<string, Promise<unknown>>();
+  const resetting = new Set<string>();
   const get = database.prepare("SELECT * FROM connections WHERE id = ?");
   const list = database.prepare(
     "SELECT * FROM connections ORDER BY createdAt, id LIMIT ? OFFSET ?",
@@ -98,7 +100,7 @@ export function registerConnections(
     return row;
   }
   function editable(id: string) {
-    if (inFlight.has(id) || tests.has(id))
+    if (inFlight.has(id) || tests.has(id) || usageWork.has(id))
       throw new ConnectionError(
         "Model discovery is still running. Please retry shortly.",
         409,
@@ -274,6 +276,7 @@ export function registerConnections(
         await Promise.allSettled([
           inFlight.get(row.id),
           testCompletions.get(row.id),
+          usageWork.get(row.id),
         ]);
         if (row.provider === "codex") await codex.remove(row.id);
         database.transaction(() => {
@@ -341,7 +344,7 @@ export function registerConnections(
     "/api/connections/:id/models/refresh",
     async (request) => {
       const row = required(request.params.id);
-      if (tests.has(row.id))
+      if (tests.has(row.id) || usageWork.has(row.id))
         throw new ConnectionError(
           "A model test is running. Retry shortly.",
           409,
@@ -437,7 +440,7 @@ export function registerConnections(
           "Model testing is busy. Retry after the current test finishes.",
           429,
         );
-      if (inFlight.has(row.id))
+      if (inFlight.has(row.id) || usageWork.has(row.id))
         throw new ConnectionError(
           "Model discovery is running. Retry shortly.",
           409,
@@ -518,6 +521,52 @@ export function registerConnections(
       });
     return row;
   };
+  function trackUsage<T>(id: string, promise: Promise<T>): Promise<T> {
+    usageWork.set(id, promise);
+    void promise.finally(() => {
+      if (usageWork.get(id) === promise) usageWork.delete(id);
+    }).catch(() => {});
+    return promise;
+  }
+  function usageRow(id: string) {
+    const row = runtimeRow(id);
+    if (row.draft) throw new InputError({ provider: "Save this Provider before viewing usage." });
+    return row;
+  }
+  app.get<{ Params: { id: string }; Querystring: { details?: string; refresh?: string } }>(
+    "/api/connections/:id/usage",
+    async (request, reply) => {
+      const row = usageRow(request.params.id);
+      const { details, refresh } = request.query;
+      if ([details, refresh].some((value) => value !== undefined && value !== "true" && value !== "false"))
+        throw new InputError({ usage: "Use true or false for details and refresh." });
+      if (inFlight.has(row.id) || tests.has(row.id) || resetting.has(row.id))
+        throw new ConnectionError("This Provider is busy. Retry usage shortly.", 409);
+      reply.header("Cache-Control", "no-store");
+      return trackUsage(row.id, codex.usage(row.id, details === "true", refresh === "true"));
+    },
+  );
+  app.post<{ Params: { id: string } }>(
+    "/api/connections/:id/usage/resets/consume",
+    async (request, reply) => {
+      const row = usageRow(request.params.id);
+      editable(row.id);
+      const body = objectBody(request.body);
+      const valid = (value: unknown, max: number) => typeof value === "string" && !!value.trim() && value.length <= max;
+      if (Object.keys(body).some((key) => key !== "idempotencyKey" && key !== "creditId") ||
+          !valid(body.idempotencyKey, 200) || (body.creditId !== undefined && !valid(body.creditId, 500)))
+        throw new InputError({ reset: "Supply an idempotency key and an optional reset ID." });
+      reply.header("Cache-Control", "no-store");
+      resetting.add(row.id);
+      try {
+        const outcome = await trackUsage(row.id, codex.consumeReset(row.id, {
+          idempotencyKey: body.idempotencyKey as string,
+          ...(body.creditId !== undefined ? { creditId: body.creditId as string } : {}),
+        }));
+        return { outcome };
+      } finally { resetting.delete(row.id); }
+    },
+  );
   app.get<{ Params: { id: string } }>(
     "/api/connections/:id/login",
     async (request) => {
@@ -563,6 +612,7 @@ export function registerConnections(
     await Promise.allSettled([
       ...inFlight.values(),
       ...testCompletions.values(),
+      ...usageWork.values(),
     ]);
     await codex.close();
     if (memory) await rm(directory, { recursive: true, force: true });
