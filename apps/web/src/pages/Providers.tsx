@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type FormEvent,
@@ -26,7 +27,11 @@ import {
   type ProviderModel,
 } from "../api";
 import { useConnections } from "../connection-store";
-import { providerOptions } from "../provider-options";
+import {
+  providerCategories,
+  providerOptions,
+  type ProviderCategory,
+} from "../provider-options";
 import { useNavigationGuard, useUnsavedChanges } from "../navigation-guard";
 import { refreshOnFocus } from "../focus-refresh";
 import { Dialog } from "../components/Dialog";
@@ -34,6 +39,109 @@ import { Appearance, AppearanceGroup } from "../components/Appearance";
 import { Field } from "../components/FormField";
 import shared from "./Presets.module.scss";
 import styles from "./Providers.module.scss";
+
+function ProviderPicker({
+  category,
+  provider,
+  locked,
+  error,
+  onCategoryChange,
+  onProviderChange,
+}: {
+  category: ProviderCategory;
+  provider: ConnectionProvider | null;
+  locked: boolean;
+  error?: string;
+  onCategoryChange: (category: ProviderCategory) => void;
+  onProviderChange: (provider: ConnectionProvider) => void;
+}) {
+  const pickerId = useId();
+  const hint = locked
+    ? "Provider type is fixed once setup begins. Create a new Provider to choose another."
+    : provider
+      ? "You can change provider until setup begins."
+      : "Choose a provider to see its setup fields.";
+  return (
+    <div className={styles.providerPicker}>
+      <div className={styles.pickerLabel}>Provider type</div>
+      <div
+        className={styles.categoryTabs}
+        role="tablist"
+        aria-label="Provider category"
+      >
+        {providerCategories.map((option, index) => (
+          <button
+            key={option.id}
+            type="button"
+            role="tab"
+            id={`${pickerId}-${option.id}-tab`}
+            aria-selected={category === option.id}
+            aria-controls={`${pickerId}-${option.id}-panel`}
+            tabIndex={category === option.id ? 0 : -1}
+            disabled={locked}
+            onClick={() => onCategoryChange(option.id)}
+            onKeyDown={(event) => {
+              let next: number | undefined;
+              if (event.key === "ArrowRight")
+                next = (index + 1) % providerCategories.length;
+              if (event.key === "ArrowLeft")
+                next =
+                  (index - 1 + providerCategories.length) % providerCategories.length;
+              if (event.key === "Home") next = 0;
+              if (event.key === "End") next = providerCategories.length - 1;
+              const target =
+                next === undefined ? undefined : providerCategories[next];
+              if (!target) return;
+              event.preventDefault();
+              onCategoryChange(target.id);
+              document.getElementById(`${pickerId}-${target.id}-tab`)?.focus();
+            }}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      {providerCategories.map((group) => (
+        <div
+          key={group.id}
+          id={`${pickerId}-${group.id}-panel`}
+          role="tabpanel"
+          aria-labelledby={`${pickerId}-${group.id}-tab`}
+          hidden={category !== group.id}
+        >
+          <fieldset
+            className={styles.providerChoices}
+            disabled={locked}
+            aria-describedby={`${pickerId}-help`}
+          >
+            <legend className={styles.choicesLegend}>
+              {group.label} provider
+            </legend>
+            {providerOptions
+              .filter((option) => option.category === group.id)
+              .map((option) => (
+                <label key={option.id} className={styles.providerChoice}>
+                  <input
+                    type="radio"
+                    name={`${pickerId}-provider`}
+                    value={option.id}
+                    checked={provider === option.id}
+                    aria-invalid={!!error && category === group.id}
+                    aria-describedby={`${pickerId}-help`}
+                    onChange={() => onProviderChange(option.id)}
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+          </fieldset>
+        </div>
+      ))}
+      <p id={`${pickerId}-help`} className={error ? "fieldError" : "fieldHint"}>
+        {error ?? hint}
+      </p>
+    </div>
+  );
+}
 
 type ModelPage = { items: ProviderModel[]; total: number };
 function ModelEditor({
@@ -282,8 +390,11 @@ function ProviderEditor({
   onDeleted: () => void;
 }) {
   const [id, setId] = useState(connection?.id ?? null);
-  const [provider, setProvider] = useState<ConnectionProvider>(
-    connection?.provider ?? "openai",
+  const [provider, setProvider] = useState<ConnectionProvider | null>(
+    connection?.provider ?? null,
+  );
+  const [category, setCategory] = useState<ProviderCategory>(
+    () => providerOptions.find((option) => option.id === connection?.provider)?.category ?? "api",
   );
   const [name, setName] = useState(connection?.name ?? "");
   const [endpoint, setEndpoint] = useState(connection?.endpoint ?? "");
@@ -328,6 +439,24 @@ function ProviderEditor({
     baseline !== JSON.stringify([provider, name, endpoint, apiKey]);
   useUnsavedChanges(dirty || modelDirty || (!!id && draft));
   const refreshLocal = useCallback(() => setRevision((v) => v + 1), []);
+  function clearProviderFields() {
+    setEndpoint("");
+    setApiKey("");
+    setError("");
+    setFields({});
+  }
+  function selectCategory(next: ProviderCategory) {
+    if (id || category === next) return;
+    setCategory(next);
+    setProvider(null);
+    clearProviderFields();
+  }
+  function selectProvider(next: ConnectionProvider) {
+    if (id || provider === next) return;
+    clearProviderFields();
+    setProvider(next);
+    setEndpoint(next === "ollama" ? "http://localhost:11434" : "");
+  }
   function handleModelSaved(createdId?: string) {
     setCreatedModelId(createdId ?? null);
     refreshLocal();
@@ -448,6 +577,10 @@ function ProviderEditor({
     if (error instanceof RequestError) setFields(error.fields);
   }
   async function persist() {
+    if (!provider) {
+      setFields({ provider: "Choose a provider." });
+      throw new Error("Choose a provider to continue setup.");
+    }
     if (id && !dirty) return id;
     const saved = await saveConnection(id, {
       name,
@@ -614,6 +747,17 @@ function ProviderEditor({
           <h2>{draft ? "Set up Provider" : "Edit Provider"}</h2>
         </header>
         <fieldset className={shared.fields} disabled={busy || !!testing} data-appearance-content>
+          <section className={shared.formSection}>
+            <ProviderPicker
+              category={category}
+              provider={provider}
+              locked={!!id}
+              error={fields.provider}
+              onCategoryChange={selectCategory}
+              onProviderChange={selectProvider}
+            />
+          </section>
+          {provider && <>
           <section
             className={`${shared.formSection} ${styles.connectionFields}`}
           >
@@ -631,37 +775,9 @@ function ProviderEditor({
                 />
               )}
             </Field>
-            <Field label="Provider type" error={fields.provider}>
-              {(props) => (
-                <select
-                  {...props}
-                  value={provider}
-                  disabled={!!id}
-                  onChange={(event) => {
-                    const value = event.target.value as ConnectionProvider;
-                    setProvider(value);
-                    setEndpoint(
-                      value === "ollama" ? "http://localhost:11434" : "",
-                    );
-                    setApiKey("");
-                  }}
-                >
-                  {providerOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                      {option.id === "codex"
-                        ? " · Subscription"
-                        : option.id === "ollama"
-                          ? " · Local AI"
-                          : ""}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </Field>
             {(provider === "openai-compatible" || provider === "ollama") && (
               <Field
-                label="API base URL"
+                label={provider === "ollama" ? "Server URL" : "API base URL"}
                 error={fields.endpoint}
                 hint={
                   provider === "ollama"
@@ -690,7 +806,13 @@ function ProviderEditor({
             )}
             {provider !== "codex" && (
               <Field
-                label={hasCredential ? "Replace API key" : "API key"}
+                label={
+                  hasCredential
+                    ? "Replace API key"
+                    : provider === "ollama" || provider === "openai-compatible"
+                      ? "API key (optional)"
+                      : "API key"
+                }
                 error={fields.apiKey}
                 hint={
                   hasCredential
@@ -966,6 +1088,7 @@ function ProviderEditor({
               </div>
             )}
           </section>
+          </>}
         </fieldset>
         <footer className={shared.editorFooter}>
           {error && (
@@ -1010,7 +1133,10 @@ function ProviderEditor({
             >
               Cancel
             </button>
-            <button className="button primary" disabled={busy || !!testing}>
+            <button
+              className="button primary"
+              disabled={!provider || busy || !!testing}
+            >
               <Check size={14} aria-hidden="true" />
               {busy ? "Working…" : "Save Provider"}
             </button>

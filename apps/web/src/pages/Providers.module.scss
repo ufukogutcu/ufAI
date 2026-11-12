@@ -2,6 +2,116 @@
   background: var(--hover);
   border-color: var(--border-strong);
 }
+.providerPicker {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  > p {
+    margin: 0;
+  }
+}
+.pickerLabel {
+  font-size: 14px;
+  color: var(--muted);
+}
+.categoryTabs {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px;
+  gap: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  button {
+    min-width: 0;
+    min-height: var(--control-height);
+    padding: 6px 10px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-compact);
+    background: transparent;
+    color: var(--muted);
+    font-size: 13px;
+    &:hover:enabled {
+      background: var(--hover);
+      color: var(--text);
+    }
+    &[aria-selected="true"] {
+      background: var(--surface);
+      border-color: var(--border-strong);
+      color: var(--text);
+    }
+    &:disabled {
+      cursor: default;
+    }
+    &[aria-selected="true"]:disabled {
+      opacity: 1;
+    }
+  }
+}
+.providerChoices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr));
+  gap: 8px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.choicesLegend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.providerChoice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--input-background);
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  input {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    margin: 0;
+    padding: 0;
+    accent-color: var(--accent);
+  }
+  &:hover:has(input:enabled) {
+    background: var(--hover);
+  }
+  &:has(input:checked) {
+    color: var(--text);
+    border-color: var(--border-strong);
+    background: var(--hover);
+  }
+  &:has(input:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+  &:has(input:disabled) {
+    cursor: default;
+  }
+}
+@media (any-pointer: coarse) {
+  .categoryTabs button,
+  .providerChoice {
+    min-height: 44px;
+  }
+}
 .connectionFields {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
