@@ -7,6 +7,23 @@
 }
 
 :root {
+  --radius-floating: 12px;
+  --radius-panel: 14px;
+  --radius-control: 8px;
+  --radius-compact: 6px;
+  --control-height: 36px;
+  --icon-control-size: 32px;
+  --nav-target-size: 36px;
+  --nav-gap: 12px;
+  --dock-padding: 5px;
+  --dock-padding-block: 10px;
+  --dock-left: 20px;
+  --dock-width: calc(var(--nav-target-size) + 2 * var(--dock-padding) + 2px);
+  --shell-gutter: calc(var(--dock-left) + var(--dock-width) + 20px);
+  --toolbar-top: 24px;
+  --toolbar-control-size: 32px;
+  --toolbar-height: calc(var(--toolbar-control-size) + 8px);
+  --zoom-control-size: 28px;
   font-family:
     "Inter",
     ui-sans-serif,
@@ -79,7 +96,7 @@ svg {
   left: 85px;
   z-index: 100;
   padding: 12px 18px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   color: var(--text);
   background: var(--panel);
   &:focus {
@@ -124,7 +141,7 @@ svg {
   letter-spacing: 0;
   border: 1px solid var(--border-strong);
   background: var(--surface);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   padding: 3px 7px;
 }
 .localBadge {
@@ -132,7 +149,7 @@ svg {
   align-items: center;
   gap: 7px;
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: var(--surface);
   padding: 7px 10px;
   font-size: 12px;
@@ -151,9 +168,9 @@ svg {
   align-items: center;
   gap: 8px;
   border: 1px solid transparent;
-  border-radius: 999px;
-  padding: 11px 20px;
-  min-height: 44px;
+  border-radius: var(--radius-control);
+  padding: 6px 14px;
+  min-height: var(--control-height);
   font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
@@ -197,12 +214,12 @@ svg {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: var(--icon-control-size);
+  height: var(--icon-control-size);
   padding: 0;
   border: 1px solid transparent;
   background: transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   color: var(--muted);
   &:hover:not(:disabled) {
     background: var(--hover);
@@ -235,9 +252,9 @@ textarea {
   width: 100%;
   background: var(--input-background);
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   color: var(--text);
-  padding: 12px 14px;
+  padding: 7px 12px;
   font-size: 14px;
   line-height: 1.4;
   &::placeholder {
@@ -253,7 +270,12 @@ textarea {
 select {
   padding-right: 24px;
 }
+input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]),
+select {
+  min-height: var(--control-height);
+}
 textarea {
+  padding-block: 10px;
   resize: vertical;
   min-height: 82px;
   max-height: 300px;
@@ -308,9 +330,11 @@ input[type="number"] {
 }
 .dialogActions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 26px;
+  margin: 0 -20px -20px;
+  padding: 12px 20px;
 }
 .centerState {
   display: flex;
@@ -348,7 +372,7 @@ input[type="number"] {
     var(--empty-gradient-end)
   );
   border: 1px solid var(--empty-border);
-  border-radius: 19px;
+  border-radius: var(--radius-panel);
   color: var(--accent-light);
 }
 .react-flow {
@@ -400,14 +424,40 @@ input[type="number"] {
 :where(.glassSurface) {
   position: relative;
   isolation: isolate;
-  border: 1px solid var(--glass-border);
+  border: 1px solid color-mix(in srgb, var(--glass-border) 65%, transparent);
   box-shadow: 0 12px 40px -12px var(--glass-shadow), 0 2px 6px var(--glass-shadow);
 }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
   .glassSurface { background: var(--surface); border-color: var(--border-strong); }
 }
-@media (pointer: coarse) {
-  .iconButton { width: 44px; height: 44px; }
-  .button { min-height: 44px; }
+@media (forced-colors: active) {
+  .glassSurface, .glassSurface:modal {
+    background: var(--surface);
+    border-color: var(--border-strong);
+    box-shadow: none;
+  }
+}
+@media (max-width: 640px) {
+  :root {
+    --dock-left: 8px;
+    --shell-gutter: calc(var(--dock-left) + var(--dock-width) + 16px);
+    --toolbar-top: 12px;
+  }
+}
+@media (max-height: 520px) {
+  :root {
+    --nav-gap: 8px;
+    --dock-padding-block: 8px;
+  }
+}
+@media (any-pointer: coarse) {
+  :root {
+    --control-height: 44px;
+    --icon-control-size: 44px;
+    --nav-target-size: 44px;
+    --toolbar-control-size: 44px;
+    --zoom-control-size: 44px;
+  }
+  button, summary { min-height: 44px; min-width: 44px; }
   input, select, textarea { font-size: 16px; }
 }

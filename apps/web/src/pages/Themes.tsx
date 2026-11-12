@@ -207,7 +207,8 @@ function ThemePreview({
               {region.id === "canvas" && (
                 <div className={styles.canvasSample}>
                   <span className={styles.canvasIcon}>✦</span>
-                  <span className={styles.canvasControls}>
+                  <span className={`${styles.canvasControls} glassSurface`}>
+                    <GlassMaterial />
                     − &nbsp; 100% &nbsp; +
                   </span>
                   <small>React Flow</small>
@@ -218,7 +219,8 @@ function ThemePreview({
                   <div className={styles.sidebarOverlaySample}>
                     Navigation overlay
                   </div>
-                  <div className={styles.dialogSample}>
+                  <div className={`${styles.dialogSample} glassSurface`}>
+                    <GlassMaterial appearance="regular" />
                     <strong>Dialog title</strong>
                     <p>Preview your decisions.</p>
                     <span className={styles.tooltipSample}>
@@ -855,6 +857,7 @@ export default function Themes() {
               >
                 <span className={styles.miniPreview} style={themeStyle(theme)}>
                   <span className={styles.miniSidebar}>
+                    <i />
                     <i />
                     <i />
                     <i />

@@ -8,7 +8,7 @@
     content: "";
     position: absolute;
     inset: 0;
-    background: radial-gradient(ellipse at 4% 45%, var(--ambient-glow), transparent 50%), radial-gradient(ellipse at 80% 90%, var(--ambient-shade), transparent 60%);
+    background: radial-gradient(ellipse at 4% 45%, color-mix(in srgb, var(--ambient-glow) 50%, transparent), transparent 50%), radial-gradient(ellipse at 80% 90%, var(--ambient-shade), transparent 60%);
     pointer-events: none;
     z-index: 1;
   }
@@ -20,8 +20,11 @@
   left: calc(50% + 36px);
   transform: translate(-50%, -40%);
   width: min(480px, calc(100% - 144px));
+  max-height: 40%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   text-align: center;
-  pointer-events: none;
+  pointer-events: auto;
   h2 { font-size: clamp(28px, 3vw, 38px); letter-spacing: -0.05em; font-weight: 500; margin: 24px 0 14px; text-wrap: balance; }
   p { font-size: 14px; color: var(--muted); line-height: 1.7; margin: 0; text-wrap: pretty; }
   .comingSoon { margin-top: 12px; font-size: 12px; color: var(--faint); }
@@ -38,21 +41,22 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 6px;
-  border-radius: 28px;
-  margin: 24px 24px 24px 112px;
+  padding: 3px;
+  border-radius: var(--radius-floating);
+  margin: 24px 24px 24px var(--shell-gutter);
+  :global(.iconButton) { width: var(--zoom-control-size); height: var(--zoom-control-size); }
   span:not([aria-hidden]) { text-align: center; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-  > span:not([aria-hidden]) { width: 46px; }
+  > span:not([aria-hidden]) { min-width: 40px; }
 }
 .divider { width: 1px; height: 18px; background: var(--border-strong); margin: 0 4px; }
 .hint:global(.react-flow__panel) { padding: 14px 12px; color: var(--faint); font-size: 11px; margin: 24px; span { margin: 0 8px; } }
 @media (max-width: 640px) {
   .empty { left: calc(50% + 32px); width: calc(100% - 112px); h2 { font-size: 28px; } }
-  .controls:global(.react-flow__panel) { margin: 16px 16px 24px 84px; }
+  .controls:global(.react-flow__panel) { margin: 16px 16px 24px var(--shell-gutter); }
   .hint:global(.react-flow__panel) { display: none; }
 }
 @media (max-height: 520px) {
-  .empty { top: 64%; left: 58%; h2 { font-size: 24px; margin-top: 8px; } }
+  .empty { top: 64%; left: 58%; max-height: 32%; h2 { font-size: 24px; margin-top: 8px; } }
   .illustration { display: none; }
   .empty .comingSoon { display: none; }
 }

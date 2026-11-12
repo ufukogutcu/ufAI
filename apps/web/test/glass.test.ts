@@ -14,6 +14,19 @@ test("capsule refraction bends only the inner rim and leaves the center and exte
   assert.ok(Math.abs(pixel(4, 112)[0]! + pixel(63, 112)[0]! - 256) <= 1);
 });
 
+test("rounded rectangle corners refract within a narrow rim without disturbing the interior", () => {
+  const map = createGlassMap(68, 224, 12);
+  const pixel = (x: number, y: number) => [...map.data.slice((y * map.width + x) * 4, (y * map.width + x) * 4 + 4)];
+  assert.deepEqual(pixel(0, 0), [128, 128, 128, 255]);
+  assert.deepEqual(pixel(12, 112), [128, 128, 128, 255]);
+  assert.deepEqual(pixel(34, 112), [128, 128, 128, 255]);
+  const corner = pixel(6, 6);
+  assert.ok(corner[0]! > 128 && corner[1]! > 128);
+  assert.equal(corner[0], corner[1]);
+  assert.ok(pixel(4, 112)[0]! > 128);
+  assert.equal(pixel(4, 112)[1], 128);
+});
+
 test("displacement maps bound allocation and tolerate hidden or invalid geometry", () => {
   for (const dimensions of [[4000, 2000, 30], [0, 0, 0], [NaN, Infinity, NaN], [68.5, 224.5, 999]] as const) {
     const map = createGlassMap(...dimensions);

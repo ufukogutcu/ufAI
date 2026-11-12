@@ -10,7 +10,7 @@ export function createGlassMap(width: number, height: number, radius: number) {
   const mapWidth = Math.max(1, Math.round(w * ratio));
   const mapHeight = Math.max(1, Math.round(h * ratio));
   const r = Math.max(0, Math.min(Number.isFinite(radius) ? radius : 0, w / 2, h / 2));
-  const band = Math.min(14, Math.min(w, h) / 3);
+  const band = Math.min(10, Math.min(w, h) / 3);
   const data = new Uint8ClampedArray(mapWidth * mapHeight * 4);
   for (let y = 0; y < mapHeight; y += 1) {
     for (let x = 0; x < mapWidth; x += 1) {

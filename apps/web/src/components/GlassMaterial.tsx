@@ -3,7 +3,13 @@ import { canRefractGlass, createGlassMap } from "../glass-geometry";
 import styles from "./GlassMaterial.module.scss";
 
 /** Decorative sibling of sharp, native controls. Put inside a glassSurface container. */
-export function GlassMaterial({ refractive = true }: { refractive?: boolean }) {
+export function GlassMaterial({
+  refractive = true,
+  appearance = "clear",
+}: {
+  refractive?: boolean;
+  appearance?: "clear" | "regular";
+}) {
   const id = `glass-${useId().replace(/:/g, "")}`;
   const material = useRef<HTMLSpanElement>(null);
   const lens = useRef<HTMLSpanElement>(null);
@@ -44,7 +50,7 @@ export function GlassMaterial({ refractive = true }: { refractive?: boolean }) {
           }
           lastGeometry = geometry;
         }
-        surface.style.backdropFilter = `url("#${id}") blur(0.5px) saturate(1.1)`;
+        surface.style.backdropFilter = `url("#${id}") blur(${appearance === "regular" ? 6 : 0.5}px) saturate(1.1)`;
         element.dataset.refraction = "on";
       });
     }
@@ -59,14 +65,14 @@ export function GlassMaterial({ refractive = true }: { refractive?: boolean }) {
       reduced.removeEventListener("change", update);
       contrast.removeEventListener("change", update);
     };
-  }, [id, refractive]);
+  }, [id, refractive, appearance]);
   return (
-    <span ref={material} className={styles.material} aria-hidden="true">
+    <span ref={material} className={`${styles.material} ${appearance === "regular" ? styles.regular : ""}`} aria-hidden="true">
       <svg className={styles.definitions} width="0" height="0" focusable="false">
         <defs>
           <filter ref={filter} id={id} x="0" y="0" filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
             <feImage ref={image} x="0" y="0" preserveAspectRatio="none" result="map" />
-            <feDisplacementMap in="SourceGraphic" in2="map" scale="18" xChannelSelector="R" yChannelSelector="G" />
+            <feDisplacementMap in="SourceGraphic" in2="map" scale="24" xChannelSelector="R" yChannelSelector="G" />
           </filter>
         </defs>
       </svg>

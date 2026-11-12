@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import {
   Home as HomeIcon,
   Palette,
@@ -145,7 +145,7 @@ function Shell() {
         <span
           className={styles.selection}
           aria-hidden="true"
-          style={{ transform: `translateY(${pages.findIndex((item) => item.id === page) * 52}px)` }}
+          style={{ "--nav-index": pages.findIndex((item) => item.id === page) } as CSSProperties}
         />
         {pages.map((item) => (
           <Tooltip key={item.id} content={item.label} placement="right">
@@ -156,7 +156,7 @@ function Shell() {
               aria-current={page === item.id ? "page" : undefined}
               onClick={(event) => navigate(event, item.id)}
             >
-              <item.icon size={21} strokeWidth={1.65} aria-hidden="true" />
+              <item.icon size={18} strokeWidth={1.65} aria-hidden="true" />
             </a>
           </Tooltip>
         ))}

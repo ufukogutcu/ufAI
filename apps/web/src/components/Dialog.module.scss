@@ -1,13 +1,15 @@
 .dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
   width: min(440px, calc(100vw - 40px));
+  height: fit-content;
   max-height: calc(100dvh - 48px);
-  overflow: auto;
+  overflow: hidden;
   color: var(--text);
-  background: var(--panel);
-  border: 1px solid var(--border-strong);
-  border-radius: 24px;
-  padding: 28px;
-  overscroll-behavior: contain;
+  background: transparent;
+  border-radius: var(--radius-panel);
+  padding: 0;
   box-shadow: 0 24px 100px var(--dialog-shadow);
 
   &::backdrop {
@@ -18,12 +20,19 @@
     line-height: 1.6;
   }
 }
+.content {
+  position: relative;
+  max-height: calc(100dvh - 50px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+}
 .heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   h2 {
     font-size: 20px;
     font-weight: 500;

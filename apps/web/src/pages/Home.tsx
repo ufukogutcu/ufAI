@@ -172,17 +172,25 @@ export default function Home() {
     if (!list) return;
     const selected = list.querySelector<HTMLElement>('[aria-selected="true"]');
     if (!selected) return;
+    let frame = 0;
     function revealSelection() {
       const bounds = list!.getBoundingClientRect();
       const tab = selected!.getBoundingClientRect();
       if (tab.left < bounds.left) list!.scrollLeft -= bounds.left - tab.left;
       else if (tab.right > bounds.right) list!.scrollLeft += tab.right - bounds.right;
     }
-    const observer = new ResizeObserver(revealSelection);
+    function scheduleReveal() {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(revealSelection);
+    }
+    const observer = new ResizeObserver(scheduleReveal);
     observer.observe(list);
     observer.observe(selected);
-    revealSelection();
-    return () => observer.disconnect();
+    scheduleReveal();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, [activeId, tabs.length]);
   function select(id: string) {
     void updateSettings({ activeWorkspaceId: id });
@@ -215,110 +223,112 @@ export default function Home() {
     void load(true);
   }
   return (
-    <section className={`${styles.home} ${error ? styles.hasError : ""}`} aria-label="Home">
-      <div className={`${styles.workspaceBar} glassSurface`}>
-        <GlassMaterial />
-        <div ref={tabList} className={styles.tabs} role="tablist" aria-label="Workspaces">
-          {tabs.map((workspace, index) => (
-            <button
-              key={workspace.id}
-              role="tab"
-              id={`tab-${workspace.id}`}
-              aria-selected={workspace.id === activeId}
-              aria-controls="workspace-panel"
-              tabIndex={workspace.id === activeId ? 0 : -1}
-              className={`${styles.tab} ${workspace.id === activeId ? styles.active : ""}`}
-              onClick={() => select(workspace.id)}
-              onKeyDown={(event) => {
-                let next: number | undefined;
-                if (event.key === "ArrowRight")
-                  next = (index + 1) % tabs.length;
-                if (event.key === "ArrowLeft")
-                  next = (index - 1 + tabs.length) % tabs.length;
-                if (event.key === "Home") next = 0;
-                if (event.key === "End") next = tabs.length - 1;
-                const target = next === undefined ? undefined : tabs[next];
-                if (target) {
-                  event.preventDefault();
-                  select(target.id);
-                  document.getElementById(`tab-${target.id}`)?.focus();
-                }
-              }}
-            >
-              <Workflow size={14} />
-              <span>{workspace.name}</span>
-            </button>
-          ))}
-        </div>
-        {offset < total && (
-          <Tooltip content="Load more workspaces">
+    <section className={styles.home} aria-label="Home">
+      <div className={styles.workspaceChrome}>
+        <div className={`${styles.workspaceBar} glassSurface`}>
+          <GlassMaterial />
+          <div ref={tabList} className={styles.tabs} role="tablist" aria-label="Workspaces">
+            {tabs.map((workspace, index) => (
+              <button
+                key={workspace.id}
+                role="tab"
+                id={`tab-${workspace.id}`}
+                aria-selected={workspace.id === activeId}
+                aria-controls="workspace-panel"
+                tabIndex={workspace.id === activeId ? 0 : -1}
+                className={`${styles.tab} ${workspace.id === activeId ? styles.active : ""}`}
+                onClick={() => select(workspace.id)}
+                onKeyDown={(event) => {
+                  let next: number | undefined;
+                  if (event.key === "ArrowRight")
+                    next = (index + 1) % tabs.length;
+                  if (event.key === "ArrowLeft")
+                    next = (index - 1 + tabs.length) % tabs.length;
+                  if (event.key === "Home") next = 0;
+                  if (event.key === "End") next = tabs.length - 1;
+                  const target = next === undefined ? undefined : tabs[next];
+                  if (target) {
+                    event.preventDefault();
+                    select(target.id);
+                    document.getElementById(`tab-${target.id}`)?.focus();
+                  }
+                }}
+              >
+                <Workflow size={14} />
+                <span>{workspace.name}</span>
+              </button>
+            ))}
+          </div>
+          {offset < total && (
+            <Tooltip content="Load more workspaces">
+              <button
+                className="iconButton"
+                aria-label="Load more workspaces"
+                disabled={status === "loading"}
+                onClick={handleMore}
+              >
+                <ChevronDown size={17} />
+              </button>
+            </Tooltip>
+          )}
+          <Tooltip content="Create workspace">
             <button
               className="iconButton"
-              aria-label="Load more workspaces"
-              disabled={status === "loading"}
-              onClick={handleMore}
+              aria-label="Create workspace"
+              onClick={handleCreate}
+              disabled={
+                status === "idle" ||
+                status === "loading" ||
+                (status === "error" && !workspaces.length)
+              }
             >
-              <ChevronDown size={17} />
+              <Plus size={17} />
             </button>
           </Tooltip>
-        )}
-        <Tooltip content="Create workspace">
-          <button
-            className="iconButton"
-            aria-label="Create workspace"
-            onClick={handleCreate}
-            disabled={
-              status === "idle" ||
-              status === "loading" ||
-              (status === "error" && !workspaces.length)
-            }
-          >
-            <Plus size={17} />
-          </button>
-        </Tooltip>
-        {active && (
-          <div className={styles.workspaceActions}>
-            <Tooltip content="Edit workspace">
-              <button
-                className="iconButton"
-                aria-label="Edit workspace"
-                onClick={handleEdit}
-              >
-                <Pencil size={14} />
-              </button>
-            </Tooltip>
-            <Tooltip content="Delete workspace">
-              <button
-                className="iconButton"
-                aria-label="Delete workspace"
-                onClick={handleDelete}
-              >
-                <Trash2 size={14} />
-              </button>
-            </Tooltip>
+          {active && (
+            <div className={styles.workspaceActions}>
+              <Tooltip content="Edit workspace">
+                <button
+                  className="iconButton"
+                  aria-label="Edit workspace"
+                  onClick={handleEdit}
+                >
+                  <Pencil size={14} />
+                </button>
+              </Tooltip>
+              <Tooltip content="Delete workspace">
+                <button
+                  className="iconButton"
+                  aria-label="Delete workspace"
+                  onClick={handleDelete}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </Tooltip>
+            </div>
+          )}
+        </div>
+        {error && (
+          <div className="errorBanner" role="alert">
+            {error}
+            <button className="textButton" onClick={handleRetry}>
+              Retry
+            </button>
           </div>
         )}
-      </div>
-      {error && (
-        <div className="errorBanner" role="alert">
-          {error}
-          <button className="textButton" onClick={handleRetry}>
-            Retry
-          </button>
-        </div>
-      )}
-      <div
-        id="workspace-panel"
-        role={active ? "tabpanel" : undefined}
-        aria-labelledby={active ? `tab-${active.id}` : undefined}
-        className={styles.workspacePanel}
-      >
         {active && (
           <header className={`pageHeader ${styles.workspaceHeader}`}>
             <h1>{active.name}</h1>
             {active.description && <p>{active.description}</p>}
           </header>
         )}
+      </div>
+      <div
+        id="workspace-panel"
+        role={active ? "tabpanel" : undefined}
+        aria-labelledby={active ? `tab-${active.id}` : undefined}
+        className={styles.workspacePanel}
+      >
         <div className={styles.canvas}>
           {active ? (
             <Flowboard key={active.id} workspaceId={active.id} />

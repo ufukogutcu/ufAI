@@ -435,8 +435,8 @@
     "nav-active-background": {
       "cssVariable": "--nav-active-background",
       "label": "Active navigation background",
-      "description": "Selected sidebar page.",
-      "components": ["Selected sidebar page"],
+      "description": "Selected page in the floating navigation dock.",
+      "components": ["Selected dock page"],
       "group": "Navigation",
       "region": "navigation",
       "light": "#ffffff80",
@@ -445,8 +445,8 @@
     "nav-active-border": {
       "cssVariable": "--nav-active-border",
       "label": "Active navigation border",
-      "description": "Selected sidebar page outline.",
-      "components": ["Selected sidebar page outline"],
+      "description": "Outline of the selected page in the floating dock.",
+      "components": ["Selected dock page outline"],
       "group": "Navigation",
       "region": "navigation",
       "light": "#ffffffcc",
@@ -721,6 +721,16 @@
       "region": "navigation",
       "light": "#ffffff45",
       "dark": "#ffffff0d"
+    },
+    "glass-dialog-surface": {
+      "cssVariable": "--glass-dialog-surface",
+      "label": "Dialog glass body",
+      "description": "Regular glass tint that keeps dialog content readable above the backdrop.",
+      "components": ["Dialog shells", "Dialog theme preview"],
+      "group": "Surfaces",
+      "region": "dialog",
+      "light": "#ffffffcc",
+      "dark": "#1b1c1fe0"
     },
     "glass-border": {
       "cssVariable": "--glass-border",

@@ -30,6 +30,7 @@ function legacyTheme(theme: Theme): Theme {
   const colors = { ...theme.colors };
   for (const key of [
     "glass-surface",
+    "glass-dialog-surface",
     "glass-border",
     "glass-highlight",
     "glass-shadow",
@@ -55,6 +56,7 @@ test("older settings responses gain missing theme colors on startup, refresh and
       assert.equal(active.colors.text, custom.colors.text);
       for (const key of colorKeys) assert.match(active.colors[key], hexColor, key);
       assert.equal(active.colors["glass-surface"], catalog.tokens["glass-surface"][mode]);
+      assert.equal(active.colors["glass-dialog-surface"], catalog.tokens["glass-dialog-surface"][mode]);
       assert.equal(older.colors["glass-surface"], undefined);
     }
     verify();
@@ -193,6 +195,11 @@ test("older custom palettes inherit glass scopes while preserving saved override
     });
     assert.equal(resolved.text, "#123456");
     assert.equal(resolved["tab-active"], "#abcdef80");
+    assert.equal(resolved["glass-dialog-surface"], catalog.tokens["glass-dialog-surface"][mode]);
+    assert.equal(
+      resolveColors(mode, { "glass-dialog-surface": "#112233cc" })["glass-dialog-surface"],
+      "#112233cc",
+    );
     for (const key of [
       "glass-surface",
       "glass-border",
@@ -230,7 +237,15 @@ test("application color literals and CSS variables must come from the theme cata
         url.pathname,
       );
       for (const match of source.matchAll(/var\((--[\w-]+)/g)) {
-        if (match[1] === "--swatch") continue;
+        // Layout variables are structural, not editable palette scopes.
+        if ([
+          "--swatch", "--radius-floating", "--radius-panel",
+          "--radius-control", "--radius-compact",
+          "--control-height", "--icon-control-size", "--nav-target-size",
+          "--nav-gap", "--nav-index", "--dock-padding", "--dock-padding-block", "--dock-left",
+          "--dock-width", "--shell-gutter", "--toolbar-top",
+          "--toolbar-control-size", "--toolbar-height", "--zoom-control-size",
+        ].includes(match[1]!)) continue;
         assert.ok(
           variables.has(match[1]!),
           `Unregistered ${match[1]} in ${url.pathname}`,
