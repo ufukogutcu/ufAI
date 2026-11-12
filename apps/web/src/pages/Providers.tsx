@@ -594,7 +594,6 @@ function ProviderEditor({
       <form className={shared.editor} onSubmit={finish} noValidate>
         <header className={shared.editorHeading}>
           <h2>{draft ? "Set up Provider" : "Edit Provider"}</h2>
-          {!draft && <span className={shared.saved}>Saved</span>}
         </header>
         <fieldset className={shared.fields} disabled={busy || !!testing}>
           <section
