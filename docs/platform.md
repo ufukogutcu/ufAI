@@ -67,7 +67,7 @@ One local installation holds one shared setup across browser sessions. There are
 
 - **Status:** partial
 - **Purpose:** Save reusable Agent Presets shared across workspaces. The capability ID remains `model-presets`.
-- **Steps:** Open Agent Presets and create a preset with a name. Optionally select a saved Provider, one of its saved models, and a compaction threshold. Provider setup and model editing belong on [Providers](#provider-connections).
+- **Steps:** Open Agent Presets. When the library is empty, the new preset form opens automatically; otherwise choose New preset. Enter a name. Optionally select a saved Provider, one of its saved models, and a compaction threshold. Provider setup and model editing belong on [Providers](#provider-connections).
 - **Model limits:** The selected model's current context window and maximum output are shown read-only. Edit those shared values in Providers; every preset using that Provider/model sees the changes.
 - **Compaction:** Leave the threshold empty for no configuration, or enter a percentage from 1–100 or a positive whole token count. Percentage thresholds round down with a minimum of one token; unknown context displays Unknown. Changing the threshold unit clears its value. A threshold exceeding known context shows a warning and can still be saved.
 - **Saving:** Only the name is required. Save stores the preset; failed saves retain the draft. Cancel and navigation protect unsaved edits. Deletion requires confirmation. Deleting its Provider clears Provider/model selections; removing its model clears only the model selection. Names and compaction are preserved.
@@ -78,7 +78,7 @@ One local installation holds one shared setup across browser sessions. There are
 
 - **Status:** implemented
 - **Purpose:** Set up named Provider configurations, maintain their model lists, and test model replies.
-- **Steps:** Open Providers and choose New Provider. Enter a name and select OpenAI, Anthropic, Google Gemini, OpenRouter, xAI, DeepSeek, Mistral, Groq, Together, Custom OpenAI-compatible, Ollama, or Codex. Multiple named configurations of the same type are supported.
+- **Steps:** Open Providers. When the library is empty, the creation form opens automatically; otherwise choose New Provider. Enter a name and select OpenAI, Anthropic, Google Gemini, OpenRouter, xAI, DeepSeek, Mistral, Groq, Together, Custom OpenAI-compatible, Ollama, or Codex. Multiple named configurations of the same type are supported.
 - **Connection setup:** Named API services require an API key. Custom OpenAI-compatible servers require their API base URL and may use a key. Ollama normally uses `http://localhost:11434`, accepts another server URL, and does not normally require a key. Use Connect & load models to apply connection settings and try discovery. For [Codex](#runtime-connections), sign in with ChatGPT.
 - **Saving:** A saved Provider needs at least one model, discovered or manually added. Discovery and testing do not have to succeed. Unfinished setup is excluded from Agent Preset choices. Cancelling a new setup discards its setup credentials; interrupted setups may appear as Finish setup in the library.
 - **Models:** Refresh models tries discovery again and merges newly available models. Existing entries, manually added IDs, and explicit limit overrides are retained. Models omitted from a refresh remain listed with an indication. Search and page controls help browse long lists. Add model accepts an exact model ID without checking upstream availability.

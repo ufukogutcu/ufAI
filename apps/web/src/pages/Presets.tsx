@@ -294,6 +294,10 @@ export default function Presets() {
       await Promise.all([load(), loadConnections()]);
     });
   }, [load, loadConnections]);
+  useEffect(() => {
+    if (status === "ready" && total === 0 && selection === null)
+      setSelection("new");
+  }, [status, total, selection]);
   function choose(id: string | null) {
     if (id === selection) return;
     attempt(() => {
@@ -390,13 +394,15 @@ export default function Presets() {
           {selection && (selection === "new" || selected) ? (
             <>
               <div className={styles.inlineActions}>
-                <button
-                  className={`textButton ${styles.backButton}`}
-                  onClick={() => choose(null)}
-                >
-                  <ArrowLeft size={14} aria-hidden="true" />
-                  Preset library
-                </button>
+                {presets.length > 0 && (
+                  <button
+                    className={`textButton ${styles.backButton}`}
+                    onClick={() => choose(null)}
+                  >
+                    <ArrowLeft size={14} aria-hidden="true" />
+                    Preset library
+                  </button>
+                )}
                 {selected && (
                   <button
                     className="textButton"

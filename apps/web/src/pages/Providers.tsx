@@ -336,14 +336,14 @@ function ProviderEditor({
             () => {},
           );
         if (current.discard)
-          void request(`/connections/${current.id}`, "DELETE").catch(() => {});
+          void removeConnection(current.id).catch(() => {});
         else if (provider === "codex")
           void request(`/connections/${current.id}/login`, "DELETE").catch(
             () => {},
           );
       }
     };
-  }, [provider]);
+  }, [provider, removeConnection]);
   useEffect(() => refreshOnFocus(async () => refreshLocal()), [refreshLocal]);
   useEffect(() => {
     const controller = new AbortController();
@@ -450,7 +450,7 @@ function ProviderEditor({
     resource.current.id = saved.id;
     if (!mounted.current) {
       if (resource.current.discard)
-        await request(`/connections/${saved.id}`, "DELETE");
+        await removeConnection(saved.id);
       throw new Error("Setup closed.");
     }
     setId(saved.id);
@@ -1062,6 +1062,10 @@ export default function Providers() {
     void load();
     return refreshOnFocus(load);
   }, [load]);
+  useEffect(() => {
+    if (status === "ready" && !connections.length && selection !== "new")
+      setSelection("new");
+  }, [status, connections.length, selection]);
   function choose(id: string | null) {
     if (id === selection) return;
     attempt(() => setSelection(id));
@@ -1135,13 +1139,15 @@ export default function Providers() {
           (selection === "new" ||
             connections.some((c) => c.id === selection)) ? (
             <>
-              <button
-                className={`textButton ${shared.backButton}`}
-                onClick={() => choose(null)}
-              >
-                <ArrowLeft size={14} aria-hidden="true" />
-                Provider library
-              </button>
+              {connections.length > 0 && (
+                <button
+                  className={`textButton ${shared.backButton}`}
+                  onClick={() => choose(null)}
+                >
+                  <ArrowLeft size={14} aria-hidden="true" />
+                  Provider library
+                </button>
+              )}
               <ProviderEditor
                 key={selection}
                 connection={connections.find((c) => c.id === selection)}
