@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   ArrowLeft,
+  TriangleAlert,
   Check,
   LoaderCircle,
   Pencil,
@@ -34,6 +35,7 @@ import { useDashboard } from "../store";
 import { Tooltip } from "../components/Tooltip";
 import { reconcileSelection, selectModels, selectedCount, selectionChanges, type SelectionDraft } from "../model-selection";
 import { useConnections } from "../connection-store";
+import { contextDifference, resetContextToAutomatic } from "../model-context";
 import {
   providerCategories,
   providerOptions,
@@ -151,6 +153,55 @@ function ProviderPicker({
 }
 
 type ModelPage = { items: ProviderModel[]; total: number };
+function ModelContextWarning({
+  model,
+  onSaved,
+}: {
+  model: ProviderModel;
+  onSaved: (model: ProviderModel) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const warningRef = useRef<HTMLDivElement>(null);
+  const descriptionId = useId();
+  const difference = contextDifference(model);
+  if (!difference) return null;
+  const outputTooLarge = model.maxOutputTokens !== null && model.maxOutputTokens > difference.automatic;
+
+  async function applyAutomaticContext() {
+    setBusy(true);
+    setError("");
+    try {
+      const saved = await resetContextToAutomatic(model);
+      // The warning disappears after saving; leave focus on this model's Edit control.
+      warningRef.current?.closest("article")?.querySelector<HTMLButtonElement>("[data-model-edit]")?.focus();
+      onSaved(saved);
+    } catch (error) {
+      setError(error instanceof RequestError && error.fields.maxOutputTokensOverride
+        ? "Maximum output exceeds the automatic context. Use Edit to adjust the output limit first."
+        : errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={styles.contextWarning} ref={warningRef}>
+      <p id={descriptionId}>
+        <TriangleAlert size={14} aria-hidden="true" />
+        <span>Fetched context differs: {difference.automatic.toLocaleString()} tokens. Your manual value: {difference.manual.toLocaleString()} tokens.</span>
+      </p>
+      <button type="button" className="textButton" disabled={busy || outputTooLarge}
+        aria-label={`Use automatic context for ${model.name}`} aria-describedby={descriptionId}
+        aria-busy={busy} onClick={applyAutomaticContext}>
+        {busy ? "Saving…" : "Use automatic context"}
+      </button>
+      {outputTooLarge && <p>Maximum output exceeds the automatic context. Use Edit to adjust the output limit first.</p>}
+      {error && <p className="fieldError" role="alert">{error}</p>}
+    </div>
+  );
+}
+
 function ModelEditor({
   connectionId,
   model,
@@ -419,6 +470,7 @@ function ProviderEditor({
   const [fields, setFields] = useState<Record<string, string>>({});
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalog, setCatalog] = useState<ModelPage>({ items: [], total: 0 });
+  const [modelActionStatus, setModelActionStatus] = useState("");
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraft>(() => ({ saved: new Map(), changes: new Map() }));
   const [selectionLoading, setSelectionLoading] = useState(true);
   const [selectionLoadError, setSelectionLoadError] = useState("");
@@ -484,7 +536,16 @@ function ProviderEditor({
     setName(value);
   }
   function handleModelSaved(createdId?: string) {
+    setModelActionStatus("");
     setCreatedModelId(createdId ?? null);
+    refreshLocal();
+  }
+  function handleAutomaticContextSaved(model: ProviderModel) {
+    setCatalog(current => ({
+      ...current,
+      items: current.items.map(item => item.id === model.id ? model : item),
+    }));
+    setModelActionStatus(`${model.name} now uses automatic context: ${model.contextWindow?.toLocaleString() ?? "Unknown"} tokens.`);
     refreshLocal();
   }
   function changeModelPage(next: number) {
@@ -665,6 +726,7 @@ function ProviderEditor({
   }
   async function discover() {
     setBusy(true);
+    setModelActionStatus("");
     setError("");
     setFields({});
     try {
@@ -1065,6 +1127,7 @@ function ProviderEditor({
               Discovery and testing are optional. Add a model manually if its
               list cannot be loaded. Only checked models appear in model selections. Checkbox changes apply when you save this Provider.
             </p>
+            <p className={styles.actionStatus} role="status">{modelActionStatus}</p>
             <div className={styles.modelList}>
               {catalog.items.map((model) => (
                 <Appearance kind="fade" key={model.id} ready={model.id === createdModelId}><article className={styles.modelRow} onAnimationEnd={clearCreatedModelAppearance}>
@@ -1089,7 +1152,7 @@ function ProviderEditor({
                     </label>
                     <div className={styles.modelActions}>
                       <Tooltip content={`Edit ${model.name}`}><button type="button" className="iconButton"
-                        aria-label={`Edit ${model.name}`} onClick={() => setModelEditor({ model })}>
+                        data-model-edit aria-label={`Edit ${model.name}`} onClick={() => setModelEditor({ model })}>
                         <Pencil size={15} aria-hidden="true" />
                       </button></Tooltip>
                       <Tooltip content={dirty ? "Apply or save connection changes first" : testing === model.id ? "Testing…" : `Test ${model.name}`}>
@@ -1100,6 +1163,7 @@ function ProviderEditor({
                       </Tooltip>
                     </div>
                   </div>
+                  <ModelContextWarning model={model} onSaved={handleAutomaticContextSaved} />
                   {(model.lastTest || model.legacyLimits.length > 0 || (!model.available && !model.manual)) && (
                   <details className={styles.modelDetails}>
                     <summary>{model.lastTest ? model.lastTest.success ? "Test passed" : "Test failed" : "Model details"}</summary>

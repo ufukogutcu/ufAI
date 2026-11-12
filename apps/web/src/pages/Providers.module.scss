@@ -202,11 +202,34 @@
   color: var(--muted);
   summary { cursor: pointer; width: fit-content; padding: 2px 0; }
 }
+.contextWarning {
+  margin: 4px 0 0 26px;
+  color: var(--warning);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+  p { margin: 0; }
+  > p:first-child {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    svg { flex-shrink: 0; align-self: flex-start; margin-top: 3px; }
+  }
+  button { min-height: var(--control-height); text-align: left; }
+}
+.actionStatus {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  &:not(:empty) { margin-bottom: 8px; }
+}
 .testingIcon { animation: modelTestSpin 1s linear infinite; }
 @keyframes modelTestSpin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .testingIcon { animation: none; } }
 @media (any-pointer: coarse) {
-  .modelIdentity, .modelActions :global(.iconButton), .modelDetails summary, .selectionToolbar button { min-height: 44px; }
+  .modelIdentity, .modelActions :global(.iconButton), .modelDetails summary, .selectionToolbar button, .contextWarning button { min-height: 44px; }
   .modelActions :global(.iconButton) { min-width: 44px; }
 }
 .status {

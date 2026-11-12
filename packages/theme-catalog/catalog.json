@@ -614,9 +614,9 @@
     },
     "warning": {
       "cssVariable": "--warning",
-      "label": "Unsaved changes",
-      "description": "Unsaved changes indicators and contrast notices.",
-      "components": ["Unsaved changes indicators and contrast notices"],
+      "label": "Warnings",
+      "description": "Configuration warnings, unsaved changes indicators, and contrast notices.",
+      "components": ["Configuration warnings, unsaved changes indicators, and contrast notices"],
       "group": "Feedback",
       "region": "feedback",
       "light": "#856212",

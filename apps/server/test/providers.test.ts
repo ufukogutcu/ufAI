@@ -683,24 +683,33 @@ test("Codex refresh persists catalog defaults, retains manual overrides, and upd
   const catalog = (context: number) => writeFile(join(home, "provider-catalog.json"), JSON.stringify({ models: [
     { slug: "first", context_window: context, max_output_tokens: 9999 },
   ] }));
+  const refresh = () => app.inject({ method: "POST", url: `/api/connections/${id}/models/refresh` });
+  // An existing Provider created before context discovery was available.
+  let response = await refresh();
+  assert.equal(response.statusCode, 200, response.body);
+  assert.ok(response.json<{ items: ProviderModel[] }>().items.every(m => m.contextWindow === null && m.contextWindowOverride === null));
+  response = await app.inject({ method: "PATCH", url: `/api/connections/${id}`, payload: { draft: false } });
+  assert.equal(response.statusCode, 200, response.body);
   await catalog(500000);
   await writeFile(join(home, "bundled-catalog.json"), JSON.stringify({ models: [
     { slug: "first", context_window: 272000 },
     { slug: "second", context_window: 272000 },
   ] }));
-  const refresh = () => app.inject({ method: "POST", url: `/api/connections/${id}/models/refresh` });
-  let response = await refresh();
+  response = await refresh();
   assert.equal(response.statusCode, 200, response.body);
   const items = response.json<{ items: ProviderModel[] }>().items;
   assert.equal(items.find((m) => m.id === "first")?.discoveredContextWindow, 500000);
   assert.equal(items.find((m) => m.id === "second")?.discoveredContextWindow, 272000);
   assert.ok(items.every((m) => m.discoveredMaxOutputTokens === null && m.maxOutputTokens === null));
-  response = await app.inject({ method: "PATCH", url: `/api/connections/${id}`, payload: { draft: false } });
-  assert.equal(response.statusCode, 200, response.body);
   const preset = await app.inject({ method: "POST", url: "/api/model-presets", payload: { name: "Codex defaults", connectionId: id, modelId: "first" } });
   assert.equal(preset.statusCode, 201, preset.body);
   assert.equal(preset.json().contextWindow, 500000);
   const modelUrl = `/api/connections/${id}/models/first`;
+  const readPreset = async () => (await app.inject("/api/model-presets")).json().items.find((p: { id: string }) => p.id === preset.json().id);
+  await catalog(450000);
+  assert.equal((await refresh()).statusCode, 200);
+  assert.equal((await app.inject(modelUrl)).json<ProviderModel>().contextWindow, 450000);
+  assert.equal((await readPreset()).contextWindow, 450000);
   response = await app.inject({ method: "PATCH", url: modelUrl, payload: { contextWindowOverride: 600000, maxOutputTokensOverride: 42 } });
   assert.equal(response.statusCode, 200, response.body);
   await catalog(400000);
@@ -710,14 +719,27 @@ test("Codex refresh persists catalog defaults, retains manual overrides, and upd
   assert.equal(model.discoveredContextWindow, 400000);
   assert.equal(model.contextWindow, 600000);
   assert.equal(model.maxOutputTokens, 42);
-  const readPreset = async () => (await app.inject("/api/model-presets")).json().items.find((p: { id: string }) => p.id === preset.json().id);
   assert.equal((await readPreset()).contextWindow, 600000);
   assert.equal((await readPreset()).maxOutputTokens, 42);
-  response = await app.inject({ method: "PATCH", url: modelUrl, payload: { contextWindowOverride: null, maxOutputTokensOverride: null } });
+  response = await app.inject({ method: "PATCH", url: modelUrl, payload: { contextWindowOverride: null } });
   assert.equal(response.statusCode, 200, response.body);
   model = response.json<ProviderModel>();
   assert.equal(model.contextWindow, 400000);
-  assert.equal(model.maxOutputTokens, null);
+  assert.equal(model.contextWindowOverride, null);
+  assert.equal(model.maxOutputTokensOverride, 42);
+  assert.equal(model.maxOutputTokens, 42);
   assert.equal((await readPreset()).contextWindow, 400000);
-  assert.equal((await readPreset()).maxOutputTokens, null);
+  assert.equal((await readPreset()).maxOutputTokens, 42);
+  await catalog(300000);
+  assert.equal((await refresh()).statusCode, 200);
+  assert.equal((await readPreset()).contextWindow, 300000);
+  response = await app.inject({ method: "PATCH", url: modelUrl, payload: { contextWindowOverride: 600000, maxOutputTokensOverride: 500000 } });
+  assert.equal(response.statusCode, 200, response.body);
+  response = await app.inject({ method: "PATCH", url: modelUrl, payload: { contextWindowOverride: null } });
+  assert.equal(response.statusCode, 400, response.body);
+  model = (await app.inject(modelUrl)).json<ProviderModel>();
+  assert.equal(model.contextWindowOverride, 600000);
+  assert.equal(model.discoveredContextWindow, 300000);
+  assert.equal(model.maxOutputTokensOverride, 500000);
+  assert.equal((await readPreset()).contextWindow, 600000);
 });
