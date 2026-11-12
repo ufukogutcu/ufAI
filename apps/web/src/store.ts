@@ -18,6 +18,8 @@ type Status = "idle" | "loading" | "ready" | "error";
 interface DashboardState {
   workspaces: Workspace[];
   presets: ModelPreset[];
+  lastOpenedPresetId: string | null;
+  rememberOpenedPreset: (id: string | null) => void;
   workspaceStatus: Status;
   presetStatus: Status;
   workspaceError: string;
@@ -66,6 +68,8 @@ export function createDashboardStore(settings: SettingsStore) {
   return createStore<DashboardState>()((set, get) => ({
     workspaces: [],
     presets: [],
+    lastOpenedPresetId: null,
+    rememberOpenedPreset: (id) => set({ lastOpenedPresetId: id }),
     workspaceStatus: "idle",
     presetStatus: "idle",
     workspaceError: "",
@@ -102,19 +106,24 @@ export function createDashboardStore(settings: SettingsStore) {
       const started = presetRevision;
       const offset = more ? get().presetOffset : 0;
       const target = more ? offset + 100 : Math.max(100, get().presetOffset);
+      const rememberedId = more ? null : get().lastOpenedPresetId;
       set({ presetStatus: "loading", presetError: "" });
       try {
         const items: ModelPreset[] = [];
         let nextOffset = offset;
         let total = 0;
+        let foundRemembered = rememberedId === null;
         do {
           const page = await getPage<ModelPreset>("/model-presets", nextOffset);
           if (started !== presetRevision) return;
           items.push(...page.items);
+          foundRemembered ||= page.items.some(
+            (preset) => preset.id === rememberedId,
+          );
           total = page.total;
           nextOffset += page.items.length;
           if (!page.items.length) break;
-        } while (nextOffset < target && nextOffset < total);
+        } while (nextOffset < total && (nextOffset < target || !foundRemembered));
         set((state) => {
           const previous = new Map(
             state.presets.map((preset) => [preset.id, preset]),
@@ -313,6 +322,8 @@ export function createDashboardStore(settings: SettingsStore) {
       presetRevision++;
       set((state) => ({
         presets: state.presets.filter((p) => p.id !== id),
+        lastOpenedPresetId:
+          state.lastOpenedPresetId === id ? null : state.lastOpenedPresetId,
         presetTotal: state.presetTotal - 1,
         presetOffset: Math.max(
           0,

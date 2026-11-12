@@ -273,11 +273,13 @@ function ProviderEditor({
   onSaved,
   onCreated,
   onClose,
+  onDeleted,
 }: {
   connection?: ProviderConnection;
   onSaved: (id: string) => void;
   onCreated: (id: string) => void;
   onClose: () => void;
+  onDeleted: () => void;
 }) {
   const [id, setId] = useState(connection?.id ?? null);
   const [provider, setProvider] = useState<ConnectionProvider>(
@@ -576,7 +578,7 @@ function ProviderEditor({
     try {
       await removeConnection(id);
       resource.current.id = null;
-      onClose();
+      onDeleted();
     } catch (error) {
       fail(error);
     } finally {
@@ -1062,24 +1064,61 @@ export default function Providers() {
   const load = useConnections((state) => state.load);
   const status = useConnections((state) => state.status);
   const error = useConnections((state) => state.error);
-  const [selection, setSelection] = useState<string | null>(null);
+  const lastOpenedId = useConnections((state) => state.lastOpenedId);
+  const rememberOpened = useConnections((state) => state.rememberOpened);
+  const [snapshot, setSnapshot] = useState<ProviderConnection | undefined>();
+  // Undefined resolves the entry selection; null is an explicit library view.
+  const [selection, setSelection] = useState<string | null>();
+  const [opened, setOpened] = useState(false);
   const [createdId, setCreatedId] = useState<string | null>(null);
   const attempt = useNavigationGuard();
   useEffect(() => {
-    void load();
-    return refreshOnFocus(load);
+    let active = true;
+    void load().then(() => {
+      if (active) setOpened(true);
+    });
+    const stopRefreshing = refreshOnFocus(load);
+    return () => {
+      active = false;
+      stopRefreshing();
+    };
   }, [load]);
   useEffect(() => {
-    if (status === "ready" && !connections.length && selection !== "new")
+    if (!opened || status !== "ready") return;
+    if (selection === undefined) {
+      const next =
+        connections.find((connection) => connection.id === lastOpenedId) ??
+        connections[0];
+      setSnapshot(next);
+      setSelection(next?.id ?? "new");
+      rememberOpened(next?.id ?? null);
+    } else if (!connections.length && selection === null) {
       setSelection("new");
-  }, [status, connections.length, selection]);
+    }
+  }, [opened, status, connections, selection, lastOpenedId, rememberOpened]);
   function choose(id: string | null) {
     if (id === selection) return;
-    attempt(() => setSelection(id));
+    attempt(() => {
+      setSnapshot(connections.find((connection) => connection.id === id));
+      setSelection(id);
+      if (id && id !== "new") rememberOpened(id);
+    });
+  }
+  function saved(id: string) {
+    setSnapshot(connections.find((connection) => connection.id === id));
+    setSelection(id);
+    rememberOpened(id);
+  }
+  function deleted() {
+    setSnapshot(undefined);
+    setSelection(undefined);
   }
   function clearCreatedAppearance() {
     setCreatedId(null);
   }
+  const selected =
+    connections.find((connection) => connection.id === selection) ??
+    (snapshot?.id === selection ? snapshot : undefined);
   return (
     <section className={shared.page} aria-label="Providers">
       <header className="pageHeader">
@@ -1150,8 +1189,7 @@ export default function Providers() {
         </aside>
         <Appearance kind="selection" trigger={selection}><div className={shared.detail}>
           {selection &&
-          (selection === "new" ||
-            connections.some((c) => c.id === selection)) ? (
+          (selection === "new" || selected) ? (
             <>
               {connections.length > 0 && (
                 <button
@@ -1164,10 +1202,11 @@ export default function Providers() {
               )}
               <ProviderEditor
                 key={selection}
-                connection={connections.find((c) => c.id === selection)}
-                onSaved={(id) => setSelection(id)}
+                connection={selected}
+                onSaved={saved}
                 onCreated={setCreatedId}
                 onClose={() => setSelection(null)}
+                onDeleted={deleted}
               />
             </>
           ) : (

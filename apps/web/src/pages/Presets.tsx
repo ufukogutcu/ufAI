@@ -282,9 +282,13 @@ export default function Presets() {
   const error = useDashboard((state) => state.presetError);
   const load = useDashboard((state) => state.loadPresets);
   const remove = useDashboard((state) => state.deletePreset);
+  const lastOpenedId = useDashboard((state) => state.lastOpenedPresetId);
+  const rememberOpened = useDashboard((state) => state.rememberOpenedPreset);
   const loadConnections = useConnections((state) => state.load);
   const [snapshot, setSnapshot] = useState<ModelPreset | undefined>();
-  const [selection, setSelection] = useState<string | null>(null);
+  // Undefined resolves the entry selection; null is an explicit library view.
+  const [selection, setSelection] = useState<string | null>();
+  const [opened, setOpened] = useState(false);
   const [revision, setRevision] = useState(0);
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<ModelPreset | null>(null);
@@ -292,27 +296,44 @@ export default function Presets() {
   const [busy, setBusy] = useState(false);
   const attempt = useNavigationGuard();
   useEffect(() => {
-    void load();
+    let active = true;
+    void load().then(() => {
+      if (active) setOpened(true);
+    });
     void loadConnections();
-    return refreshOnFocus(async () => {
+    const stopRefreshing = refreshOnFocus(async () => {
       await Promise.all([load(), loadConnections()]);
     });
+    return () => {
+      active = false;
+      stopRefreshing();
+    };
   }, [load, loadConnections]);
   useEffect(() => {
-    if (status === "ready" && total === 0 && selection === null)
+    if (!opened || status !== "ready") return;
+    if (selection === undefined) {
+      const next =
+        presets.find((preset) => preset.id === lastOpenedId) ?? presets[0];
+      setSnapshot(next);
+      setSelection(next?.id ?? "new");
+      rememberOpened(next?.id ?? null);
+    } else if (total === 0 && selection === null) {
       setSelection("new");
-  }, [status, total, selection]);
+    }
+  }, [opened, status, total, selection, presets, lastOpenedId, rememberOpened]);
   function choose(id: string | null) {
     if (id === selection) return;
     attempt(() => {
       setSnapshot(presets.find((p) => p.id === id));
       setSelection(id);
+      if (id && id !== "new") rememberOpened(id);
     });
   }
   function saved(preset: ModelPreset) {
     if (selection === "new") setCreatedId(preset.id);
     setSnapshot(preset);
     setSelection(preset.id);
+    rememberOpened(preset.id);
     setRevision((value) => value + 1);
   }
   function handleLoadMore() {
@@ -328,8 +349,13 @@ export default function Presets() {
     setDeleteError("");
     try {
       await remove(deleting.id);
+      // Refill the library if deleting the last loaded item exposed another page.
+      if (presets.length === 1 && total > 1) await load();
       setDeleting(null);
-      if (selection === deleting.id) setSelection(null);
+      if (selection === deleting.id) {
+        setSnapshot(undefined);
+        setSelection(undefined);
+      }
     } catch (error) {
       setDeleteError(errorMessage(error));
     } finally {

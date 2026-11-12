@@ -8,6 +8,8 @@ import {
 } from "./api";
 interface ConnectionState {
   connections: ProviderConnection[];
+  lastOpenedId: string | null;
+  rememberOpened: (id: string | null) => void;
   status: "idle" | "loading" | "ready" | "error";
   error: string;
   load: () => Promise<void>;
@@ -22,6 +24,8 @@ export function createConnectionStore() {
   let inFlight: Promise<void> | undefined;
   return createStore<ConnectionState>()((set, get) => ({
     connections: [],
+    lastOpenedId: null,
+    rememberOpened: (id) => set({ lastOpenedId: id }),
     status: "idle",
     error: "",
     load: () => {
@@ -79,6 +83,7 @@ export function createConnectionStore() {
       revision++;
       set((state) => ({
         connections: state.connections.filter((item) => item.id !== id),
+        lastOpenedId: state.lastOpenedId === id ? null : state.lastOpenedId,
         status: "ready",
         error: "",
       }));
