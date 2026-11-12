@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { migrateLocations } from "./locations-schema.js";
 import { migrateExecution } from "./execution-schema.js";
+import { migrateTools } from "./tools-schema.js";
 
 const defaultPath = fileURLToPath(
   new URL("../../../data/ufai.sqlite", import.meta.url),
@@ -20,7 +21,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 11)
+    if (version > 12)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -159,7 +160,9 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
       })();
     if (version < 8)
       database.transaction(() => {
-        database.exec("ALTER TABLE provider_models ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))");
+        database.exec(
+          "ALTER TABLE provider_models ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))",
+        );
         database.pragma("user_version = 8");
       })();
     if (version < 9)
@@ -181,14 +184,21 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
         `);
         database.pragma("user_version = 9");
       })();
-    if (version < 10) database.transaction(() => {
-      migrateExecution(database);
-      database.pragma("user_version = 10");
-    })();
-    if (version < 11) database.transaction(() => {
-      migrateLocations(database);
-      database.pragma("user_version = 11");
-    })();
+    if (version < 10)
+      database.transaction(() => {
+        migrateExecution(database);
+        database.pragma("user_version = 10");
+      })();
+    if (version < 11)
+      database.transaction(() => {
+        migrateLocations(database);
+        database.pragma("user_version = 11");
+      })();
+    if (version < 12)
+      database.transaction(() => {
+        migrateTools(database);
+        database.pragma("user_version = 12");
+      })();
   } catch (error) {
     database.close();
     throw error;

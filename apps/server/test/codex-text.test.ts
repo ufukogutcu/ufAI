@@ -90,3 +90,82 @@ test("Codex retains final message items that arrive without deltas and reports u
   assert.equal(answer.text, "Preparing an answer.\n\nFinal answer.");
   assert.deepEqual(answer.usage, { inputTokens: 12, outputTokens: 8 });
 });
+
+test("Codex dynamic tools use ufAI callbacks, isolate commentary, and preserve cancellation", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "ufai-codex-tools-"));
+  const runtime = new CodexRuntime(
+    directory,
+    () =>
+      spawn(
+        process.execPath,
+        [
+          fileURLToPath(
+            new URL("./fixtures/codex-tools-process.cjs", import.meta.url),
+          ),
+        ],
+        { stdio: ["pipe", "pipe", "pipe"] },
+      ),
+    1000,
+    1000,
+  );
+  t.after(async () => {
+    await runtime.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  const calls: any[] = [],
+    comments: string[] = [];
+  const result = await runtime.executeTask("connection", {
+    ...base,
+    tools: [
+      {
+        name: "files_read",
+        description: "Read file",
+        parameters: {
+          type: "object",
+          properties: { path: { type: "string" } },
+        },
+      },
+    ],
+    onTool: async (call) => {
+      calls.push(call);
+      return { ok: true, text: "Contents" };
+    },
+    onCommentary: (text) => comments.push(text),
+  });
+  assert.equal(result.text, "Final answer.");
+  assert.equal(calls[0].name, "files_read");
+  assert.deepEqual(calls[0].arguments, { path: "a.txt" });
+  assert.deepEqual(comments, ["Reading the file.", "Checking the result."]);
+  assert.equal(result.usage?.inputTokens, 20);
+  const controller = new AbortController();
+  let entered!: () => void;
+  const started = new Promise<void>((r) => {
+    entered = r;
+  });
+  const waiting = runtime.executeTask("connection", {
+    ...base,
+    signal: controller.signal,
+    tools: [
+      {
+        name: "files_read",
+        description: "Read",
+        parameters: { type: "object" },
+      },
+    ],
+    onTool: async () => {
+      entered();
+      await new Promise((_, reject) =>
+        controller.signal.addEventListener(
+          "abort",
+          () => reject(new Error("Cancelled")),
+          { once: true },
+        ),
+      );
+      return { ok: true };
+    },
+  });
+  void waiting.catch(() => {});
+  await started;
+  controller.abort();
+  await assert.rejects(() => waiting, /cancelled/i);
+});

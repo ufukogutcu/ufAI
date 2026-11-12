@@ -378,3 +378,95 @@ test("background layout snapshots defer to active canvas interactions, and older
   await store.getState().loadWorkspace(a.workspaceId);
   assert.equal(store.getState().agents[a.id]!.x, 200);
 });
+
+test("tool refresh invalidation during an in-flight read reloads latest data without changing canvas or drafts", async (t) => {
+  const original = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+  const store = createAgentStore();
+  const nodes = [];
+  store.setState({ nodes: { workspace: nodes }, drafts: { task: "unsaved" } });
+  let reads = 0,
+    release!: (value: Response) => void;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("/activity")) {
+      if (reads++ === 0)
+        return new Promise<Response>((r) => {
+          release = r;
+        });
+      return Response.json({
+        items: [{ id: "new", sequence: 2, content: "latest" }],
+        total: 1,
+      });
+    }
+    return Response.json({ items: [], total: 0 });
+  };
+  const first = store.getState().loadToolData("task");
+  const again = store.getState().loadToolData("task");
+  release(Response.json({ items: [], total: 0 }));
+  await Promise.all([first, again]);
+  assert.equal(reads, 2);
+  assert.equal(store.getState().toolData.task!.activity[0]!.id, "new");
+  assert.equal(store.getState().nodes.workspace, nodes);
+  assert.equal(store.getState().drafts.task, "unsaved");
+});
+test("tool snapshots remain task-scoped across selection changes and failed refreshes preserve prior data", async (t) => {
+  const original = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+  let failing = false;
+  globalThis.fetch = async (url) => {
+    if (failing) throw new Error("offline");
+    const task = String(url).includes("/one/") ? "one" : "two";
+    return Response.json({
+      items: String(url).includes("/processes")
+        ? [{ id: task, state: "running" }]
+        : [],
+      total: 1,
+    });
+  };
+  const store = createAgentStore();
+  await store.getState().loadToolData("one");
+  const before = store.getState().toolData.one;
+  await store.getState().loadToolData("two");
+  assert.equal(store.getState().toolData.one, before);
+  assert.equal(store.getState().toolData.two!.processes[0]!.id, "two");
+  failing = true;
+  await assert.rejects(() => store.getState().loadToolData("one"));
+  assert.equal(store.getState().toolData.one, before);
+});
+
+test("activity refresh uses a sequence cursor instead of replaying large prior tool results", async (t) => {
+  const original = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+  const urls: string[] = [];
+  let seq = 5;
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    return Response.json({
+      items: String(url).includes("/activity")
+        ? [
+            {
+              id: String(seq),
+              sequence: seq++,
+              kind: "tool_result",
+              content: "result",
+            },
+          ]
+        : [],
+      total: seq,
+    });
+  };
+  const store = createAgentStore();
+  await store.getState().loadToolData("task");
+  await store.getState().loadToolData("task");
+  assert.match(urls.filter((url) => url.includes("/activity"))[1]!, /after=5/);
+  assert.deepEqual(
+    store.getState().toolData.task!.activity.map((x) => x.sequence),
+    [5, 6],
+  );
+});

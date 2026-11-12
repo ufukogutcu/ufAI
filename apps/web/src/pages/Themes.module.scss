@@ -764,3 +764,5 @@
 .clusterSample { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--cluster-border); border-top: 3px solid var(--cluster-color-1); border-radius: var(--radius-control); background: var(--cluster-surface); font-size: 12px; }
 .clusterDropSample { padding: 8px; background: var(--cluster-drop-surface); border-radius: var(--radius-compact); }
 .clusterPalette { display: flex; flex-wrap: wrap; gap: 8px; span { width: 10px; height: 10px; border-radius: 50%; } }
+
+.terminalSample { background:var(--terminal-background); color:var(--terminal-foreground); border:1px solid var(--border); border-radius:8px; padding:10px; white-space:pre-wrap; }

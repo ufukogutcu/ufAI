@@ -236,6 +236,9 @@ test("application color literals and CSS variables must come from the theme cata
         /(?:\b(?:rgba?|hsla?|oklch|lab|lch|hwb)\(\s*[\d.]|(?:color|background(?:-color)?|border-color)\s*:\s*(?:white|black|red|blue)\b)/i,
         url.pathname,
       );
+      for (const match of source.matchAll(/colors\[["']([\w-]+)["']\]/g)) {
+        if (match[1] && match[1] in catalog.tokens) used.add(catalog.tokens[match[1] as keyof typeof catalog.tokens].cssVariable);
+      }
       for (const match of source.matchAll(/var\((--[\w-]+)/g)) {
         // Layout variables are structural, not editable palette scopes.
         if ([

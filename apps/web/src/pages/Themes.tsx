@@ -221,6 +221,7 @@ function ThemePreview({
                     <span className={styles.clusterDropSample}>Drop an agent here</span>
                     <div className={styles.clusterPalette}>{clusterColors.map((color,i)=><span key={color} title={`Cluster color ${i+1}`} style={{background:color}}/>)}</div>
                   </div>
+                  <pre className={styles.terminalSample}>$ build report{'\n'}Report saved · exit 0</pre>
                   <small>Workspace canvas</small>
                 </div>
               )}

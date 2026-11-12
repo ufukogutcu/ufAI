@@ -11,6 +11,9 @@ import { deleteManaged } from "./managed-files";
 import { request, errorMessage, RequestError } from "./api";
 import type {
   Agent,
+  ArtifactVersion,
+  OwnedProcess,
+  ExecutionItem,
   Cluster,
   DeletionOperation,
   ManagedLocation,
@@ -23,6 +26,22 @@ import type {
 } from "../../server/src/contracts";
 
 interface AgentState {
+  toolData: Record<
+    string,
+    {
+      activity: ExecutionItem[];
+      activityTotal: number;
+      processTotal: number;
+      artifactTotal: number;
+      processes: OwnedProcess[];
+      artifacts: ArtifactVersion[];
+    }
+  >;
+  loadToolData: (taskId: string, more?: boolean) => Promise<void>;
+  loadMoreToolData: (
+    taskId: string,
+    kind: "processes" | "artifacts",
+  ) => Promise<void>;
   agents: Record<string, Agent>;
   clusters: Record<string, Cluster>;
   deletions: Record<string, DeletionOperation[]>;
@@ -113,6 +132,7 @@ function merge<T extends { id: string }>(before: T[], after: T[]) {
   return [...map.values()];
 }
 export function createAgentStore() {
+  const toolRefresh = new Set<string>();
   const loads = new Map<string, Promise<void>>(),
     positionWrites = new Map<string, Promise<void>>();
   const pendingPositions = new Map<
@@ -266,6 +286,101 @@ export function createAgentStore() {
           set({ positionError: errorMessage(e) });
           throw e;
         }
+      },
+      toolData: {},
+      async loadMoreToolData(taskId, kind) {
+        const offset = get().toolData[taskId]?.[kind].length ?? 0;
+        if (kind === "processes") {
+          const page = await request<Page<OwnedProcess>>(
+            `/tasks/${taskId}/processes?limit=100&offset=${offset}`,
+          );
+          set((s) => {
+            const old = s.toolData[taskId];
+            return old
+              ? {
+                  toolData: {
+                    ...s.toolData,
+                    [taskId]: {
+                      ...old,
+                      processes: merge(old.processes, page.items),
+                      processTotal: page.total,
+                    },
+                  },
+                }
+              : {};
+          });
+        } else {
+          const page = await request<Page<ArtifactVersion>>(
+            `/tasks/${taskId}/artifacts?limit=100&offset=${offset}`,
+          );
+          set((s) => {
+            const old = s.toolData[taskId];
+            return old
+              ? {
+                  toolData: {
+                    ...s.toolData,
+                    [taskId]: {
+                      ...old,
+                      artifacts: merge(old.artifacts, page.items),
+                      artifactTotal: page.total,
+                    },
+                  },
+                }
+              : {};
+          });
+        }
+      },
+      async loadToolData(taskId, more = false) {
+        const key = `tools:${taskId}`,
+          running = loads.get(key);
+        if (running) {
+          toolRefresh.add(taskId);
+          return running;
+        }
+        return single(key, async () => {
+          do {
+            toolRefresh.delete(taskId);
+            const previous = get().toolData[taskId];
+            const after = !more
+              ? previous?.activity.at(-1)?.sequence
+              : undefined;
+            const [activity, processes, artifacts] = await Promise.all([
+              request<Page<ExecutionItem>>(
+                `/tasks/${taskId}/activity?limit=100&offset=${more ? (previous?.activity.length ?? 0) : 0}${after ? `&after=${after}` : ""}`,
+              ),
+              request<Page<OwnedProcess>>(
+                `/tasks/${taskId}/processes?limit=100`,
+              ),
+              request<Page<ArtifactVersion>>(
+                `/tasks/${taskId}/artifacts?limit=100`,
+              ),
+            ]);
+            set((s) => ({
+              toolData: {
+                ...s.toolData,
+                [taskId]: {
+                  activity: merge(
+                    s.toolData[taskId]?.activity ?? [],
+                    activity.items,
+                  ).sort((a, b) => a.sequence - b.sequence),
+                  activityTotal: activity.total,
+                  processTotal: processes.total,
+                  artifactTotal: artifacts.total,
+                  processes: merge(
+                    s.toolData[taskId]?.processes ?? [],
+                    processes.items,
+                  ),
+                  artifacts: merge(
+                    s.toolData[taskId]?.artifacts ?? [],
+                    artifacts.items,
+                  ),
+                },
+              },
+            }));
+            if (after && activity.items.length === 100) toolRefresh.add(taskId);
+            more = false;
+          } while (toolRefresh.has(taskId));
+        });
       },
       nodes: {},
       tasks: {},

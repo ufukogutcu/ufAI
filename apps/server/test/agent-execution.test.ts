@@ -298,9 +298,7 @@ test("agent APIs validate private access, relationships, pagination, and workspa
     1,
   );
   assert.equal(
-    (
-      await deleteOwner(app,`/api/workspaces/${workspace}`)
-    ).statusCode,
+    (await deleteOwner(app, `/api/workspaces/${workspace}`)).statusCode,
     202,
   );
   assert.equal((await app.inject(`/api/agents/${agent.id}`)).statusCode, 404);
@@ -458,6 +456,22 @@ test("compaction preserves full transcripts and covers complete exchanges before
     "compact_request",
   );
   await until(() => f.engine.task(x.taskId!).status === "completed");
+  f.db
+    .prepare("INSERT INTO artifacts VALUES ('artifact',?,'report',?)")
+    .run(f.workspace, new Date().toISOString());
+  f.db
+    .prepare(
+      "INSERT INTO artifact_versions(id,artifactId,workspaceId,producerAgentId,producerTaskId,provenance,name,mediaType,size,state,createdAt) VALUES ('retained-version','artifact',?,'a',?,'{}','report','text/plain',1,'ready',?)",
+    )
+    .run(f.workspace, x.taskId, new Date().toISOString());
+  const output = f.db
+    .prepare(
+      "SELECT id FROM agent_messages WHERE turnId=? AND role='assistant'",
+    )
+    .get(x.turnId) as { id: string };
+  f.db
+    .prepare("INSERT INTO artifact_references VALUES ('retained-version',?,0)")
+    .run(output.id);
   for (let i = 0; i < 4; i++) {
     f.engine.submit(
       "a",
@@ -468,6 +482,16 @@ test("compaction preserves full transcripts and covers complete exchanges before
     await until(() => f.engine.task(x.taskId!).status === "completed");
   }
   assert.ok(compactions > 0);
+  assert.match(
+    (
+      f.db
+        .prepare(
+          "SELECT content FROM agent_context_summaries ORDER BY version DESC LIMIT 1",
+        )
+        .get() as { content: string }
+    ).content,
+    /retained-version/,
+  );
   assert.equal(
     (f.db.prepare("SELECT count(*) AS n FROM agent_messages").get() as any).n,
     10,

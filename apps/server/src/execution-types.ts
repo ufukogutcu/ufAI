@@ -35,3 +35,31 @@ export interface ModelProviderAdapter {
 export interface AgentRuntimeAdapter {
   executeText?(id: string, request: TextRequest): Promise<TextResult>;
 }
+
+export interface ToolSpec {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+export interface ToolResult {
+  ok: boolean;
+  [key: string]: unknown;
+}
+export interface ToolRound {
+  text: string;
+  calls: ToolCall[];
+  continuation: unknown;
+  usage: Record<string, number> | null;
+}
+export interface TaskRequest extends TextRequest {
+  tools: ToolSpec[];
+  maxRounds?: number;
+  continuation?: unknown[];
+  onTool: (call: ToolCall) => Promise<ToolResult>;
+  onCommentary?: (text: string) => void;
+}

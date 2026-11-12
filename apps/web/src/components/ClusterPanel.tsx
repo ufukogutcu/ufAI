@@ -71,7 +71,8 @@ function ClusterEditor({
         <>
           <p>
             Permanently delete <strong>{cluster?.name}</strong> and all files in
-            its shared folder? Its agents, their files, tasks, and histories
+            its shared folder? Active member work and processes will stop.
+            Its agents, their files, tasks, and histories
             will be kept outside the Cluster. This cannot be undone.
           </p>
           {busy && (

@@ -1,3 +1,4 @@
+import { PublishedFiles } from "../components/TaskTools";
 import { FolderLocation } from "../components/FolderLocation";
 import { DeletionProgress } from "../components/DeletionProgress";
 import { useNavigationGuard } from "../navigation-guard";
@@ -10,6 +11,7 @@ import {
   Plus,
   Trash2,
   Workflow,
+  FolderOpen,
 } from "lucide-react";
 import { useDashboard } from "../store";
 import { errorMessage, RequestError } from "../api";
@@ -75,7 +77,7 @@ function WorkspaceDialog({
           <p>
             Delete <strong>{action.name}</strong>? This permanently removes the
             workspace, its agents, conversations, memories, and all files in its
-            managed folders, and cancels its work. This cannot be undone.
+            managed folders, including published outputs, and cancels its work. This cannot be undone.
           </p>
         ) : (
           <>
@@ -171,6 +173,7 @@ function WorkspaceDialog({
 }
 
 export default function Home() {
+  const [publishedIn, setPublishedIn] = useState<string | null>(null);
   const guard = useNavigationGuard();
   const agentStore = useAgentStore();
   const agentError = useAgents((s) => s.positionError || s.error);
@@ -327,6 +330,7 @@ export default function Home() {
           </Tooltip>
           {active && (
             <div className={styles.workspaceActions}>
+              <Tooltip content="Published Files"><button className="iconButton" aria-label="Published Files" onClick={()=>setPublishedIn(active.id)}><FolderOpen size={14}/></button></Tooltip>
               <Tooltip content="Edit workspace">
                 <button
                   className="iconButton"
@@ -372,6 +376,13 @@ export default function Home() {
               </button>
             </div>
           </Appearance>
+        )}
+        {publishedIn === active?.id && publishedIn && (
+          <PublishedFiles
+            key={publishedIn}
+            workspaceId={publishedIn}
+            onClose={() => setPublishedIn(null)}
+          />
         )}
         {active && (
           <header className={`pageHeader ${styles.workspaceHeader}`}>

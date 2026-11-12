@@ -5,6 +5,10 @@ import Fastify, { type FastifyError } from "fastify";
 import fastifyStatic from "@fastify/static";
 import { ConnectionService } from "./connection-service.js";
 import { AgentExecution, type ExecutionOptions } from "./agent-execution.js";
+import { ProcessService, type ProcessOptions } from "./process-service.js";
+import { ArtifactService, type ArtifactOptions } from "./artifact-service.js";
+import { AgentTools } from "./agent-tools.js";
+import { registerTools } from "./tool-routes.js";
 import { ManagedFiles } from "./managed-files.js";
 import { registerLocations } from "./locations.js";
 import { registerAgents } from "./agents.js";
@@ -59,6 +63,8 @@ export function createApp(
     serveStatic?: boolean;
     connections?: ConnectionOptions;
     execution?: ExecutionOptions;
+    processes?: ProcessOptions;
+    artifacts?: ArtifactOptions;
   } = {},
 ) {
   const app = Fastify({
@@ -111,17 +117,49 @@ export function createApp(
     connections,
   );
   const files = new ManagedFiles(database, options.filesRoot);
-  const execution = new AgentExecution(
+  let execution!: AgentExecution;
+  const changed = (id: string) => execution?.workspaceEvent(id, "activity");
+  const processes = new ProcessService(
+    database,
+    files,
+    changed,
+    options.processes,
+  );
+  const artifacts = new ArtifactService(
+    database,
+    files,
+    changed,
+    options.artifacts,
+  );
+  const tools = new AgentTools(
+    database,
+    files,
+    processes,
+    artifacts,
+    changed,
+    options.execution?.maxToolCalls,
+  );
+  execution = new AgentExecution(
     database,
     connections,
     options.execution,
     files,
+    tools,
   );
   files.bind(execution);
   registerAgents(app, database, execution, files);
   registerLocations(app, database, execution, files);
-  app.addHook("onReady", async () => files.start());
+  registerTools(app, database, execution, processes, artifacts);
+  app.addHook("preClose", async () => artifacts.quiesce());
+  app.addHook("onReady", async () => {
+    await files.start();
+    await artifacts.start();
+    tools.ready = true;
+    execution.wake();
+  });
   app.addHook("onClose", async () => files.close());
+  app.addHook("onClose", async () => artifacts.close());
+  app.addHook("onClose", async () => processes.close());
   app.addHook("onClose", async () => execution.close());
 
   const workspaceList = database.prepare(

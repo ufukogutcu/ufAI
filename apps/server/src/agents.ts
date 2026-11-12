@@ -296,7 +296,20 @@ export function registerAgents(
           "SELECT * FROM agent_messages WHERE conversationId=? AND sequence<? ORDER BY sequence DESC LIMIT ?",
         )
         .all(conversationId, before, limit)
-        .reverse(),
+        .reverse()
+        .map((m: any) => ({
+          ...m,
+          parts: [
+            { type: "text", text: m.content },
+            ...(
+              db
+                .prepare(
+                  "SELECT r.versionId,v.name FROM artifact_references r JOIN artifact_versions v ON v.id=r.versionId WHERE r.messageId=? ORDER BY r.ordinal",
+                )
+                .all(m.id) as { versionId: string; name: string }[]
+            ).map((v) => ({ type: "artifact", ...v })),
+          ],
+        })),
       total: (
         db
           .prepare(

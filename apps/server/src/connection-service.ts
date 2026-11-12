@@ -8,11 +8,14 @@ import type {
   ExecutionSnapshot,
   TextRequest,
   TextResult,
+  TaskRequest,
+  ToolRound,
 } from "./execution-types.js";
 import { ConnectionSecrets } from "./connection-secrets.js";
 import { CodexRuntime, type CodexAdapter } from "./codex-runtime.js";
 import { ProviderModels } from "./provider-models.js";
 import { ConnectionError, providerEndpoints } from "./model-providers.js";
+import { ToolProvider } from "./tool-provider.js";
 import { TextProvider } from "./text-provider.js";
 
 type Connection = {
@@ -28,6 +31,18 @@ export class ConnectionService {
   readonly secrets: ConnectionSecrets;
   readonly codex: CodexAdapter;
   readonly models: ProviderModels;
+  private pins = new Map<string, number>();
+  pin(id: string) {
+    this.pins.set(id, (this.pins.get(id) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const n = (this.pins.get(id) ?? 1) - 1;
+      if (n) this.pins.set(id, n);
+      else this.pins.delete(id);
+    };
+  }
   private operations = new Map<string, Set<string>>();
   constructor(
     private db: Database.Database,
@@ -43,13 +58,13 @@ export class ConnectionService {
     this.models = new ProviderModels(db);
   }
   busy(id: string) {
-    return !!this.operations.get(id)?.size;
+    return !!this.operations.get(id)?.size || !!this.pins.get(id);
   }
   claim(id: string, lane: "work" | "status" | "exclusive") {
     const active = this.operations.get(id) ?? new Set<string>();
     if (
       active.has("exclusive") ||
-      (lane === "exclusive" && active.size) ||
+      (lane === "exclusive" && (active.size || this.pins.get(id))) ||
       active.has(lane)
     )
       throw new ConnectionError(
@@ -166,6 +181,40 @@ export class ConnectionService {
         503,
       );
     return this.codex.executeText(snapshot.connectionId, request);
+  }
+  async toolRound(
+    snapshot: ExecutionSnapshot,
+    request: TaskRequest,
+  ): Promise<ToolRound> {
+    const c = this.connection(snapshot.connectionId);
+    if (c.provider !== snapshot.provider)
+      throw new ConnectionError("Provider changed during execution.", 409);
+    let key: string | null = null;
+    try {
+      key = c.credential ? this.secrets.decrypt(c.credential, c.id) : null;
+    } catch {
+      throw new ConnectionError("Cannot unlock Provider key.", 503);
+    }
+    if (c.provider === "codex")
+      throw new ConnectionError("Use the Codex task runtime.", 409);
+    return new ToolProvider(
+      c.provider,
+      c.endpoint ??
+        providerEndpoints[c.provider as keyof typeof providerEndpoints],
+      key,
+      this.fetcher,
+    ).round(request);
+  }
+  async executeTask(
+    snapshot: ExecutionSnapshot,
+    request: TaskRequest,
+  ): Promise<TextResult> {
+    if (!this.codex.executeTask)
+      throw new ConnectionError(
+        "This Codex adapter does not support task tools.",
+        503,
+      );
+    return this.codex.executeTask(snapshot.connectionId, request);
   }
   async countTokens(snapshot: ExecutionSnapshot, request: TextRequest) {
     const provider = this.provider(snapshot);

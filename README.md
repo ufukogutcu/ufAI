@@ -2,7 +2,11 @@
 
 An open-source, local-first application for one user to organize AI agents in multiple workspaces through a browser interface. One local backend and SQLite database hold the shared setup across browser sessions.
 
-**Status: text-only agent execution and dashboard.** Workspaces contain visual department Clusters, managed shared/agent/task folders, canvas agents with live Agent Preset links, separate task chats, a read-only workload/status chat, automatic shared memory, and context compaction. Saved Providers cover all existing API types, Ollama, and bundled Codex. Navigation, themes, model catalogs, prompt tests, and Codex subscription usage remain available. External tools, skills, agent-to-agent messaging, Interfaces, Triggers, and the built-in assistant remain planned.
+**Status: agent execution, host tools, terminals, and published files.** Workspaces contain visual department Clusters, managed shared/agent/task folders, canvas agents with live Agent Preset links, separate task chats, a read-only workload/status chat, automatic shared memory, and context compaction. Saved Providers cover all existing API types, Ollama, and bundled Codex. Navigation, themes, model catalogs, prompt tests, and Codex subscription usage remain available. Ordinary agent tasks can use host file tools, commands, interactive terminals, and immutable downloadable file outputs. Waiting tasks release execution capacity. Skills, agent-to-agent messaging, Interfaces, Triggers, uploads, and media perception remain planned.
+
+Agents run with the backend’s OS permissions. Their folders organize work and are not sandboxes. Published versions survive agent deletion and are permanently removed with their workspace. Background processes stop on task cancellation, owner deletion, or server shutdown; deliberately detached host daemons are outside guaranteed supervision.
+
+PTY support uses native bindings. A platform without a matching prebuilt binding needs the native build prerequisites required by `node-pty`.
 
 ## Stack
 
@@ -11,6 +15,7 @@ An open-source, local-first application for one user to organize AI agents in mu
 - Fastify on Node.js for the application server
 - SQLite via `better-sqlite3` for local persistence
 - npm workspaces for the repository structure
+- `node-pty` for native terminal sessions and lazy-loaded xterm.js for terminal display
 - MIT license
 
 ## Requirements
@@ -97,6 +102,10 @@ Set environment variables in the shell before starting the application. `.env` f
 | `PORT` | `3000` | Fastify port; also used by the development API proxy |
 | `WEB_PORT` | `5173` | Vite development server port |
 | `DATABASE_PATH` | Repository-root `data/ufai.sqlite` | SQLite file path; relative paths resolve from the server process's working directory |
+| `UFAI_FILES_ROOT` | `<absolute database filename>.files` | Managed working folders and published artifacts; separate from credentials |
+| `UFAI_ARTIFACT_MAX_BYTES` | `268435456` (256 MiB) | Maximum bytes per published version |
+| `UFAI_ARTIFACT_STORAGE_BYTES` | `10737418240` (10 GiB) | Managed artifact quota, including pending reservations |
+| `UFAI_ARTIFACT_INGESTS` | `2` | Concurrent file publications |
 
 The server binds to loopback by default. Authentication and remote access are not configured. Keep the default loopback binding for local use.
 

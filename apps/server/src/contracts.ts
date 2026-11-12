@@ -204,6 +204,7 @@ export type CodexResetOutcome =
   | "noCredit";
 
 export type TaskStatus =
+  | "waiting"
   | "queued"
   | "running"
   | "awaiting_user"
@@ -238,6 +239,7 @@ export interface AgentTask {
   updatedAt: string;
 }
 export interface AgentMessage {
+  parts?: ContentPart[];
   id: string;
   conversationId: string;
   turnId: string | null;
@@ -274,6 +276,7 @@ export interface AgentMemory {
   updatedAt: string;
 }
 export interface AgentWorkload {
+  processes?: OwnedProcess[];
   agentId: string;
   capturedAt: string;
   tasks: AgentTask[];
@@ -319,4 +322,71 @@ export interface DeletionOperation {
   error: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "artifact"; versionId: string; name: string };
+export interface ExecutionItem {
+  sequence: number;
+  id: string;
+  workspaceId: string;
+  agentId: string;
+  taskId: string;
+  turnId: string;
+  kind: "commentary" | "final" | "tool_call" | "tool_result" | "artifact";
+  content: string;
+  createdAt: string;
+}
+export interface OwnedProcess {
+  id: string;
+  workspaceId: string;
+  agentId: string;
+  taskId: string;
+  turnId: string;
+  command: string;
+  cwd: string;
+  pty: number;
+  launchId: string;
+  state:
+    | "starting"
+    | "running"
+    | "exited"
+    | "stopped"
+    | "timed_out"
+    | "interrupted"
+    | "failed";
+  exitCode: number | null;
+  signal: string | null;
+  error: string | null;
+  outputStart: number;
+  outputEnd: number;
+  deadline: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface ProcessOutput {
+  encoding: "base64";
+  data: string;
+  start: number;
+  next: number;
+  end: number;
+  truncated: boolean;
+  state: OwnedProcess["state"];
+}
+export interface ArtifactVersion {
+  id: string;
+  artifactId: string;
+  workspaceId: string;
+  producerAgentId: string | null;
+  producerTaskId: string | null;
+  provenance: string;
+  sourceVersionId: string | null;
+  name: string;
+  mediaType: string;
+  size: number;
+  sha256: string | null;
+  state: "staging" | "ready" | "failed" | "unavailable";
+  error: string | null;
+  createdAt: string;
 }

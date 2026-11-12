@@ -416,7 +416,11 @@
       "cssVariable": "--logo-text",
       "label": "Logo connections and destinations",
       "description": "Relay logo connections and destination nodes, including the browser favicon.",
-      "components": ["Relay logo connections", "Relay destination nodes", "Browser favicon"],
+      "components": [
+        "Relay logo connections",
+        "Relay destination nodes",
+        "Browser favicon"
+      ],
       "group": "Navigation",
       "region": "navigation",
       "light": "#252527",
@@ -616,7 +620,9 @@
       "cssVariable": "--warning",
       "label": "Warnings",
       "description": "Configuration warnings, unsaved changes indicators, and contrast notices.",
-      "components": ["Configuration warnings, unsaved changes indicators, and contrast notices"],
+      "components": [
+        "Configuration warnings, unsaved changes indicators, and contrast notices"
+      ],
       "group": "Feedback",
       "region": "feedback",
       "light": "#856212",
@@ -716,7 +722,12 @@
       "cssVariable": "--glass-surface",
       "label": "Glass surface",
       "description": "Translucent material for selected navigation, workspace tabs and canvas controls.",
-      "components": ["Selected navigation", "Workspace tabs", "Canvas controls", "Navigation theme preview"],
+      "components": [
+        "Selected navigation",
+        "Workspace tabs",
+        "Canvas controls",
+        "Navigation theme preview"
+      ],
       "group": "Surfaces",
       "region": "navigation",
       "light": "#ffffff45",
@@ -736,7 +747,12 @@
       "cssVariable": "--glass-border",
       "label": "Glass edge",
       "description": "Soft outline around navigation and control glass.",
-      "components": ["Selected navigation", "Workspace tabs", "Canvas controls", "Navigation theme preview"],
+      "components": [
+        "Selected navigation",
+        "Workspace tabs",
+        "Canvas controls",
+        "Navigation theme preview"
+      ],
       "group": "Navigation",
       "region": "navigation",
       "light": "#ffffffdb",
@@ -746,7 +762,12 @@
       "cssVariable": "--glass-highlight",
       "label": "Glass highlight",
       "description": "Inset top reflection on navigation and control glass.",
-      "components": ["Selected navigation", "Workspace tabs", "Canvas controls", "Navigation theme preview"],
+      "components": [
+        "Selected navigation",
+        "Workspace tabs",
+        "Canvas controls",
+        "Navigation theme preview"
+      ],
       "group": "Decorative effects",
       "region": "navigation",
       "light": "#fffffffa",
@@ -756,7 +777,12 @@
       "cssVariable": "--glass-shadow",
       "label": "Glass shadow",
       "description": "Soft elevation beneath navigation and control glass.",
-      "components": ["Selected navigation", "Workspace tabs", "Canvas controls", "Navigation theme preview"],
+      "components": [
+        "Selected navigation",
+        "Workspace tabs",
+        "Canvas controls",
+        "Navigation theme preview"
+      ],
       "group": "Decorative effects",
       "region": "navigation",
       "light": "#10101824",
@@ -766,7 +792,11 @@
       "cssVariable": "--glass-reflection",
       "label": "Glass reflection",
       "description": "Directional sheen on floating navigation and toolbars.",
-      "components": ["Floating navigation", "Workspace toolbar", "Theme preview"],
+      "components": [
+        "Floating navigation",
+        "Workspace toolbar",
+        "Theme preview"
+      ],
       "group": "Navigation",
       "region": "navigation",
       "light": "#ffffffb3",
@@ -776,7 +806,11 @@
       "cssVariable": "--glass-shade",
       "label": "Glass lower bevel",
       "description": "Lower optical edge on floating navigation and toolbars.",
-      "components": ["Floating navigation", "Workspace toolbar", "Theme preview"],
+      "components": [
+        "Floating navigation",
+        "Workspace toolbar",
+        "Theme preview"
+      ],
       "group": "Navigation",
       "region": "navigation",
       "light": "#17171c26",
@@ -786,7 +820,11 @@
       "cssVariable": "--ambient-glow",
       "label": "Ambient light",
       "description": "Quiet illumination behind page content and glass controls.",
-      "components": ["App background", "Flowboard background", "Dashboard theme preview"],
+      "components": [
+        "App background",
+        "Flowboard background",
+        "Dashboard theme preview"
+      ],
       "group": "Surfaces",
       "region": "dashboard",
       "light": "#ffffff",
@@ -796,7 +834,11 @@
       "cssVariable": "--ambient-shade",
       "label": "Ambient depth",
       "description": "Subtle tonal depth in the page background.",
-      "components": ["App background", "Flowboard background", "Dashboard theme preview"],
+      "components": [
+        "App background",
+        "Flowboard background",
+        "Dashboard theme preview"
+      ],
       "group": "Surfaces",
       "region": "dashboard",
       "light": "#25252e0a",
@@ -806,9 +848,7 @@
       "cssVariable": "--agent-node-shadow",
       "label": "Agent node shadow",
       "description": "Depth beneath agent nodes on the workspace canvas.",
-      "components": [
-        "Agent node shadow"
-      ],
+      "components": ["Agent node shadow"],
       "group": "Decorative effects",
       "region": "canvas",
       "light": "#00000014",
@@ -818,9 +858,7 @@
       "cssVariable": "--agent-panel-shadow",
       "label": "Agent panel shadow",
       "description": "Depth beneath the focused agent conversation panel.",
-      "components": [
-        "Agent panel shadow"
-      ],
+      "components": ["Agent panel shadow"],
       "group": "Decorative effects",
       "region": "canvas",
       "light": "#0000001a",
@@ -1054,10 +1092,7 @@
       "cssVariable": "--cluster-surface",
       "label": "Cluster surface",
       "description": "Background inside a Cluster on the canvas.",
-      "components": [
-        "Cluster canvas group",
-        "Cluster palette preview"
-      ],
+      "components": ["Cluster canvas group", "Cluster palette preview"],
       "group": "Canvas",
       "region": "canvas",
       "light": "#f0f1f4b3",
@@ -1067,10 +1102,7 @@
       "cssVariable": "--cluster-border",
       "label": "Cluster border",
       "description": "Neutral boundary around a Cluster.",
-      "components": [
-        "Cluster canvas group",
-        "Cluster palette preview"
-      ],
+      "components": ["Cluster canvas group", "Cluster palette preview"],
       "group": "Canvas",
       "region": "canvas",
       "light": "#b4b8c2",
@@ -1080,14 +1112,211 @@
       "cssVariable": "--cluster-drop-surface",
       "label": "Cluster drop target",
       "description": "Background highlighting a Cluster while an agent is dragged over it.",
-      "components": [
-        "Cluster canvas group",
-        "Cluster palette preview"
-      ],
+      "components": ["Cluster canvas group", "Cluster palette preview"],
       "group": "Canvas",
       "region": "canvas",
       "light": "#e4e7ecdd",
       "dark": "#30343ddd"
+    },
+    "terminal-background": {
+      "cssVariable": "--terminal-background",
+      "label": "Terminal background",
+      "description": "Terminal background for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#f4f4f4",
+      "dark": "#171717"
+    },
+    "terminal-foreground": {
+      "cssVariable": "--terminal-foreground",
+      "label": "Terminal foreground",
+      "description": "Terminal foreground for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#202020",
+      "dark": "#ededed"
+    },
+    "terminal-cursor": {
+      "cssVariable": "--terminal-cursor",
+      "label": "Terminal cursor",
+      "description": "Terminal cursor for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#202020",
+      "dark": "#ededed"
+    },
+    "terminal-selection": {
+      "cssVariable": "--terminal-selection",
+      "label": "Terminal selection",
+      "description": "Terminal selection for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#cbdef4",
+      "dark": "#34465c"
+    },
+    "terminal-black": {
+      "cssVariable": "--terminal-black",
+      "label": "Terminal black",
+      "description": "Terminal black for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#262626",
+      "dark": "#383838"
+    },
+    "terminal-red": {
+      "cssVariable": "--terminal-red",
+      "label": "Terminal red",
+      "description": "Terminal red for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#a12622",
+      "dark": "#ee9999"
+    },
+    "terminal-green": {
+      "cssVariable": "--terminal-green",
+      "label": "Terminal green",
+      "description": "Terminal green for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#235d30",
+      "dark": "#9bce9c"
+    },
+    "terminal-yellow": {
+      "cssVariable": "--terminal-yellow",
+      "label": "Terminal yellow",
+      "description": "Terminal yellow for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#795300",
+      "dark": "#dbc68a"
+    },
+    "terminal-blue": {
+      "cssVariable": "--terminal-blue",
+      "label": "Terminal blue",
+      "description": "Terminal blue for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#235faa",
+      "dark": "#9bbcec"
+    },
+    "terminal-magenta": {
+      "cssVariable": "--terminal-magenta",
+      "label": "Terminal magenta",
+      "description": "Terminal magenta for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#794591",
+      "dark": "#caa6dc"
+    },
+    "terminal-cyan": {
+      "cssVariable": "--terminal-cyan",
+      "label": "Terminal cyan",
+      "description": "Terminal cyan for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#17646a",
+      "dark": "#94ced3"
+    },
+    "terminal-white": {
+      "cssVariable": "--terminal-white",
+      "label": "Terminal white",
+      "description": "Terminal white for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#e5e5e5",
+      "dark": "#e5e5e5"
+    },
+    "terminal-bright-black": {
+      "cssVariable": "--terminal-bright-black",
+      "label": "Terminal bright black",
+      "description": "Terminal bright black for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#6a6a6a",
+      "dark": "#8d8d8d"
+    },
+    "terminal-bright-red": {
+      "cssVariable": "--terminal-bright-red",
+      "label": "Terminal bright red",
+      "description": "Terminal bright red for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#b72d2b",
+      "dark": "#f5b3b3"
+    },
+    "terminal-bright-green": {
+      "cssVariable": "--terminal-bright-green",
+      "label": "Terminal bright green",
+      "description": "Terminal bright green for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#2e713e",
+      "dark": "#b4dbb4"
+    },
+    "terminal-bright-yellow": {
+      "cssVariable": "--terminal-bright-yellow",
+      "label": "Terminal bright yellow",
+      "description": "Terminal bright yellow for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#8a6200",
+      "dark": "#ead9a4"
+    },
+    "terminal-bright-blue": {
+      "cssVariable": "--terminal-bright-blue",
+      "label": "Terminal bright blue",
+      "description": "Terminal bright blue for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#326bb3",
+      "dark": "#b5cef2"
+    },
+    "terminal-bright-magenta": {
+      "cssVariable": "--terminal-bright-magenta",
+      "label": "Terminal bright magenta",
+      "description": "Terminal bright magenta for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#9054aa",
+      "dark": "#dbbce9"
+    },
+    "terminal-bright-cyan": {
+      "cssVariable": "--terminal-bright-cyan",
+      "label": "Terminal bright cyan",
+      "description": "Terminal bright cyan for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#247881",
+      "dark": "#b0e1e5"
+    },
+    "terminal-bright-white": {
+      "cssVariable": "--terminal-bright-white",
+      "label": "Terminal bright white",
+      "description": "Terminal bright white for process output.",
+      "components": ["Task terminal", "Theme terminal preview"],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#ffffff",
+      "dark": "#ffffff"
     }
   }
 }

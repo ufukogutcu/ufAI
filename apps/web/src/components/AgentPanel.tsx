@@ -5,6 +5,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   Plus,
@@ -24,6 +25,7 @@ import type {
   AgentMessage,
   AgentTask,
 } from "../../../server/src/contracts";
+import { TaskTools } from "./TaskTools";
 import { FolderLocation } from "./FolderLocation";
 import { Field } from "./FormField";
 import { Dialog } from "./Dialog";
@@ -346,6 +348,7 @@ function Transcript({
           {error}
         </p>
       )}
+      {taskId && <TaskTools key={`tools:${taskId}`} taskId={taskId} />}
       <div ref={end} />
     </div>
   );
@@ -513,6 +516,13 @@ export function AgentPanel({
       message: AgentMessage;
       taskId: string;
     } | null>(null);
+  const hasProcesses = useAgents((s) =>
+    taskId
+      ? (s.toolData[taskId]?.processes.some((p) =>
+          ["starting", "running"].includes(p.state),
+        ) ?? false)
+      : false,
+  );
   const tasks = useAgents((s) => s.tasks[agent.id] ?? emptyList),
     memories = useAgents((s) => s.memories[agent.id] ?? emptyList),
     workload = useAgents((s) => s.workloads[agent.id]),
@@ -557,7 +567,7 @@ export function AgentPanel({
   }) {
     await store.getState().update(agent.id, values);
   }
-  return (
+  return createPortal(
     <section
       className={styles.panel}
       aria-labelledby="agent-panel-heading"
@@ -583,7 +593,9 @@ export function AgentPanel({
               ? "Working"
               : agent.state === "queued"
                 ? "Work queued"
-                : "Ready"}{" "}
+                : agent.state === "waiting"
+                  ? "Waiting"
+                  : "Ready"}{" "}
             · {agent.queuedCount} queued
           </p>
         </div>
@@ -620,9 +632,24 @@ export function AgentPanel({
                 ? new Date(workload.capturedAt).toLocaleTimeString()
                 : "Loading…"}
             </p>
+            {workload?.processes?.map((p) => (
+              <button
+                className={styles.taskLink}
+                key={p.id}
+                onClick={() => {
+                  setTab("Tasks");
+                  setTaskId(p.taskId);
+                }}
+              >
+                <span>{p.command}</span>
+                <small>{p.state}</small>
+              </button>
+            ))}
             {workload?.tasks
               .filter((t) =>
-                ["running", "queued", "blocked", "failed"].includes(t.status),
+                ["running", "waiting", "queued", "blocked", "failed"].includes(
+                  t.status,
+                ),
               )
               .map((t) => (
                 <button
@@ -639,8 +666,11 @@ export function AgentPanel({
                 </button>
               ))}
             {workload &&
+              !workload.processes?.length &&
               !workload.tasks.some((t) =>
-                ["running", "queued", "blocked", "failed"].includes(t.status),
+                ["running", "waiting", "queued", "blocked", "failed"].includes(
+                  t.status,
+                ),
               ) && <p>No active tasks.</p>}
           </div>
           {workload?.statusTurn?.error && (
@@ -676,11 +706,14 @@ export function AgentPanel({
                 All tasks
               </button>
               <h3>{current?.title ?? "Task"}</h3>
-              <FolderLocation
-                kind="task"
-                ownerId={taskId}
-                label="Task working folder"
-              />
+              <details>
+                <summary>Working folder</summary>
+                <FolderLocation
+                  kind="task"
+                  ownerId={taskId}
+                  label="Task working folder"
+                />
+              </details>
               <div className={styles.actions}>
                 <span>
                   {current?.status.replaceAll("_", " ")}
@@ -688,9 +721,14 @@ export function AgentPanel({
                     ? ` · ${details.turns.find((t) => t.status === "running")!.phase}`
                     : ""}
                 </span>
-                {["running", "queued", "blocked", "failed"].includes(
-                  current?.status ?? "",
-                ) && (
+                {([
+                  "running",
+                  "waiting",
+                  "queued",
+                  "blocked",
+                  "failed",
+                ].includes(current?.status ?? "") ||
+                  hasProcesses) && (
                   <button
                     className="textButton"
                     onClick={() => void action("cancel")}
@@ -722,6 +760,7 @@ export function AgentPanel({
                 )}
             </div>
             <Transcript key={taskId} agentId={agent.id} taskId={taskId} />
+
             <Composer
               key={taskId}
               agentId={agent.id}
@@ -795,7 +834,8 @@ export function AgentPanel({
           <hr />
           <p className={styles.muted}>
             Deleting this agent removes its conversations and memories, and
-            cancels its work and permanently deletes its managed files.
+            cancels its work and permanently deletes its working files and
+            history. Published files remain in the workspace.
           </p>
           <button
             className="button"
@@ -868,6 +908,7 @@ export function AgentPanel({
           </button>
         </Dialog>
       )}
-    </section>
+    </section>,
+    document.body,
   );
 }

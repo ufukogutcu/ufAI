@@ -108,7 +108,7 @@ export class ManagedFiles {
     this.kick();
     this.execution?.wake();
   }
-  private async verifyRoot() {
+  async verifyRoot() {
     await this.safeDirectory(this.root, false);
     const marker = join(this.root, ".ufai-owner");
     const info = await lstat(marker);
@@ -405,8 +405,14 @@ export class ManagedFiles {
             ).map((a) => a.id)
           : op.kind === "agent"
             ? [op.ownerId]
-            : [];
+            : (
+                this.db
+                  .prepare("SELECT id FROM agents WHERE clusterId=?")
+                  .all(op.ownerId) as { id: string }[]
+              ).map((a) => a.id);
       await this.execution?.settleAgents(ids);
+      if (op.kind === "workspace")
+        await this.execution?.settleWorkspaceFiles(op.ownerId);
       await this.verifyRoot();
       const target = this.path(op.relativePath);
       try {

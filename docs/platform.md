@@ -4,7 +4,7 @@
 
 ufAI is a local-first application for one user to organize AI agents and related work across multiple workspaces in a browser. Its intended experience includes configurable agents, communication permissions, reusable skills, instructions, and triggers.
 
-**Current availability: text-only agents and dashboard.** Users can manage workspaces, create agents on their flowboards, run separate task conversations, ask for live workload updates, and inspect learned memory. Agent Presets, saved Providers, model discovery/tests, Codex sign-in and usage, Ollama setup, themes, and automatic task-context compaction are available. Agents cannot use external tools, change files, contact other agents, or run scheduled/event work. Interfaces, Triggers, skills, and the built-in assistant remain planned. Settings currently contains a heading only.
+**Current availability: agents, host tools, terminals, and published files.** Users can manage workspaces, create agents on their flowboards, run separate task conversations, ask for live workload updates, and inspect learned memory. Agent Presets, saved Providers, model discovery/tests, Codex sign-in and usage, Ollama setup, themes, and automatic task-context compaction are available. Ordinary tasks can read/write host files, run commands and interactive terminals, and publish downloadable files. Agents cannot yet contact other agents, accept uploaded media, perceive image/audio contents, or run scheduled/event work. Interfaces, Triggers, skills, and the built-in assistant remain planned. Settings currently contains a heading only.
 
 One local installation holds one shared setup across browser sessions. There are no ufAI application accounts or separate profiles for each browser. Sign-in connects an external provider/runtime account; it does not create a ufAI account. See the [terminology and feature-status guide](README.md) when explaining these distinctions.
 
@@ -70,7 +70,7 @@ One local installation holds one shared setup across browser sessions. There are
 - **Purpose:** Group agents into departments within a workspace.
 - **Steps:** Choose Add Cluster beside Add Agent. Give it a name and optional description. Drag an agent into its area to join, or outside all Clusters to leave. Each agent belongs to at most one Cluster. Use the canvas-control menu for membership and movement without dragging.
 - **Behavior:** Move a Cluster by its header to move its members together. Select its area to expose its bottom-right resize handle, or use its canvas menu to enter a size. Resizing cannot exclude existing members. Moving or resizing a Cluster over other agents does not add them automatically. Color dots and labels identify members; colors are reused when many Clusters exist.
-- **Editing and deletion:** Header controls edit the Cluster or show canvas controls. Deleting requires confirmation and permanently deletes its shared files. Member agents, their folders, tasks, histories, and positions are preserved outside the Cluster.
+- **Editing and deletion:** Header controls edit the Cluster or show canvas controls. Deleting requires confirmation and permanently deletes its shared files. Active member work and processes stop before cleanup. Member agents, their folders, tasks, histories, and positions are preserved outside the Cluster.
 - **Limitations:** Clusters do not yet grant agent messaging or tool permissions. They are organizational groups, not security sandboxes.
 
 ### agent-working-directories
@@ -79,23 +79,40 @@ One local installation holds one shared setup across browser sessions. There are
 - **Purpose:** Give workspaces and Clusters shared folders, and agents persistent files with separate working folders for tasks.
 - **Steps:** Find a shared-folder path in Edit workspace or Edit Cluster; find agent files in Configuration and a task working folder in its task details. Use Copy path or select the path. Folder setup errors offer a retry.
 - **Behavior:** Names and Cluster reassignment do not change these paths. Task follow-ups and retries reuse their task folder; new tasks have separate folders. Confirmed owner deletion permanently removes its managed files. If cleanup fails, retry it from the workspace's deletion progress. Restart continues previously confirmed cleanup.
-- **Limitations:** ufAI currently shows paths, not a file browser. Existing computer folders cannot be registered yet. Agents still execute text-only tasks: they cannot read these folders, run commands, or exchange files through ufAI until file tools and attachments arrive. Folders organize files and do not isolate processes.
+- **Limitations:** ufAI currently shows paths, not a file browser. Existing computer folders cannot be registered yet. Agents can use these locations through file and command tools and publish downloadable snapshots. Agent-to-agent file exchange is not available yet. Folders organize files and do not isolate processes.
 
 ### agent-configuration
 
 - **Status:** partial
 - **Purpose:** Give an agent a persistent name, instructions, and live Agent Preset within one workspace.
 - **Steps:** On Home, choose Add Agent beside the workspace title. Save its name, optional instructions, and preset, then open the node’s Configuration section to edit it. An agent may be saved without a complete preset.
-- **Limitations:** Execution requires an enabled saved model, usable credentials, and a known context window of at least 1,024 tokens. Skills and external-tool permissions are not implemented. Deleting an agent requires confirmation and permanently removes its work, memory, and agent/task files. Failed file cleanup remains visible for retry.
+- **Limitations:** Execution requires an enabled saved model, usable credentials, and a known context window of at least 1,024 tokens. Skills and fine-grained tool permission controls are not implemented; ordinary tasks have host tools. Deleting an agent requires confirmation and permanently removes its work, memory, and agent/task files; published versions stay in the workspace. Failed file cleanup remains visible for retry.
 
 ### agent-execution
 
 - **Status:** implemented
-- **Purpose:** Run text-only work in separate task conversations.
+- **Purpose:** Run work with host tools in separate task conversations.
 - **Steps:** Open an agent, choose Tasks, then New Task. Follow-ups stay in that task. A follow-up to a completed task reopens it. The agent decides whether it has finished or needs another response.
-- **Behavior:** One ordinary turn per agent runs at a time; other tasks queue. Different agents can run concurrently, subject to Provider capacity. Closing the panel or browser does not stop work while the local server and machine remain running. Stop cancels active and queued turns for that task. Retry restarts a failed or blocked attempt using the current preset. Original transcripts remain available after context summaries are made.
+- **Behavior:** One ordinary turn per agent actively runs at a time; a task waiting for a process releases its slot so another task can run. Different agents can run concurrently, subject to Provider capacity. Closing the panel or browser does not stop work while the local server and machine remain running. Stop cancels active and queued turns for that task. Retry restarts a failed or blocked attempt using the current preset. Original transcripts remain available after context summaries are made.
 - **Recovery:** Queued requests survive a server restart. Interrupted generation requires explicit Retry and can leave an incomplete reply. An already-saved answer is retained if its later memory update fails.
-- **Limitations:** No external tools, file operations, attachments, other-agent messages, or background actions are available. Replies and summaries can be wrong. Provider errors, output limits, and context limits can interrupt work. Recall, compaction, memory maintenance, and status replies can make extra requests to the selected Provider and consume its usage. Actual work cannot continue while the local backend is stopped or the machine is asleep.
+- **Limitations:** Tool support depends on the selected model; small context windows may not fit the tool definitions and task context. User uploads, media perception, and other-agent messages remain unavailable. Host tools use the backend’s OS permissions and are not isolated by agent folders. Replies and summaries can be wrong. Provider errors, output limits, and context limits can interrupt work. Recall, compaction, memory maintenance, and status replies can make extra requests to the selected Provider and consume its usage. Actual work cannot continue while the local backend is stopped or the machine is asleep.
+
+### agent-tool-execution
+
+- **Status:** implemented
+- **Purpose:** Let ordinary tasks work with local files and CLI programs.
+- **Behavior:** File tools and commands are available to all agents. Commands start in the task’s working folder unless another location is specified. Tool activity records what was requested and its result. Unknown or incompatible tool support is reported as an error rather than silently running a text-only substitute.
+- **Processes:** Commands and interactive PTY sessions can remain running after a reply. Open a task’s Processes area to view output, switch to an accessible text log, enable terminal input, send input, or stop a process. A waiting task resumes automatically when its process finishes while other work can run.
+- **Limits:** By default, eight processes may run across the installation and two per agent. Ordinary commands have a ten-minute deadline; explicitly backgrounded sessions can run until stopped. Earlier output is trimmed when the retained log fills. Stop on a task cancels that task and its processes. Server shutdown and agent/workspace deletion also stop owned processes. Deliberately detached daemons are outside guaranteed supervision.
+- **Recovery:** Interrupted external actions may already have had effects. After restart, inspect activity and use explicit Retry; ufAI does not automatically replay uncertain commands. Status conversations and automatic context/memory maintenance have no host tools.
+
+### agent-artifacts
+
+- **Status:** implemented
+- **Purpose:** Keep durable, downloadable versions of files produced by agents.
+- **Behavior:** An agent publishes a snapshot of a stable regular file. Task file cards and the workspace’s Published Files panel show its name, size, availability, and Download action. Changing the working file does not change an already published version. An agent can make a task-local working copy and publish another version.
+- **Retention:** Published files remain available after their agent and working folders are deleted. Deleting the workspace permanently removes them. Missing published bytes are shown as unavailable; ufAI never substitutes another file with the same filename.
+- **Limits:** Defaults are 256 MiB per version, two simultaneous publications, and 10 GiB of managed artifact storage. Publication errors remain visible. Downloading or transferring bytes does not mean the selected model visually inspected the file. User uploads, inline media previews, and media perception are not available yet.
 
 ### agent-status
 
@@ -148,11 +165,11 @@ One local installation holds one shared setup across browser sessions. There are
 ### runtime-connections
 
 - **Status:** partial
-- **Purpose:** Connect Codex using a ChatGPT subscription for model discovery, short model tests, and text-only agent tasks.
+- **Purpose:** Connect Codex using a ChatGPT subscription for model discovery, short model tests, and agent tasks with ufAI-managed tools.
 - **Steps:** Create a Codex configuration on Providers and choose Sign in with ChatGPT. Follow Continue to ChatGPT and return after sign-in. A device code is an alternative. After sign-in, ufAI tries to load models. Reconnect, cancel sign-in, or sign out from the same page.
 - **Behavior:** Codex is bundled with ufAI; a separate global CLI installation is not required. Model testing creates a temporary conversation solely for the short prompt. Signing out clears prior model-test results but keeps model configurations and preset bindings.
 - **Model context:** Discovery uses each model's default context window from the Codex catalog for that Provider, with bundled defaults as a fallback. Refresh models updates existing saved models. Context remains Unknown if neither catalog supplies a valid value. Explicit context overrides are retained. These values describe catalog defaults; they do not enlarge the model’s actual capacity. Agents use the saved value to budget and compact their task context.
-- **Limitations:** Account entitlement and the bundled runtime determine availability. A subscription does not imply access to the separate OpenAI API. Text-only task conversations are supported through saved Agent Presets. External Codex tools, file access, commands, and collaboration are disabled. The pinned runtime does not expose a hard output-token setting; replies use a requested budget, a text-size limit, and cancellation.
+- **Limitations:** Account entitlement and the bundled runtime determine availability. A subscription does not imply access to the separate OpenAI API. Task conversations use ufAI-managed file, command, process, and artifact tools through saved Agent Presets. Native Codex tools and collaboration remain disabled; status and model tests stay text-only. The pinned runtime does not expose a hard output-token setting; replies use a requested budget, a text-size limit, and cancellation.
 
 ### codex-usage-dock
 

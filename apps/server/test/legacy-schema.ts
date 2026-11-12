@@ -10,7 +10,13 @@ export function restoreOutputColumns(database: Database.Database) {
   `);
 }
 
+export function removeToolTables(database: Database.Database) {
+  database.exec(
+    `DROP TABLE IF EXISTS artifact_references; DROP TABLE IF EXISTS artifact_versions; DROP TABLE IF EXISTS artifacts; DROP TABLE IF EXISTS process_waits; DROP TABLE IF EXISTS owned_processes; DROP TABLE IF EXISTS tool_invocations; DROP TABLE IF EXISTS execution_items;`,
+  );
+}
 export function removeLocationTables(database: Database.Database) {
+  removeToolTables(database);
   for (const table of ["workspaces", "clusters", "agents", "agent_tasks"])
     database.exec(
       `DROP TRIGGER IF EXISTS ${table}_location_insert; DROP TRIGGER IF EXISTS ${table}_location_delete;`,

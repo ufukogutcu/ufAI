@@ -35,6 +35,13 @@ export function Dialog({
         ref={ref}
         className={`${styles.dialog} glassSurface nodrag nopan`}
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !event.defaultPrevented) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!busy) onClose();
+          }
+        }}
         aria-labelledby={titleId}
         aria-busy={busy}
         onCancel={(event) => {

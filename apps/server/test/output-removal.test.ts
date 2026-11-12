@@ -90,7 +90,7 @@ test("migration 9 removes output storage, preserves unrelated state, and keeps o
   for (let attempt = 0; attempt < 2; attempt++) {
     db = openDatabase(path);
     try {
-      assert.equal(db.pragma("user_version", { simple: true }), 11);
+      assert.equal(db.pragma("user_version", { simple: true }), 12);
       assert.deepEqual(db.pragma("foreign_key_check"), []);
       assert.deepEqual(snapshot(db), expected);
       for (const table of ["provider_models", "model_presets"]) {
