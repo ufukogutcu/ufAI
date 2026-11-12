@@ -313,15 +313,6 @@ export default function Home() {
           </Tooltip>
           {active && (
             <div className={styles.workspaceActions}>
-              <button
-                className="button"
-                onClick={() =>
-                  guard(() => agentStore.setState({ createIn: active.id }))
-                }
-              >
-                <Plus size={15} />
-                Add Agent
-              </button>
               <Tooltip content="Edit workspace">
                 <button
                   className="iconButton"
@@ -369,12 +360,25 @@ export default function Home() {
         )}
         {active && (
           <header className={`pageHeader ${styles.workspaceHeader}`}>
-            <Appearance trigger={active.id}>
-              <div>
+            <div className={styles.workspaceHeadingRow}>
+              <Appearance trigger={active.id}>
                 <h1>{active.name}</h1>
-                {active.description && <p>{active.description}</p>}
-              </div>
-            </Appearance>
+              </Appearance>
+              <button
+                className={`button ${styles.addAgent}`}
+                onClick={() =>
+                  guard(() => agentStore.setState({ createIn: active.id }))
+                }
+              >
+                <Plus size={15} aria-hidden="true" />
+                Add Agent
+              </button>
+            </div>
+            {active.description && (
+              <Appearance trigger={active.id}>
+                <p>{active.description}</p>
+              </Appearance>
+            )}
           </header>
         )}
       </div>

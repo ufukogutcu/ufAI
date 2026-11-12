@@ -62,13 +62,13 @@ One local installation holds one shared setup across browser sessions. There are
 - **Status:** partial
 - **Purpose:** Provide a visual board for each workspace.
 - **Steps:** Drag to pan, scroll to zoom, or use the zoom and reset-view buttons. Each workspace remembers its own completed view changes across reloads and restarts.
-- **Limitations:** Choose Add Agent in the workspace toolbar, then open its node to configure it or chat. Drag nodes to arrange them, or focus their name button and use arrow keys. Positions are saved after movement. Agent-to-agent connection lines are not available. Failed position saves offer Retry saves; unsaved positions are not durable until saved.
+- **Limitations:** Choose Add Agent at the upper-right of the workspace area, beside its title, then open its node to configure it or chat. Drag nodes to arrange them, or focus their name button and use arrow keys. Positions are saved after movement. Agent-to-agent connection lines are not available. Failed position saves offer Retry saves; unsaved positions are not durable until saved.
 
 ### agent-configuration
 
 - **Status:** partial
 - **Purpose:** Give an agent a persistent name, instructions, and live Agent Preset within one workspace.
-- **Steps:** Choose Add Agent on Home. Save its name, optional instructions, and preset, then open the node’s Configuration section to edit it. An agent may be saved without a complete preset.
+- **Steps:** On Home, choose Add Agent beside the workspace title. Save its name, optional instructions, and preset, then open the node’s Configuration section to edit it. An agent may be saved without a complete preset.
 - **Limitations:** Execution requires an enabled saved model, usable credentials, and a known context window of at least 1,024 tokens. Skills and external-tool permissions are not implemented. Deleting an agent requires confirmation and removes its work and memory.
 
 ### agent-execution

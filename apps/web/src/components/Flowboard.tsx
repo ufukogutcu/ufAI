@@ -283,7 +283,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
             <h2>Your workspace starts here</h2>
             <p>A canvas for your agents and the ways they work together.</p>
             <p className={styles.comingSoon}>
-              Add an agent from the workspace toolbar to start a conversation.
+              Use Add Agent beside the workspace title to start a conversation.
             </p>
           </div>
         </Appearance>
