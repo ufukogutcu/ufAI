@@ -6,6 +6,7 @@ import {
   type ModelDiscoveryState,
 } from "../src/model-discovery.js";
 import { providerOptions } from "../src/provider-options.js";
+import { connectedSetup } from "./helpers.js";
 import type { DiscoveredModel, ProviderConnection } from "../src/api.js";
 const connection: ProviderConnection = {
   id: "primary",
@@ -114,6 +115,99 @@ test("connection stores are isolated and only publish successful mutations", asy
   );
   assert.equal(store.getState().connections, original);
 });
+test("connection refreshes exclude setup drafts and preserve saved record identity and navigation memory", async (t) => {
+  const draft = { ...connection, id: "unfinished", draft: true };
+  let items = [draft, connection];
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ items, total: items.length }),
+  );
+  const store = createConnectionStore();
+  await store.getState().load();
+  assert.deepEqual(store.getState().connections, [connection]);
+  const saved = store.getState().connections[0];
+  store.getState().rememberOpened(connection.id);
+  await store.getState().load();
+  assert.equal(store.getState().connections[0], saved);
+  assert.equal(store.getState().lastOpenedId, connection.id);
+
+  items = [draft];
+  await store.getState().load();
+  assert.deepEqual(store.getState().connections, []);
+  assert.equal(store.getState().status, "ready");
+});
+test("API, Ollama, and Codex setups enter the library only after successful final Save", async (t) => {
+  const { app } = await connectedSetup(t);
+  const store = createConnectionStore();
+  const stop = store.subscribe((state) => {
+    assert.ok(state.connections.every((item) => !item.draft));
+  });
+  t.after(stop);
+  for (const provider of ["openai", "ollama", "codex"] as const) {
+    const previous = store.getState().connections;
+    const draft = await store.getState().save(null, {
+      provider,
+      name: `New ${provider}`,
+      draft: true,
+      ...(provider === "openai" ? { apiKey: "TEST-KEY" } : {}),
+    });
+    assert.equal(draft.draft, true);
+    assert.deepEqual(store.getState().connections, previous);
+    assert.equal(store.getState().lastOpenedId, null);
+    await store.getState().load();
+    const updated = await store.getState().save(draft.id, {
+      name: `Updated ${provider}`,
+    });
+    assert.equal(updated.id, draft.id);
+    assert.equal(updated.draft, true);
+    assert.deepEqual(store.getState().connections, previous);
+
+    const beforeFailure = store.getState().connections;
+    await assert.rejects(
+      store.getState().save(draft.id, { draft: false }),
+    );
+    assert.equal(store.getState().connections, beforeFailure);
+    assert.equal(
+      (await app.inject("/api/connections")).json().items
+        .find((item: ProviderConnection) => item.id === draft.id).draft,
+      true,
+    );
+    for (const id of ["chosen", "unchecked"]) {
+      const added = await app.inject({
+        method: "POST",
+        url: `/api/connections/${draft.id}/models`,
+        payload: { id },
+      });
+      assert.equal(added.statusCode, 201, added.body);
+    }
+    const finalized = await store.getState().save(draft.id, {
+      draft: false,
+      modelSelection: [{ id: "unchecked", enabled: false }],
+    });
+    assert.equal(finalized.draft, false);
+    assert.deepEqual(store.getState().connections, [...previous, finalized]);
+    assert.equal(store.getState().lastOpenedId, null);
+    const selection = await app.inject(`/api/connections/${draft.id}/model-selection`);
+    assert.deepEqual(selection.json().items, [
+      { id: "chosen", enabled: true },
+      { id: "unchecked", enabled: false },
+    ]);
+    await store.getState().load();
+    await store.getState().save(draft.id, { name: `Saved ${provider}` });
+    assert.equal(store.getState().connections.filter((item) => item.id === draft.id).length, 1);
+  }
+});
+test("cancelling a hidden setup removes its backend draft without changing the saved library", async (t) => {
+  const { app } = await connectedSetup(t);
+  const store = createConnectionStore();
+  const draft = await store.getState().save(null, {
+    provider: "ollama", name: "Cancelled setup", draft: true,
+  });
+  assert.deepEqual(store.getState().connections, []);
+  await store.getState().remove(draft.id);
+  assert.deepEqual(store.getState().connections, []);
+  assert.equal(store.getState().lastOpenedId, null);
+  assert.deepEqual((await app.inject("/api/connections")).json().items, []);
+});
 test("an old connection refresh cannot overwrite a newer saved connection", async (t) => {
   const old = deferred<Response>();
   let reads = 0;
@@ -131,9 +225,10 @@ test("an old connection refresh cannot overwrite a newer saved connection", asyn
   );
   const store = createConnectionStore();
   const loading = store.getState().load();
-  const saving = store.getState().save("primary", { name: "Updated" });
+  const saving = store.getState().save("primary", { name: "Updated", draft: false });
   await tick();
-  old.resolve(Response.json({ items: [connection], total: 1 }));
+  assert.deepEqual(store.getState().connections, [updated]);
+  old.resolve(Response.json({ items: [{ ...connection, draft: true }], total: 1 }));
   await Promise.all([loading, saving]);
-  assert.equal(store.getState().connections[0]?.name, "Updated");
+  assert.deepEqual(store.getState().connections, [updated]);
 });

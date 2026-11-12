@@ -7,6 +7,7 @@ import {
   type ProviderConnection,
 } from "./api";
 interface ConnectionState {
+  // Setup drafts stay with their editor, outside the saved Provider library.
   connections: ProviderConnection[];
   lastOpenedId: string | null;
   rememberOpened: (id: string | null) => void;
@@ -38,7 +39,7 @@ export function createConnectionStore() {
         .then(({ items }) => {
           if (revision === started)
             set((state) => ({
-              connections: items.map((item) => {
+              connections: items.filter((item) => !item.draft).map((item) => {
                 const existing = state.connections.find(
                   (saved) => saved.id === item.id,
                 );
@@ -69,7 +70,7 @@ export function createConnectionStore() {
       set((state) => ({
         connections: [
           ...state.connections.filter((item) => item.id !== saved.id),
-          saved,
+          ...(saved.draft ? [] : [saved]),
         ],
         status: "ready",
         error: "",

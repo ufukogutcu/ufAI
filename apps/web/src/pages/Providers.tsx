@@ -4,6 +4,7 @@ import {
   useId,
   useRef,
   useState,
+  type ChangeEvent,
   type FormEvent,
 } from "react";
 import {
@@ -403,6 +404,7 @@ function ProviderEditor({
     () => providerOptions.find((option) => option.id === connection?.provider)?.category ?? "api",
   );
   const [name, setName] = useState(connection?.name ?? "");
+  const nameManuallyEdited = useRef(false);
   const [endpoint, setEndpoint] = useState(connection?.endpoint ?? "");
   const [apiKey, setApiKey] = useState("");
   const [hasCredential, setHasCredential] = useState(
@@ -470,7 +472,16 @@ function ProviderEditor({
     if (id || provider === next) return;
     clearProviderFields();
     setProvider(next);
+    if (!nameManuallyEdited.current || !name.trim()) {
+      const option = providerOptions.find((option) => option.id === next);
+      if (option) setName(option.label);
+    }
     setEndpoint(next === "ollama" ? "http://localhost:11434" : "");
+  }
+  function changeName(event: ChangeEvent<HTMLInputElement>) {
+    const value = event.target.value;
+    nameManuallyEdited.current = value.trim().length > 0;
+    setName(value);
   }
   function handleModelSaved(createdId?: string) {
     setCreatedModelId(createdId ?? null);
@@ -638,7 +649,6 @@ function ProviderEditor({
       throw new Error("Setup closed.");
     }
     setId(saved.id);
-    if (!id) onCreated(saved.id);
     setName(saved.name);
     setEndpoint(saved.endpoint ?? "");
     setApiKey("");
@@ -713,6 +723,7 @@ function ProviderEditor({
         ...(confirmationToken ? { confirmationToken } : {}),
       });
       resource.current.discard = false;
+      if (draft) onCreated(saved.id);
       clearPresetModels(id, [...selectionDraft.saved.keys()].filter(modelId => !(selectionDraft.changes.get(modelId) ?? selectionDraft.saved.get(modelId))));
       setDraft(false);
       setName(saved.name);
@@ -854,7 +865,7 @@ function ProviderEditor({
                   {...props}
                   name="name"
                   value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  onChange={changeName}
                   maxLength={120}
                   autoComplete="off"
                   placeholder="Name this configuration…"
@@ -1342,7 +1353,7 @@ export default function Providers() {
           <h1>
             Providers
             <span className="count">
-              {connections.filter((c) => !c.draft).length}
+              {connections.length}
             </span>
           </h1>
           <p>Connect your AI services and manage their models.</p>
@@ -1396,7 +1407,6 @@ export default function Providers() {
                   <small>
                     {providerOptions.find((p) => p.id === connection.provider)
                       ?.label ?? connection.provider}
-                    {connection.draft ? " · Finish setup" : ""}
                   </small>
                 </span>
               </button></Appearance>
