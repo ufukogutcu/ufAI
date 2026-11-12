@@ -1,10 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import {
-  ChevronRight,
   Home as HomeIcon,
-  Laptop,
-  PanelLeftClose,
-  PanelLeftOpen,
   Palette,
   Settings,
   SlidersHorizontal,
@@ -12,7 +8,7 @@ import {
 import { DashboardProvider } from "./components/DashboardProvider";
 import { Tooltip } from "./components/Tooltip";
 import { RelaySymbol } from "./components/RelaySymbol";
-import { RelayWordmark } from "./components/RelayWordmark";
+import { GlassMaterial } from "./components/GlassMaterial";
 import {
   createSettingsStore,
   SettingsContext,
@@ -41,10 +37,6 @@ function readPage(): PageId {
 
 function Shell() {
   const [page, setPage] = useState(readPage);
-  const expanded = useSettings(
-    (state) => state.snapshot.settings.sidebarExpanded,
-  );
-  const updateSettings = useSettings((state) => state.update);
   const settingsError = useSettings((state) => state.error);
   const retrySettings = useSettings((state) => state.retry);
   const attempt = useNavigationGuard();
@@ -104,9 +96,6 @@ function Shell() {
       window.removeEventListener("hashchange", handleHashChange);
     };
   }, [attempt]);
-  function handleToggle() {
-    void updateSettings({ sidebarExpanded: !expanded });
-  }
   function navigate(event: MouseEvent<HTMLAnchorElement>, target: PageId) {
     if (
       event.metaKey ||
@@ -117,14 +106,7 @@ function Shell() {
     )
       return;
     event.preventDefault();
-    function closeMobileSidebar() {
-      if (expanded && window.matchMedia("(max-width: 540px)").matches)
-        void updateSettings({ sidebarExpanded: false });
-    }
-    if (target === page) {
-      closeMobileSidebar();
-      return;
-    }
+    if (target === page) return;
     attempt(() => {
       historyIndex.current += 1;
       window.history.pushState(
@@ -134,12 +116,11 @@ function Shell() {
       );
       pageRef.current = target;
       setPage(target);
-      closeMobileSidebar();
     });
   }
   const current = pages.find((item) => item.id === page)!;
   return (
-    <div className={`${styles.app} ${expanded ? styles.expanded : ""}`}>
+    <div className={styles.app}>
       <a
         className="skipLink"
         href="#main-content"
@@ -150,93 +131,37 @@ function Shell() {
       >
         Skip to content
       </a>
-      <aside className={styles.sidebar} aria-label="Application sidebar">
-        <a
-          href="https://github.com/ufukogutcu/ufAI"
-          className={styles.brand}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="ufAI GitHub repository (opens in a new tab)"
-        >
-          <span className={styles.logo}>
-            <RelaySymbol />
-          </span>
-          {expanded && (
-            <span className={styles.wordmark}>
-              <RelayWordmark />
-            </span>
-          )}
-        </a>
-        <nav aria-label="Main navigation" className={styles.nav}>
-          {pages.map((item) => (
-            <Tooltip
-              key={item.id}
-              content={expanded ? "" : item.label}
-              placement="right"
-            >
-              <a
-                href={`#/${item.id}`}
-                className={`${styles.navItem} ${page === item.id ? `${styles.active} glassSurface` : ""}`}
-                aria-label={item.label}
-                aria-current={page === item.id ? "page" : undefined}
-                onClick={(event) => navigate(event, item.id)}
-              >
-                <item.icon size={20} strokeWidth={1.65} aria-hidden="true" />
-                {expanded && <span>{item.label}</span>}
-              </a>
-            </Tooltip>
-          ))}
-        </nav>
-        <div className={styles.sidebarBottom}>
-          <Tooltip content="Local instance" placement="right">
-            <div className={styles.localInstance}>
-              <span className={styles.instanceIcon}>
-                <Laptop size={17} />
-              </span>
-              {expanded && (
-                <span>
-                  Local instance<small>On your machine</small>
-                </span>
-              )}
-            </div>
-          </Tooltip>
-          <Tooltip
-            content={expanded ? "Collapse sidebar" : "Expand sidebar"}
-            placement="right"
-          >
-            <button
-              className={styles.collapse}
-              type="button"
-              onClick={handleToggle}
-              aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
-              aria-expanded={expanded}
-            >
-              {expanded ? (
-                <PanelLeftClose size={17} />
-              ) : (
-                <PanelLeftOpen size={17} />
-              )}
-              {expanded && <span>Collapse sidebar</span>}
-            </button>
-          </Tooltip>
-        </div>
-      </aside>
-      {expanded && (
-        <button
-          className={styles.sidebarBackdrop}
-          aria-label="Close navigation"
-          onClick={handleToggle}
+      <a
+        href="https://github.com/ufukogutcu/ufAI"
+        className={styles.brand}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="ufAI GitHub repository (opens in a new tab)"
+      >
+        <RelaySymbol />
+      </a>
+      <nav aria-label="Main navigation" className={`${styles.dock} glassSurface`}>
+        <GlassMaterial />
+        <span
+          className={styles.selection}
+          aria-hidden="true"
+          style={{ transform: `translateY(${pages.findIndex((item) => item.id === page) * 52}px)` }}
         />
-      )}
+        {pages.map((item) => (
+          <Tooltip key={item.id} content={item.label} placement="right">
+            <a
+              href={`#/${item.id}`}
+              className={`${styles.navItem} ${page === item.id ? styles.active : ""}`}
+              aria-label={item.label}
+              aria-current={page === item.id ? "page" : undefined}
+              onClick={(event) => navigate(event, item.id)}
+            >
+              <item.icon size={21} strokeWidth={1.65} aria-hidden="true" />
+            </a>
+          </Tooltip>
+        ))}
+      </nav>
       <div className={styles.mainColumn}>
-        <div className={styles.topbar}>
-          <div className={styles.breadcrumb}>
-            <span>ufAI</span>
-            <ChevronRight size={12} />
-            <span>{current.label}</span>
-          </div>
-          <span className={styles.localFirst}>Local workspace</span>
-        </div>
         <main id="main-content" tabIndex={-1} className={styles.main}>
           {settingsError && (
             <div className="errorBanner" role="alert">

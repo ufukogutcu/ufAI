@@ -2,7 +2,7 @@
 
 An open-source, local-first application for one user to organize AI agents in multiple workspaces through a browser interface. One local backend and SQLite database hold the shared setup across browser sessions.
 
-**Status: early functional dashboard.** The application includes collapsible navigation, saved workspace tabs with empty pannable flowboards, a project-wide model preset library, and locked light/dark defaults with custom themes backed by SQLite. Settings is an empty page. Saved API connections, model discovery, and bundled Codex subscription sign-in are available from the preset editor. Agent editing/execution, local-provider setup, compaction execution, skills, messaging, and triggers remain planned.
+**Status: early functional dashboard.** The application includes floating page navigation, saved workspace tabs with empty pannable flowboards, a project-wide model preset library, and locked light/dark defaults with custom themes backed by SQLite. Settings is an empty page. Saved API connections, model discovery, and bundled Codex subscription sign-in are available from the preset editor. Agent editing/execution, local-provider setup, compaction execution, skills, messaging, and triggers remain planned.
 
 ## Stack
 
@@ -61,7 +61,7 @@ packages/
 data/                 Generated local database; ignored by Git
 ```
 
-API keys are encrypted using a local key under `<database filename>.connections/`; Codex maintains isolated sign-in credentials inside that directory. Keep it with the database when backing up or moving ufAI, and keep these generated files out of Git. See [connection storage](docs/architecture.md#provider-connections-and-discovery).
+API keys are encrypted using a local key under `<database filename>.connections/`; Codex maintains isolated sign-in credentials inside that directory. Keep it with the database when backing up or moving ufAI, and keep these generated files out of Git.
 
 SQLite is created at `data/ufai.sqlite` on server startup, with WAL mode and foreign-key enforcement enabled. Versioned migrations create workspace, model preset, and custom theme tables, and seed one Default workspace once. Deleting the last workspace leaves an empty state; restarting does not recreate it. The connection closes during graceful shutdown.
 
@@ -72,15 +72,19 @@ SQLite is created at `data/ufai.sqlite` on server startup, with WAL mode and for
 - **Theme:** permanent Light Mode and Dark Mode, a shared Light Mode default, and custom theme creation/duplication/editing with a contained visual preview. Custom themes and the active selection persist in SQLite for the whole local setup.
 - **Settings:** empty page reserved for later work.
 
-Pages use hash URLs, including `#/home` and `#/model-presets`. Workspace, preset, and custom theme records survive server restarts. Sidebar, selected-workspace, active-theme, and canvas viewport preferences also survive restarts in SQLite. Settings load on open and refresh when returning to a tab. Old browser preferences are ignored; new settings start with Light Mode, a collapsed sidebar, and the first existing workspace. Unsaved drafts and URL history remain temporary. Application accounts and multi-user tenancy are outside the product scope.
+Pages use hash URLs, including `#/home` and `#/model-presets`. Workspace, preset, and custom theme records survive server restarts. Selected-workspace, active-theme, and canvas viewport preferences also survive restarts in SQLite. Settings load on open and refresh when returning to a tab. Old browser preferences are ignored; new settings start with Light Mode and the first existing workspace. Unsaved drafts and URL history remain temporary. Application accounts and multi-user tenancy are outside the product scope.
 
-`npm test` runs API/database integration, client-state, theme/settings/catalog, connection/discovery/Codex lifecycle, and preset calculation/validation checks using temporary databases. See the [HTTP API reference](docs/api.md) for request and response contracts.
+`npm test` runs API/database integration, client-state, theme/settings/catalog, connection/discovery/Codex lifecycle, and preset calculation/validation checks using temporary databases.
 
-## Agent documentation
+## Knowledge for ufAI app agents
 
-Coding agents should start with the [documentation index](docs/README.md) and any local `AGENTS.md` instructions. Agent instruction files are ignored by Git and are not included in fresh clones. The [platform guide](docs/platform.md) describes verified capabilities, setup, limitations, and future product direction; the [architecture reference](docs/architecture.md) explains implementation details and boundaries.
+The [app-agent knowledge index](docs/README.md) and [platform guide](docs/platform.md) explain ufAI's purpose, available features, user workflows, and limitations. `docs/` is exclusively for agents inside ufAI helping users understand and use the application; it is not an engineering reference or design manual.
 
-These references are maintained alongside relevant changes. They are intended for coding agents and as source material for a future in-app assistant; assistant integration is not implemented.
+The built-in assistant and automatic use of these documents are not implemented.
+
+## Local developer-agent guidance
+
+Coding agents use the local `AGENTS.md` entry point and `.agents/developer/README.md`. Architecture, API references, design rules, skills, and other developer-agent material live under `.agents/` and are intentionally ignored by Git. They are not included in fresh clones. The standard project README, application code/tests, and app-agent knowledge remain versioned.
 
 ## Configuration
 

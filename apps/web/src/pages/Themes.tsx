@@ -8,7 +8,7 @@ import {
   type FormEvent,
   type CSSProperties,
 } from "react";
-import { Check, Copy, LockKeyhole, Palette, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Copy, Home, LockKeyhole, Palette, Plus, Settings, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Dialog } from "../components/Dialog";
 import { RelaySymbol } from "../components/RelaySymbol";
 import { errorMessage, RequestError } from "../api";
@@ -28,6 +28,7 @@ import {
   type ThemeInput,
 } from "../themes";
 import styles from "./Themes.module.scss";
+import { GlassMaterial } from "../components/GlassMaterial";
 
 const regions = [
   {
@@ -38,7 +39,7 @@ const regions = [
   {
     id: "navigation",
     label: "Navigation",
-    text: "Sidebar, logo, workspace tabs and preset selection",
+    text: "Floating dock, optical glass, workspace tabs and preset selection",
   },
   {
     id: "buttons",
@@ -63,7 +64,7 @@ const regions = [
   {
     id: "dialog",
     label: "Dialog & overlays",
-    text: "Modal, tooltip and mobile navigation shadows",
+    text: "Modal, tooltip and navigation overlay shadows",
   },
   {
     id: "decoration",
@@ -87,10 +88,11 @@ function ThemePreview({
     const region = preview.current.querySelector<HTMLElement>(
       `[data-region="${catalog.tokens[selected].region}"]`,
     );
+    const scroller = preview.current.closest("details") ?? preview.current;
     if (region)
-      preview.current.scrollTop +=
+      scroller.scrollTop +=
         region.getBoundingClientRect().top -
-        preview.current.getBoundingClientRect().top -
+        scroller.getBoundingClientRect().top -
         12;
   }, [selected]);
   const css = useMemo(() => themeStyle(input), [input]);
@@ -145,8 +147,12 @@ function ThemePreview({
                   <span className={styles.logoSample}>
                     <RelaySymbol />
                   </span>
-                  <div className={styles.navActive}>Home</div>
-                  <div className={`${styles.tabSample} glassSurface`}>Workspace tab</div>
+                  <div className={`${styles.dockSample} glassSurface`}>
+                    <GlassMaterial />
+                    <span className={styles.navActive}><Home size={18} /></span>
+                    <SlidersHorizontal size={18} /><Palette size={18} /><Settings size={18} />
+                  </div>
+                  <div className={`${styles.tabSample} glassSurface`}><GlassMaterial />Workspace tab</div>
                   <div className={styles.presetSample}>
                     <span>✦</span> Selected preset
                   </div>
@@ -210,7 +216,7 @@ function ThemePreview({
               {region.id === "dialog" && (
                 <div className={styles.overlaySample}>
                   <div className={styles.sidebarOverlaySample}>
-                    Mobile sidebar
+                    Navigation overlay
                   </div>
                   <div className={styles.dialogSample}>
                     <strong>Dialog title</strong>
@@ -386,7 +392,14 @@ function ThemeEditor({
   const [nameError, setNameError] = useState("");
   const [busy, setBusy] = useState(false);
   const controlList = useRef<HTMLDivElement>(null);
-  const previewColumn = useRef<HTMLDivElement>(null);
+  const previewColumn = useRef<HTMLDetailsElement>(null);
+  const [previewOpen, setPreviewOpen] = useState(() => window.matchMedia("(min-width: 1001px)").matches);
+  useEffect(() => {
+    const wide = window.matchMedia("(min-width: 1001px)");
+    function handleWidth() { setPreviewOpen(wide.matches); }
+    wide.addEventListener("change", handleWidth);
+    return () => wide.removeEventListener("change", handleWidth);
+  }, []);
   const nameId = useId();
   const modeId = useId();
   const searchId = useId();
@@ -423,6 +436,7 @@ function ThemeEditor({
   }
   function handleReveal(key: ThemeColorKey) {
     setSelected(key);
+    setPreviewOpen(true);
     previewColumn.current?.scrollIntoView({
       block: "nearest",
       behavior: "instant",
@@ -507,6 +521,8 @@ function ThemeEditor({
         </span>
       </div>
       <fieldset className={styles.editorFields} disabled={busy}>
+        <div className={styles.editLayout}>
+          <div className={styles.colorList} ref={controlList}>
         <div className={styles.identity}>
           <div className="field">
             <label htmlFor={nameId}>Theme name</label>
@@ -552,8 +568,6 @@ function ThemeEditor({
             </span>
           </div>
         </div>
-        <div className={styles.editLayout}>
-          <div className={styles.colorList} ref={controlList}>
             <label className="field" htmlFor={searchId}>
               Find a color or component
               <input
@@ -607,7 +621,9 @@ function ThemeEditor({
               </p>
             )}
           </div>
-          <div ref={previewColumn} className={styles.previewColumn}>
+          <details ref={previewColumn} className={styles.previewColumn} open={previewOpen}
+            onToggle={(event) => setPreviewOpen(event.currentTarget.open)}>
+            <summary><span>Live preview</span><ChevronDown size={16} /></summary>
             <p className={styles.help}>
               Select a preview swatch to find its color control. Preview buttons
               also show hover and focus states.
@@ -628,7 +644,7 @@ function ThemeEditor({
                 </ul>
               </details>
             )}
-          </div>
+          </details>
         </div>
       </fieldset>
       <div className={styles.editorActions}>
@@ -723,6 +739,7 @@ export default function Themes() {
     initialName: active.name,
     sequence: 0,
   }));
+  const [editing, setEditing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [baseId, setBaseId] = useState(active.id);
   const [deleting, setDeleting] = useState<Theme | null>(null);
@@ -732,6 +749,7 @@ export default function Themes() {
     void load();
   }, [load]);
   function show(theme: Theme) {
+    setEditing(true);
     setEditor((current) => ({
       record: theme,
       source: theme,
@@ -743,6 +761,7 @@ export default function Themes() {
     attempt(() => show(theme));
   }
   function handleDuplicate(theme: Theme) {
+    setEditing(true);
     setEditor((current) => ({
       record: null,
       source: theme,
@@ -762,6 +781,7 @@ export default function Themes() {
       themes.find((theme) => theme.id === baseId) ??
       (active.id === baseId ? active : defaultThemes[0]!);
     setCreating(false);
+    setEditing(true);
     setEditor((current) => ({
       record: null,
       source,
@@ -770,7 +790,7 @@ export default function Themes() {
     }));
   }
   function handleCancel() {
-    show(editor.record ?? active);
+    setEditing(false);
   }
   function handleDelete(theme: Theme) {
     setDeleteError("");
@@ -782,7 +802,7 @@ export default function Themes() {
     setDeleteError("");
     try {
       await remove(deleting.id);
-      show(deleting.id === active.id ? defaultThemes[0]! : active);
+      setEditing(false);
       setDeleting(null);
     } catch (failure) {
       setDeleteError(errorMessage(failure));
@@ -798,16 +818,22 @@ export default function Themes() {
       <header className="pageHeader">
         <div>
           <h1>
-            Themes
+            {editing ? "Theme editor" : "Themes"}
           </h1>
-          <p>Choose a theme or make it your own.</p>
+          <p>{editing ? "Your colors, with a preview that stays separate." : "Choose a theme or make it your own."}</p>
         </div>
-        <button className="button primary" onClick={handleCreate}>
-          <Plus size={15} />
-          Create theme
-        </button>
+        {editing ? (
+          <button className="button secondary" onClick={() => attempt(() => setEditing(false))}>
+            <ArrowLeft size={15} /> Back to library
+          </button>
+        ) : (
+          <button className="button primary" onClick={handleCreate}>
+            <Plus size={15} /> Create theme
+          </button>
+        )}
       </header>
-      <div className={styles.content}>
+      <div className={`${styles.content} ${editing ? styles.editingContent : ""}`}>
+        {!editing && <>
         {error && (
           <div className={styles.notice} role="alert">
             {error}
@@ -820,13 +846,12 @@ export default function Themes() {
           {choices.map((theme) => (
             <article
               key={theme.id}
-              className={`${styles.card} ${editor.record?.id === theme.id ? styles.cardSelected : ""}`}
+              className={`${styles.card} ${active.id === theme.id ? styles.cardSelected : ""}`}
             >
               <button
                 className={styles.cardOpen}
                 onClick={() => handleOpen(theme)}
                 aria-label={`${theme.builtIn ? "Inspect" : "Edit"} ${theme.name}`}
-                aria-pressed={editor.record?.id === theme.id}
               >
                 <span className={styles.miniPreview} style={themeStyle(theme)}>
                   <span className={styles.miniSidebar}>
@@ -895,14 +920,15 @@ export default function Themes() {
             Load more themes
           </button>
         )}
-        <ThemeEditor
+        </>}
+        {editing && <ThemeEditor
           key={editor.sequence}
           {...editor}
           onSaved={show}
           onCancel={handleCancel}
           onDuplicate={handleDuplicate}
           onDelete={handleDelete}
-        />
+        />}
       </div>
       {creating && (
         <Dialog title="Create a theme" onClose={() => setCreating(false)}>

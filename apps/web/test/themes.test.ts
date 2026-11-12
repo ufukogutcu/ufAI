@@ -33,6 +33,10 @@ function legacyTheme(theme: Theme): Theme {
     "glass-border",
     "glass-highlight",
     "glass-shadow",
+    "glass-reflection",
+    "glass-shade",
+    "ambient-glow",
+    "ambient-shade",
   ] as const) {
     delete (colors as Partial<Theme["colors"]>)[key];
   }
@@ -196,7 +200,7 @@ test("older custom palettes inherit glass scopes while preserving saved override
       "glass-shadow",
     ] as const) {
       assert.equal(resolved[key], catalog.tokens[key][mode]);
-      assert.equal(catalog.tokens[key].region, "navigation");
+      assert.ok(["navigation", "dashboard"].includes(catalog.tokens[key].region));
     }
     assert.equal(
       resolveColors(mode, { "glass-surface": "#123456aa" })["glass-surface"],

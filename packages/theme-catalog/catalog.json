@@ -29,8 +29,8 @@
       "components": ["Main pages and editor backgrounds"],
       "group": "Surfaces",
       "region": "dashboard",
-      "light": "#f7f7fb",
-      "dark": "#13151b"
+      "light": "#f6f6f6",
+      "dark": "#101113"
     },
     "sidebar": {
       "cssVariable": "--sidebar",
@@ -40,7 +40,7 @@
       "group": "Surfaces",
       "region": "navigation",
       "light": "#ffffff",
-      "dark": "#14161c"
+      "dark": "#171717"
     },
     "surface": {
       "cssVariable": "--surface",
@@ -50,7 +50,7 @@
       "group": "Surfaces",
       "region": "dashboard",
       "light": "#ffffff",
-      "dark": "#17191f"
+      "dark": "#1b1c1f"
     },
     "panel": {
       "cssVariable": "--panel",
@@ -59,8 +59,8 @@
       "components": ["Cards", "secondary buttons and canvas controls"],
       "group": "Surfaces",
       "region": "dashboard",
-      "light": "#ededf5",
-      "dark": "#1e2028"
+      "light": "#eeeeef",
+      "dark": "#242528"
     },
     "canvas": {
       "cssVariable": "--canvas",
@@ -69,8 +69,8 @@
       "components": ["Workspace flowboard"],
       "group": "Canvas",
       "region": "canvas",
-      "light": "#f3f4f9",
-      "dark": "#121419"
+      "light": "#f6f6f6",
+      "dark": "#101113"
     },
     "text": {
       "cssVariable": "--text",
@@ -79,8 +79,8 @@
       "components": ["Headings", "inputs and main content"],
       "group": "Text",
       "region": "dashboard",
-      "light": "#252535",
-      "dark": "#dedee6"
+      "light": "#202124",
+      "dark": "#f0f0f2"
     },
     "muted": {
       "cssVariable": "--muted",
@@ -89,8 +89,8 @@
       "components": ["Descriptions", "labels and navigation"],
       "group": "Text",
       "region": "dashboard",
-      "light": "#5b5d70",
-      "dark": "#a2a4b2"
+      "light": "#525258",
+      "dark": "#b5b5bc"
     },
     "faint": {
       "cssVariable": "--faint",
@@ -99,8 +99,8 @@
       "components": ["Hints", "small labels and metadata"],
       "group": "Text",
       "region": "dashboard",
-      "light": "#666a7c",
-      "dark": "#858896"
+      "light": "#65656b",
+      "dark": "#9b9ba3"
     },
     "border": {
       "cssVariable": "--border",
@@ -109,7 +109,7 @@
       "components": ["Dividers and card borders"],
       "group": "Surfaces",
       "region": "dashboard",
-      "light": "#24243e17",
+      "light": "#2d2d2d17",
       "dark": "#ffffff0d"
     },
     "border-strong": {
@@ -119,7 +119,7 @@
       "components": ["Inputs", "buttons and selected containers"],
       "group": "Surfaces",
       "region": "dashboard",
-      "light": "#24243e30",
+      "light": "#2d2d2d30",
       "dark": "#ffffff16"
     },
     "accent": {
@@ -129,8 +129,8 @@
       "components": ["Focus outlines", "active markers and canvas labels"],
       "group": "Navigation",
       "region": "navigation",
-      "light": "#7051b3",
-      "dark": "#b19be9"
+      "light": "#55555e",
+      "dark": "#c3c3cd"
     },
     "accent-light": {
       "cssVariable": "--accent-light",
@@ -139,8 +139,8 @@
       "components": ["Active links", "icons and highlighted text"],
       "group": "Navigation",
       "region": "navigation",
-      "light": "#65449e",
-      "dark": "#c9b6f6"
+      "light": "#303036",
+      "dark": "#efeff3"
     },
     "hover": {
       "cssVariable": "--hover",
@@ -149,7 +149,7 @@
       "components": ["Navigation", "tabs and icon buttons"],
       "group": "Navigation",
       "region": "navigation",
-      "light": "#40307708",
+      "light": "#4d4d4d08",
       "dark": "#ffffff05"
     },
     "root-background": {
@@ -159,8 +159,8 @@
       "components": ["Browser document outside the dashboard"],
       "group": "Surfaces",
       "region": "dashboard",
-      "light": "#f7f7fb",
-      "dark": "#111318"
+      "light": "#f6f6f6",
+      "dark": "#101113"
     },
     "scrollbar": {
       "cssVariable": "--scrollbar",
@@ -169,8 +169,8 @@
       "components": ["Scrollable editors and lists"],
       "group": "Surfaces",
       "region": "dashboard",
-      "light": "#b3b4c4",
-      "dark": "#383b47"
+      "light": "#b9b9b9",
+      "dark": "#3e3e3e"
     },
     "selection": {
       "cssVariable": "--selection",
@@ -179,8 +179,8 @@
       "components": ["Selected text throughout the app"],
       "group": "Text",
       "region": "dashboard",
-      "light": "#8a65d940",
-      "dark": "#aa91e950"
+      "light": "#98989840",
+      "dark": "#b7b7b750"
     },
     "success": {
       "cssVariable": "--success",
@@ -199,8 +199,8 @@
       "components": ["Save and create buttons"],
       "group": "Buttons and inputs",
       "region": "buttons",
-      "light": "#7651ba",
-      "dark": "#bda7eb"
+      "light": "#252527",
+      "dark": "#ececee"
     },
     "primary-text": {
       "cssVariable": "--primary-text",
@@ -210,7 +210,7 @@
       "group": "Buttons and inputs",
       "region": "buttons",
       "light": "#ffffff",
-      "dark": "#211b2f"
+      "dark": "#19191b"
     },
     "primary-border": {
       "cssVariable": "--primary-border",
@@ -219,8 +219,8 @@
       "components": ["Primary button edges"],
       "group": "Buttons and inputs",
       "region": "buttons",
-      "light": "#6944ac",
-      "dark": "#c5b0f3"
+      "light": "#252527",
+      "dark": "#ececee"
     },
     "primary-highlight": {
       "cssVariable": "--primary-highlight",
@@ -239,8 +239,8 @@
       "components": ["Hovered save and create buttons"],
       "group": "Buttons and inputs",
       "region": "buttons",
-      "light": "#6540a9",
-      "dark": "#cbb8f3"
+      "light": "#3a3a3e",
+      "dark": "#d9d9df"
     },
     "secondary-hover": {
       "cssVariable": "--secondary-hover",
@@ -249,8 +249,8 @@
       "components": ["Hovered secondary buttons"],
       "group": "Buttons and inputs",
       "region": "buttons",
-      "light": "#e1e1ee",
-      "dark": "#282b35"
+      "light": "#e5e5e5",
+      "dark": "#2d2d2d"
     },
     "danger-background": {
       "cssVariable": "--danger-background",
@@ -320,7 +320,7 @@
       "group": "Buttons and inputs",
       "region": "form",
       "light": "#ffffff",
-      "dark": "#15171e"
+      "dark": "#191919"
     },
     "placeholder": {
       "cssVariable": "--placeholder",
@@ -329,8 +329,8 @@
       "components": ["Empty input placeholder text"],
       "group": "Buttons and inputs",
       "region": "form",
-      "light": "#73768a",
-      "dark": "#747786"
+      "light": "#7c7c7c",
+      "dark": "#7b7b7b"
     },
     "input-invalid": {
       "cssVariable": "--input-invalid",
@@ -339,8 +339,8 @@
       "components": ["Fields with validation errors"],
       "group": "Buttons and inputs",
       "region": "form",
-      "light": "#b93b58",
-      "dark": "#c27788"
+      "light": "#6f6f6f",
+      "dark": "#969696"
     },
     "error-text": {
       "cssVariable": "--error-text",
@@ -379,8 +379,8 @@
       "components": ["Empty-state icon backgrounds"],
       "group": "Decorative effects",
       "region": "decoration",
-      "light": "#eee7fc",
-      "dark": "#24212d"
+      "light": "#f0f0f0",
+      "dark": "#262626"
     },
     "empty-gradient-end": {
       "cssVariable": "--empty-gradient-end",
@@ -389,8 +389,8 @@
       "components": ["Empty-state icon backgrounds"],
       "group": "Decorative effects",
       "region": "decoration",
-      "light": "#f3f1f9",
-      "dark": "#191b23"
+      "light": "#f4f4f4",
+      "dark": "#1d1d1d"
     },
     "empty-border": {
       "cssVariable": "--empty-border",
@@ -399,8 +399,8 @@
       "components": ["Empty-state icon outlines"],
       "group": "Decorative effects",
       "region": "decoration",
-      "light": "#9479c74a",
-      "dark": "#a99afa26"
+      "light": "#9c9c9c4a",
+      "dark": "#bfbfbf26"
     },
     "attribution": {
       "cssVariable": "--attribution",
@@ -409,8 +409,8 @@
       "components": ["React Flow attribution link"],
       "group": "Canvas",
       "region": "canvas",
-      "light": "#646b7c",
-      "dark": "#818590"
+      "light": "#6e6e6e",
+      "dark": "#878787"
     },
     "logo-text": {
       "cssVariable": "--logo-text",
@@ -419,8 +419,8 @@
       "components": ["Relay logo connections", "Relay destination nodes", "Browser favicon"],
       "group": "Navigation",
       "region": "navigation",
-      "light": "#60438f",
-      "dark": "#e2daf8"
+      "light": "#252527",
+      "dark": "#efeff3"
     },
     "logo-secondary": {
       "cssVariable": "--logo-secondary",
@@ -429,8 +429,8 @@
       "components": ["Relay origin node", "Browser favicon"],
       "group": "Navigation",
       "region": "navigation",
-      "light": "#84709f",
-      "dark": "#aaa0bd"
+      "light": "#777780",
+      "dark": "#a3a3ad"
     },
     "nav-active-background": {
       "cssVariable": "--nav-active-background",
@@ -439,8 +439,8 @@
       "components": ["Selected sidebar page"],
       "group": "Navigation",
       "region": "navigation",
-      "light": "#8862c615",
-      "dark": "#b198ef0e"
+      "light": "#ffffff80",
+      "dark": "#ffffff1a"
     },
     "nav-active-border": {
       "cssVariable": "--nav-active-border",
@@ -449,8 +449,8 @@
       "components": ["Selected sidebar page outline"],
       "group": "Navigation",
       "region": "navigation",
-      "light": "#8862c63a",
-      "dark": "#b198ef1c"
+      "light": "#ffffffcc",
+      "dark": "#ffffff24"
     },
     "status-divider": {
       "cssVariable": "--status-divider",
@@ -459,8 +459,8 @@
       "components": ["Footer slash separator"],
       "group": "Navigation",
       "region": "navigation",
-      "light": "#c1c2d0",
-      "dark": "#3c3e49"
+      "light": "#c6c6c6",
+      "dark": "#414141"
     },
     "sidebar-shadow": {
       "cssVariable": "--sidebar-shadow",
@@ -469,8 +469,8 @@
       "components": ["Expanded mobile sidebar shadow"],
       "group": "Decorative effects",
       "region": "dialog",
-      "light": "#26213b26",
-      "dark": "#0005"
+      "light": "#2b2b2b26",
+      "dark": "#00000055"
     },
     "sidebar-backdrop": {
       "cssVariable": "--sidebar-backdrop",
@@ -479,8 +479,8 @@
       "components": ["Backdrop behind mobile navigation"],
       "group": "Decorative effects",
       "region": "dialog",
-      "light": "#23213b55",
-      "dark": "#0007"
+      "light": "#2a2a2a55",
+      "dark": "#00000077"
     },
     "tab-active": {
       "cssVariable": "--tab-active",
@@ -489,8 +489,8 @@
       "components": ["Gradient tint of selected workspace tabs"],
       "group": "Navigation",
       "region": "navigation",
-      "light": "#9470d51a",
-      "dark": "#a794f40a"
+      "light": "#ffffffa3",
+      "dark": "#ffffff1f"
     },
     "dialog-shadow": {
       "cssVariable": "--dialog-shadow",
@@ -499,8 +499,8 @@
       "components": ["Modal drop shadow"],
       "group": "Decorative effects",
       "region": "dialog",
-      "light": "#24203733",
-      "dark": "#0009"
+      "light": "#29292933",
+      "dark": "#00000099"
     },
     "dialog-backdrop": {
       "cssVariable": "--dialog-backdrop",
@@ -509,8 +509,8 @@
       "components": ["Backdrop behind modal dialogs"],
       "group": "Decorative effects",
       "region": "dialog",
-      "light": "#2f2d4966",
-      "dark": "#080a10b8"
+      "light": "#37373766",
+      "dark": "#0b0b0bb8"
     },
     "canvas-icon-border": {
       "cssVariable": "--canvas-icon-border",
@@ -519,8 +519,8 @@
       "components": ["Empty flowboard icon outline"],
       "group": "Canvas",
       "region": "canvas",
-      "light": "#d3cbe5",
-      "dark": "#343544"
+      "light": "#d6d6d6",
+      "dark": "#3a3a3a"
     },
     "canvas-gradient-start": {
       "cssVariable": "--canvas-gradient-start",
@@ -529,8 +529,8 @@
       "components": ["Empty flowboard icon background"],
       "group": "Canvas",
       "region": "canvas",
-      "light": "#e9e3f7",
-      "dark": "#242330"
+      "light": "#ececec",
+      "dark": "#282828"
     },
     "canvas-gradient-end": {
       "cssVariable": "--canvas-gradient-end",
@@ -539,8 +539,8 @@
       "components": ["Empty flowboard icon background"],
       "group": "Canvas",
       "region": "canvas",
-      "light": "#f5f2fb",
-      "dark": "#181b23"
+      "light": "#f6f6f6",
+      "dark": "#1d1d1d"
     },
     "canvas-ring-inner": {
       "cssVariable": "--canvas-ring-inner",
@@ -549,8 +549,8 @@
       "components": ["Inner ring around the flowboard illustration"],
       "group": "Canvas",
       "region": "canvas",
-      "light": "#8664ca0a",
-      "dark": "#a99afa04"
+      "light": "#9191910a",
+      "dark": "#bfbfbf04"
     },
     "canvas-ring-outer": {
       "cssVariable": "--canvas-ring-outer",
@@ -559,8 +559,8 @@
       "components": ["Outer ring around the flowboard illustration"],
       "group": "Canvas",
       "region": "canvas",
-      "light": "#8664ca17",
-      "dark": "#a99afa08"
+      "light": "#91919117",
+      "dark": "#bfbfbf08"
     },
     "controls-shadow": {
       "cssVariable": "--controls-shadow",
@@ -569,8 +569,8 @@
       "components": ["Zoom toolbar shadow"],
       "group": "Canvas",
       "region": "canvas",
-      "light": "#29233e15",
-      "dark": "#0002"
+      "light": "#2e2e2e15",
+      "dark": "#00000022"
     },
     "preset-selected-border": {
       "cssVariable": "--preset-selected-border",
@@ -579,8 +579,8 @@
       "components": ["Selected preset in the library"],
       "group": "Navigation",
       "region": "navigation",
-      "light": "#7656ac50",
-      "dark": "#9485ce40"
+      "light": "#7d7d7d50",
+      "dark": "#a2a2a240"
     },
     "preset-selected-background": {
       "cssVariable": "--preset-selected-background",
@@ -589,8 +589,8 @@
       "components": ["Selected preset in the library"],
       "group": "Navigation",
       "region": "navigation",
-      "light": "#7656ac0e",
-      "dark": "#ab95f20b"
+      "light": "#7d7d7d0e",
+      "dark": "#bbbbbb0b"
     },
     "preset-icon-background": {
       "cssVariable": "--preset-icon-background",
@@ -599,8 +599,8 @@
       "components": ["Selected preset icon tile"],
       "group": "Navigation",
       "region": "navigation",
-      "light": "#7656ac16",
-      "dark": "#a594eb10"
+      "light": "#7d7d7d16",
+      "dark": "#b7b7b710"
     },
     "preset-icon-border": {
       "cssVariable": "--preset-icon-border",
@@ -609,8 +609,8 @@
       "components": ["Selected preset icon tile outline"],
       "group": "Navigation",
       "region": "navigation",
-      "light": "#7656ac40",
-      "dark": "#a594eb30"
+      "light": "#7d7d7d40",
+      "dark": "#b7b7b730"
     },
     "warning": {
       "cssVariable": "--warning",
@@ -629,8 +629,8 @@
       "components": ["Hovered integration-kind option"],
       "group": "Buttons and inputs",
       "region": "form",
-      "light": "#9783b4",
-      "dark": "#7c738f"
+      "light": "#9a9a9a",
+      "dark": "#7f7f7f"
     },
     "kind-active-background": {
       "cssVariable": "--kind-active-background",
@@ -639,8 +639,8 @@
       "components": ["Selected integration-kind option"],
       "group": "Buttons and inputs",
       "region": "form",
-      "light": "#7656ac0e",
-      "dark": "#a594eb09"
+      "light": "#7d7d7d0e",
+      "dark": "#b7b7b709"
     },
     "kind-active-border": {
       "cssVariable": "--kind-active-border",
@@ -649,8 +649,8 @@
       "components": ["Selected integration-kind option outline"],
       "group": "Buttons and inputs",
       "region": "form",
-      "light": "#7656ac80",
-      "dark": "#9485ce80"
+      "light": "#7d7d7d80",
+      "dark": "#a2a2a280"
     },
     "config-background": {
       "cssVariable": "--config-background",
@@ -659,8 +659,8 @@
       "components": ["Preset configuration-only badge"],
       "group": "Decorative effects",
       "region": "decoration",
-      "light": "#7656ac0e",
-      "dark": "#b19aed0a"
+      "light": "#7d7d7d0e",
+      "dark": "#bdbdbd0a"
     },
     "config-text": {
       "cssVariable": "--config-text",
@@ -669,8 +669,8 @@
       "components": ["Preset configuration-only badge label"],
       "group": "Decorative effects",
       "region": "decoration",
-      "light": "#755297",
-      "dark": "#a494c3"
+      "light": "#757575",
+      "dark": "#a9a9a9"
     },
     "config-border": {
       "cssVariable": "--config-border",
@@ -679,8 +679,8 @@
       "components": ["Preset configuration-only badge outline"],
       "group": "Decorative effects",
       "region": "decoration",
-      "light": "#7656ac36",
-      "dark": "#b19aed20"
+      "light": "#7d7d7d36",
+      "dark": "#bdbdbd20"
     },
     "segment-shadow": {
       "cssVariable": "--segment-shadow",
@@ -689,8 +689,8 @@
       "components": ["Selected compaction-mode segment"],
       "group": "Decorative effects",
       "region": "buttons",
-      "light": "#24203720",
-      "dark": "#0003"
+      "light": "#29292920",
+      "dark": "#00000033"
     },
     "tooltip-shadow": {
       "cssVariable": "--tooltip-shadow",
@@ -699,8 +699,8 @@
       "components": ["Help tooltip drop shadow"],
       "group": "Decorative effects",
       "region": "dialog",
-      "light": "#24203726",
-      "dark": "#0005"
+      "light": "#29292926",
+      "dark": "#00000055"
     },
     "canvas-dots": {
       "cssVariable": "--canvas-dots",
@@ -709,68 +709,88 @@
       "components": ["Flowboard dot grid"],
       "group": "Canvas",
       "region": "canvas",
-      "light": "#c9ccda",
-      "dark": "#353944"
+      "light": "#25252e24",
+      "dark": "#ffffff12"
     },
     "glass-surface": {
       "cssVariable": "--glass-surface",
       "label": "Glass surface",
       "description": "Translucent material for selected navigation, workspace tabs and canvas controls.",
-      "components": [
-        "Selected navigation",
-        "Workspace tabs",
-        "Canvas controls",
-        "Navigation theme preview"
-      ],
+      "components": ["Selected navigation", "Workspace tabs", "Canvas controls", "Navigation theme preview"],
       "group": "Surfaces",
       "region": "navigation",
-      "light": "#ffffffdb",
-      "dark": "#24262ee8"
+      "light": "#ffffff45",
+      "dark": "#ffffff0d"
     },
     "glass-border": {
       "cssVariable": "--glass-border",
       "label": "Glass edge",
       "description": "Soft outline around navigation and control glass.",
-      "components": [
-        "Selected navigation",
-        "Workspace tabs",
-        "Canvas controls",
-        "Navigation theme preview"
-      ],
+      "components": ["Selected navigation", "Workspace tabs", "Canvas controls", "Navigation theme preview"],
       "group": "Navigation",
       "region": "navigation",
-      "light": "#ffffffd9",
-      "dark": "#ffffff26"
+      "light": "#ffffffdb",
+      "dark": "#ffffff42"
     },
     "glass-highlight": {
       "cssVariable": "--glass-highlight",
       "label": "Glass highlight",
       "description": "Inset top reflection on navigation and control glass.",
-      "components": [
-        "Selected navigation",
-        "Workspace tabs",
-        "Canvas controls",
-        "Navigation theme preview"
-      ],
+      "components": ["Selected navigation", "Workspace tabs", "Canvas controls", "Navigation theme preview"],
       "group": "Decorative effects",
       "region": "navigation",
-      "light": "#ffffffef",
-      "dark": "#ffffff1f"
+      "light": "#fffffffa",
+      "dark": "#ffffffa3"
     },
     "glass-shadow": {
       "cssVariable": "--glass-shadow",
       "label": "Glass shadow",
       "description": "Soft elevation beneath navigation and control glass.",
-      "components": [
-        "Selected navigation",
-        "Workspace tabs",
-        "Canvas controls",
-        "Navigation theme preview"
-      ],
+      "components": ["Selected navigation", "Workspace tabs", "Canvas controls", "Navigation theme preview"],
       "group": "Decorative effects",
       "region": "navigation",
-      "light": "#24203712",
-      "dark": "#00000033"
+      "light": "#10101824",
+      "dark": "#00000066"
+    },
+    "glass-reflection": {
+      "cssVariable": "--glass-reflection",
+      "label": "Glass reflection",
+      "description": "Directional sheen on floating navigation and toolbars.",
+      "components": ["Floating navigation", "Workspace toolbar", "Theme preview"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#ffffffb3",
+      "dark": "#ffffff26"
+    },
+    "glass-shade": {
+      "cssVariable": "--glass-shade",
+      "label": "Glass lower bevel",
+      "description": "Lower optical edge on floating navigation and toolbars.",
+      "components": ["Floating navigation", "Workspace toolbar", "Theme preview"],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#17171c26",
+      "dark": "#00000066"
+    },
+    "ambient-glow": {
+      "cssVariable": "--ambient-glow",
+      "label": "Ambient light",
+      "description": "Quiet illumination behind page content and glass controls.",
+      "components": ["App background", "Flowboard background", "Dashboard theme preview"],
+      "group": "Surfaces",
+      "region": "dashboard",
+      "light": "#ffffff",
+      "dark": "#ffffff0d"
+    },
+    "ambient-shade": {
+      "cssVariable": "--ambient-shade",
+      "label": "Ambient depth",
+      "description": "Subtle tonal depth in the page background.",
+      "components": ["App background", "Flowboard background", "Dashboard theme preview"],
+      "group": "Surfaces",
+      "region": "dashboard",
+      "light": "#25252e0a",
+      "dark": "#00000042"
     }
   }
 }

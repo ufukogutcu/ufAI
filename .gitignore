@@ -8,7 +8,10 @@ data/
 !.env.example
 .DS_Store
 coverage/
-[Aa][Gg][Ee][Nn][Tt][Ss].md
+[Aa][Gg][Ee][Nn][Tt][Ss].[Mm][Dd]
 
-# Project-local agent skills and their generated files
+# Project-local developer-agent instructions, references, skills, and generated files
 /.agents/
+
+# Root design instructions must remain local if recreated
+/[Dd][Ee][Ss][Ii][Gg][Nn].[Mm][Dd]

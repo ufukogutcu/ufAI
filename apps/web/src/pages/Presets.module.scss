@@ -3,10 +3,12 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  padding: 0 48px 32px 120px;
 }
 .layout {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 32px;
   flex: 1;
   min-height: 0;
 }
@@ -15,17 +17,15 @@
   flex-direction: column;
   min-height: 0;
   overflow: auto;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  padding: 24px 16px 20px;
+  padding: 12px 0 20px;
 }
 .libraryHeading {
   display: flex;
   justify-content: space-between;
-  padding: 0 13px 19px;
+  padding: 8px 12px 20px;
   color: var(--faint);
   font-size: 12px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.02em;
   span:last-child {
     letter-spacing: 0;
   }
@@ -55,12 +55,12 @@
   align-items: center;
   text-align: left;
   gap: 11px;
-  padding: 13px 11px;
+  padding: 16px 12px;
   width: 100%;
   background: transparent;
   color: var(--muted);
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 16px;
   > span {
     flex: 1;
     min-width: 0;
@@ -133,14 +133,22 @@
   border-radius: 50%;
 }
 .detail {
-  overflow: auto;
   min-width: 0;
-  background: var(--background);
-  // Keep focused fields clear of the sticky action bar.
-  scroll-padding-block: 24px 120px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 24px;
 }
 .editor {
-  max-width: 740px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 840px;
   margin: 0 auto;
 }
 .editorHeading {
@@ -148,9 +156,9 @@
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  padding: 28px 32px 8px;
+  padding: 28px 32px 0;
   h2 {
-    font-size: 16px;
+    font-size: 20px;
     font-weight: 500;
   }
 }
@@ -175,6 +183,8 @@
 .fields {
   border: 0;
   padding: 0 32px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   margin: 0;
   min-width: 0;
 }
@@ -333,11 +343,9 @@
   margin: 6px 0 0;
 }
 .editorFooter {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
+  position: relative;
   padding: 16px 32px;
-  background: var(--background);
+  background: var(--surface);
   border-top: 1px solid var(--border);
 }
 .footerActions {
@@ -400,12 +408,12 @@
   margin: 16px 8px;
 }
 .backButton {
+  align-self: flex-start;
   display: none !important;
 }
 @media (max-width: 1100px) {
-  .layout {
-    grid-template-columns: 240px minmax(0, 1fr);
-  }
+  .page { padding-left: 112px; padding-right: 32px; }
+  .layout { grid-template-columns: 220px minmax(0, 1fr); gap: 24px; }
 }
 @media (max-width: 1024px) {
   .layout {
@@ -422,7 +430,7 @@
       display: none;
     }
     .detail {
-      display: block;
+      display: flex;
     }
   }
   .backButton {
@@ -430,7 +438,9 @@
     margin: 12px 24px 0;
   }
 }
-@media (max-width: 540px) {
+@media (max-width: 640px) {
+  .page { padding: 42px 16px 16px 84px; }
+  .detail { border-radius: 20px; }
   .twoColumns,
   .compactionControls {
     grid-template-columns: 1fr;
@@ -440,17 +450,25 @@
   }
   .editorHeading,
   .editorFooter {
-    padding-left: 17px;
-    padding-right: 17px;
+    padding-left: 16px;
+    padding-right: 16px;
   }
   .fields {
-    padding: 0 17px;
+    padding: 0 16px;
   }
   .footerActions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 6px;
     :global(.button) {
       padding-left: 10px;
       padding-right: 10px;
     }
   }
+}
+
+@media (max-height: 600px) {
+  .page { display: block; overflow-y: auto; }
+  .layout { min-height: 500px; }
+  .detail { height: 560px; }
 }

@@ -1,0 +1,39 @@
+.material {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--glass-surface);
+}
+.lens {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  backdrop-filter: blur(14px) saturate(1.1);
+}
+.reflection {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--glass-reflection), transparent 42%, transparent 65%, var(--glass-shade));
+  box-shadow: inset 0 1px 1px var(--glass-highlight), inset 1px 0 1px var(--glass-highlight), inset 0 -1px 2px var(--glass-shade);
+  opacity: 0.85;
+  transition: opacity 160ms;
+}
+:global(.glassSurface:hover) .reflection,
+:global(.glassSurface:focus-within) .reflection { opacity: 1; }
+.definitions { position: absolute; }
+@supports not ((backdrop-filter: blur(14px)) or (-webkit-backdrop-filter: blur(14px))) {
+  .material { background: var(--surface); }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .material { background: var(--surface); }
+  .lens { backdrop-filter: none !important; -webkit-backdrop-filter: none; }
+  .reflection { background: none; box-shadow: none; }
+}
+@media (forced-colors: active) {
+  .material { display: none; }
+}

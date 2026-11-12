@@ -14,6 +14,7 @@ import { useSettings } from "../settings-store";
 import { useDashboard } from "../store";
 import { Tooltip } from "./Tooltip";
 import styles from "./Flowboard.module.scss";
+import { GlassMaterial } from "./GlassMaterial";
 
 const defaultViewport: Viewport = { x: 0, y: 0, zoom: 1 };
 
@@ -31,6 +32,7 @@ function ViewControls() {
   }
   return (
     <Panel position="bottom-left" className={`${styles.controls} glassSurface`}>
+      <GlassMaterial />
       <Tooltip content="Zoom out">
         <button
           className="iconButton"
@@ -120,14 +122,10 @@ function Board({ workspaceId }: { workspaceId: string }) {
         <Background
           variant={BackgroundVariant.Dots}
           gap={24}
-          size={1}
+          size={0.8}
           color="var(--canvas-dots)"
         />
         <ViewControls />
-        <Panel position="top-left" className={styles.label}>
-          <span className={styles.statusDot} /> Flowboard{" "}
-          <span className={styles.badge}>0 agents</span>
-        </Panel>
         <Panel position="bottom-right" className={styles.hint}>
           Drag to pan <span>·</span> Scroll to zoom
         </Panel>

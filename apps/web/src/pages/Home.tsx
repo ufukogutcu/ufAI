@@ -1,5 +1,5 @@
 import { useSettings } from "../settings-store";
-import { useEffect, useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import {
   ArrowRight,
   ChevronDown,
@@ -14,6 +14,7 @@ import { Dialog } from "../components/Dialog";
 import { Flowboard } from "../components/Flowboard";
 import { Tooltip } from "../components/Tooltip";
 import styles from "./Home.module.scss";
+import { GlassMaterial } from "../components/GlassMaterial";
 
 type WorkspaceAction =
   | { kind: "create" }
@@ -160,11 +161,29 @@ export default function Home() {
   const load = useDashboard((state) => state.loadWorkspaces);
   const updateSettings = useSettings((state) => state.update);
   const [action, setAction] = useState<WorkspaceAction | null>(null);
+  const tabList = useRef<HTMLDivElement>(null);
   const active = selectedWorkspace;
   const tabs =
     active && !workspaces.some((workspace) => workspace.id === active.id)
       ? [...workspaces, active]
       : workspaces;
+  useEffect(() => {
+    const list = tabList.current;
+    if (!list) return;
+    const selected = list.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!selected) return;
+    function revealSelection() {
+      const bounds = list!.getBoundingClientRect();
+      const tab = selected!.getBoundingClientRect();
+      if (tab.left < bounds.left) list!.scrollLeft -= bounds.left - tab.left;
+      else if (tab.right > bounds.right) list!.scrollLeft += tab.right - bounds.right;
+    }
+    const observer = new ResizeObserver(revealSelection);
+    observer.observe(list);
+    observer.observe(selected);
+    revealSelection();
+    return () => observer.disconnect();
+  }, [activeId, tabs.length]);
   function select(id: string) {
     void updateSettings({ activeWorkspaceId: id });
   }
@@ -196,9 +215,10 @@ export default function Home() {
     void load(true);
   }
   return (
-    <section className={styles.home} aria-label="Home">
-      <div className={styles.workspaceBar}>
-        <div className={styles.tabs} role="tablist" aria-label="Workspaces">
+    <section className={`${styles.home} ${error ? styles.hasError : ""}`} aria-label="Home">
+      <div className={`${styles.workspaceBar} glassSurface`}>
+        <GlassMaterial />
+        <div ref={tabList} className={styles.tabs} role="tablist" aria-label="Workspaces">
           {tabs.map((workspace, index) => (
             <button
               key={workspace.id}
@@ -207,7 +227,7 @@ export default function Home() {
               aria-selected={workspace.id === activeId}
               aria-controls="workspace-panel"
               tabIndex={workspace.id === activeId ? 0 : -1}
-              className={`${styles.tab} ${workspace.id === activeId ? `${styles.active} glassSurface` : ""}`}
+              className={`${styles.tab} ${workspace.id === activeId ? styles.active : ""}`}
               onClick={() => select(workspace.id)}
               onKeyDown={(event) => {
                 let next: number | undefined;

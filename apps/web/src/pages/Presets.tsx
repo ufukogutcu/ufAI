@@ -778,8 +778,8 @@ function PresetLibrary() {
               </div>
               <h2>
                 {presets.length
-                  ? "Find your starting point"
-                  : "Good work starts with a good setup"}
+                  ? "Choose a preset"
+                  : "Your model library"}
               </h2>
               <p>
                 {presets.length

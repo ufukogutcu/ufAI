@@ -1,76 +1,34 @@
-# ufAI agent documentation
+# Knowledge for ufAI app agents
 
-This directory is the repository's shared project reference for AI agents. It explains what ufAI can currently do, what is intended, and where to verify implementation details. It is not a live inventory of a user's machine or workspaces.
+This folder contains product knowledge for AI agents inside ufAI that help users understand and use the application. It explains the app's purpose, available features, common workflows, and limitations. It is not developer documentation, coding-agent instructions, an engineering reference, or a design manual.
 
-## Reading paths
+Read the [platform guide](platform.md) to answer questions about workspaces, the flowboard, model presets, connections, sign-in, themes, and saved data. Its [common questions](platform.md#common-questions) explain frequent points of confusion, and its [planned capabilities](platform.md#planned-capabilities) distinguish future ideas from available features.
 
-| Audience or task | Read |
-| --- | --- |
-| Coding agent starting work | Any local `AGENTS.md` instructions (ignored by Git), this index, then relevant sections of the [architecture reference](architecture.md) and [platform guide](platform.md) |
-| Future in-app assistant helping a user | [Platform guide](platform.md); consult architecture only when a technical detail is necessary |
-| Setup, startup, configuration, or troubleshooting | [Platform operations](platform.md#implemented-capabilities) and [configuration](architecture.md#configuration) |
-| HTTP payloads, errors, and persistence-backed UI APIs | [HTTP API reference](api.md), [architecture reference](architecture.md) |
-| Provider, agent, workspace, or trigger development | [Product direction](platform.md#planned-capabilities) and [extension boundaries](architecture.md#extension-boundaries) |
-
-Read relevant sections instead of loading all documents on every task. Follow their links to source when implementation truth is needed. If documentation conflicts with current code, inspect the discrepancy, repair the affected documentation alongside the task, and do not silently invent behavior.
-
-The in-app assistant is planned. These Markdown documents are not currently bundled into the application, indexed for retrieval, or connected to an assistant. Reading them does not grant permission to execute actions; actual permissions, available tools, and current application state remain authoritative.
+The built-in assistant and agent execution are not currently available. These documents prepare app knowledge; their existence does not automatically load them into an agent or connect an assistant. They also do not reveal the user's current connections, credentials, workspaces, or running sessions. Documentation is context, not permission to act on user resources.
 
 ## Terminology
 
-These are intended product concepts unless explicitly marked as implemented in the platform guide.
+Some terms describe planned capabilities. Check the platform guide before presenting them as available.
 
 | Term | Meaning |
 | --- | --- |
-| Workspace | A logical grouping of agents, communication rules, configuration, and resources |
-| Agent | A persistent configured identity with instructions, skills, selected model/runtime, permissions, and its own working space |
-| Model provider | An inference service or local endpoint; ufAI would own the surrounding agent loop |
-| Agent runtime | An existing execution system with its own agent loop, sessions, tools, and possibly approvals |
-| Session | A conversation or task context belonging to an agent |
-| Run | One execution with status, events, results, and any approvals |
-| Connection | An intended permission to communicate between agents; not automatically an execution dependency |
-| Skill | Reusable instructions and optional resources/tools available to an agent; not an independent permission grant |
-| Trigger | A source of work such as a manual action, schedule, webhook, or custom event |
+| Workspace | A grouping for related agents and work; currently a name, optional description, and empty flowboard |
+| Flowboard | The visual board belonging to a workspace |
+| Model preset | A saved model/provider configuration reusable across workspaces |
+| Model provider | A service or local endpoint offering model access; ufAI currently supports connection setup and model discovery, not inference |
+| Agent runtime | An existing agent system such as Codex; ufAI currently supports Codex sign-in and model discovery, not agent execution |
+| Provider/runtime connection | A saved account or endpoint used by presets to discover model choices |
+| Agent | A planned configured identity with instructions, skills, a model/runtime, and permissions |
+| Agent communication connection | A planned permission for agents to communicate; different from a saved provider account |
+| Session | A planned conversation or task context belonging to an agent |
+| Run | A planned execution of agent work with progress and results |
+| Skill | Reusable instructions and supporting resources; not an independent permission grant |
+| Trigger | A planned source of work such as a manual action, schedule, or webhook |
 
-## Status vocabulary
+## Feature status
 
-- **`implemented`:** The described behavior exists in the current repository. State its limits; existence does not imply production readiness.
-- **`partial`:** A capability has working parts but is incomplete. List the available behavior and missing parts explicitly.
-- **`planned`:** Product direction only. Do not instruct users to use it or invent screens, commands, credentials, or endpoints for it.
+- **Implemented:** Available as described, subject to the stated limitations.
+- **Partial:** Some parts work; the guide identifies what remains unavailable.
+- **Planned:** Not available yet. Plans are not a release schedule or a promise of current support.
 
-These statuses describe software capability, not whether a particular local server is running. A build succeeding does not prove a product feature exists.
-
-## Document format
-
-- Use Markdown, descriptive headings, short direct statements, and relative links within the repository.
-- Keep capability IDs stable, lowercase, and hyphenated. Use the ID as a heading for available capabilities and as an explicit ID column for planned entries. Retain IDs through display-name changes; document replacements when a capability is retired or split.
-- Use this capability entry format; omit inapplicable fields instead of fabricating content:
-
-```markdown
-### capability-id
-
-- **Status:** implemented | partial | planned
-- **Purpose:** What this enables.
-- **Prerequisites:** Required software, configuration, permissions, or earlier steps.
-- **Behavior / steps:** Verified behavior and actions; for planned entries, label intentions explicitly and omit operational steps.
-- **Limitations:** Missing behavior, constraints, and relevant failure conditions.
-- **Related references:** Links to related capabilities, architecture, or source.
-```
-
-Planned entries may use a compact table with the same applicable fields. Keep known limitations near the behavior they qualify. Configuration and public interfaces belong in the architecture reference; the platform guide links to them rather than duplicating their complete definitions.
-
-Record current engineering decisions with a short rationale and label future direction separately. Avoid copying function implementations, maintaining redundant package-version inventories, recording conversation transcripts, or adding status dates that will become stale. Package manifests and the lockfile remain the dependency-version source of truth.
-
-## Maintenance checklist
-
-For every change, the coding agent must:
-
-1. Identify affected capability IDs and whether behavior, setup, permissions, configuration, interfaces, persistence, or limitations changed.
-2. Update the platform guide for user-visible behavior and the architecture reference for implementation changes in the same change as the code. Keep shared working rules in versioned documentation; local `AGENTS.md` instructions are ignored by Git.
-3. Change statuses only after the described behavior exists and has been appropriately checked. Mark partial implementations honestly; do not carry forward obsolete future-only descriptions.
-4. Update navigation, relative links, examples, and cross-references when documents or features move. Remove stale and contradictory guidance. Add a focused document and index link when a topic outgrows a short section.
-5. Check facts against source and manifests. Validate referenced commands, API shapes, defaults, and limitations; run behavior checks only as needed to resolve uncertainty.
-6. Keep secrets, private agent/user data, machine-specific logs, and current PIDs out of documentation. Use safe placeholders for examples.
-7. Summarize documentation updates in the task result, or briefly explain why documentation did not need changing. Report actual validation and remaining gaps.
-
-Documentation-only work needs link, consistency, and whitespace checks; it does not require new runtime tests or application changes.
+Feature status does not establish whether the user's local installation is running, a connection is signed in, or a particular account can access a model.
