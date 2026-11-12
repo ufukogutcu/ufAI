@@ -1,11 +1,19 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, chmodSync, mkdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import type { CodexLoginStatus, DiscoveredModel } from "./contracts.js";
 import { TEST_PROMPT } from "./provider-inference.js";
 import { ConnectionError } from "./model-providers.js";
+import {
+  launchCodex,
+  launchCodexCatalog,
+  type CodexLauncher,
+  type CodexCatalogLauncher,
+} from "./codex-process.js";
+import { readCodexContexts } from "./codex-catalog.js";
+
+export { launchCodex, type CodexLauncher } from "./codex-process.js";
 
 export interface CodexAdapter {
   status(id: string): Promise<CodexLoginStatus>;
@@ -18,69 +26,6 @@ export interface CodexAdapter {
   remove(id: string): Promise<void>;
   close(): Promise<void>;
 }
-export type CodexLauncher = (home: string) => ChildProcessWithoutNullStreams;
-const require = createRequire(import.meta.url);
-export const launchCodex: CodexLauncher = (home) => {
-  const targets: Record<string, string> = {
-    "linux-x64": "x86_64-unknown-linux-musl",
-    "linux-arm64": "aarch64-unknown-linux-musl",
-    "darwin-x64": "x86_64-apple-darwin",
-    "darwin-arm64": "aarch64-apple-darwin",
-    "win32-x64": "x86_64-pc-windows-msvc",
-    "win32-arm64": "aarch64-pc-windows-msvc",
-  };
-  const target = targets[`${process.platform}-${process.arch}`];
-  if (!target)
-    throw new ConnectionError(
-      "Bundled Codex is unavailable on this platform.",
-      503,
-    );
-  let binary: string;
-  try {
-    const root = dirname(
-      require.resolve(
-        `@openai/codex-${process.platform}-${process.arch}/package.json`,
-      ),
-    );
-    binary = join(
-      root,
-      "vendor",
-      target,
-      "bin",
-      process.platform === "win32" ? "codex.exe" : "codex",
-    );
-  } catch {
-    throw new ConnectionError(
-      "Bundled Codex is missing. Run npm ci with optional dependencies enabled.",
-      503,
-    );
-  }
-  const env = { ...process.env };
-  for (const key of Object.keys(env))
-    if (/^(CODEX_|OPENAI_)/.test(key)) delete env[key];
-  env.CODEX_HOME = home;
-  return spawn(
-    binary,
-    [
-      "app-server",
-      "--listen",
-      "stdio://",
-      "-c",
-      'cli_auth_credentials_store="file"',
-      "-c",
-      'model_provider="openai"',
-      "-c",
-      'forced_login_method="chatgpt"',
-    ],
-    {
-      cwd: home,
-      env,
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
-    },
-  );
-};
-
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -431,8 +376,7 @@ class CodexClient {
     await this.rpc("account/logout");
     this.loginResult = { status: "disconnected" };
   }
-  async models(): Promise<DiscoveredModel[]> {
-    const deadline = Date.now() + this.rpcTimeout;
+  async models(deadline: number): Promise<DiscoveredModel[]> {
     if ((await this.status(deadline)).status !== "connected")
       throw new ConnectionError(
         "Sign in with ChatGPT to fetch available Codex models.",
@@ -589,11 +533,17 @@ export class CodexRuntime implements CodexAdapter {
   private clients = new Map<string, CodexClient>();
   private closed = false;
   private owned = new Set<CodexClient>();
+  private discoveries = new Map<
+    string,
+    { controller: AbortController; promise: Promise<DiscoveredModel[]> }
+  >();
   constructor(
     private directory: string,
     private launcher: CodexLauncher = launchCodex,
     private rpcTimeout = 15_000,
     private idleMs = 60_000,
+    private catalogLauncher: CodexCatalogLauncher = launchCodexCatalog,
+    private catalogTimeoutMs = 3000,
   ) {}
   private client(id: string) {
     if (this.closed) throw new ConnectionError("Codex is shutting down.", 503);
@@ -634,18 +584,50 @@ export class CodexRuntime implements CodexAdapter {
   logout(id: string) {
     return this.client(id).logout();
   }
-  models(id: string) {
-    return this.client(id).models();
+  models(id: string): Promise<DiscoveredModel[]> {
+    const running = this.discoveries.get(id);
+    if (running) return running.promise;
+    const client = this.client(id);
+    const controller = new AbortController();
+    const deadline = Date.now() + this.rpcTimeout;
+    const promise = (async () => {
+      const models = await client.models(deadline);
+      const contexts = await readCodexContexts(
+        join(this.directory, id),
+        models.map((model) => model.id),
+        deadline,
+        controller.signal,
+        this.catalogLauncher,
+        this.catalogTimeoutMs,
+      );
+      return models.map((model) => ({
+        ...model,
+        contextWindow: contexts.get(model.id) ?? null,
+      }));
+    })();
+    this.discoveries.set(id, { controller, promise });
+    void promise.finally(() => this.discoveries.delete(id)).catch(() => {});
+    return promise;
   }
   test(id: string, modelId: string, signal: AbortSignal) {
     return this.client(id).test(modelId, signal);
   }
   async remove(id: string) {
-    await this.clients.get(id)?.stop();
+    const discovery = this.discoveries.get(id);
+    discovery?.controller.abort();
+    await Promise.allSettled([
+      this.clients.get(id)?.stop(),
+      discovery?.promise,
+    ]);
     await rm(join(this.directory, id), { recursive: true, force: true });
   }
   async close() {
     this.closed = true;
-    await Promise.all([...this.owned].map((client) => client.stop()));
+    const discoveries = [...this.discoveries.values()];
+    for (const discovery of discoveries) discovery.controller.abort();
+    await Promise.allSettled([
+      ...[...this.owned].map((client) => client.stop()),
+      ...discoveries.map((discovery) => discovery.promise),
+    ]);
   }
 }

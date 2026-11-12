@@ -95,6 +95,7 @@ One local installation holds one shared setup across browser sessions. There are
 - **Purpose:** Connect Codex using a ChatGPT subscription for model discovery and short model tests.
 - **Steps:** Create a Codex configuration on Providers and choose Sign in with ChatGPT. Follow Continue to ChatGPT and return after sign-in. A device code is an alternative. After sign-in, ufAI tries to load models. Reconnect, cancel sign-in, or sign out from the same page.
 - **Behavior:** Codex is bundled with ufAI; a separate global CLI installation is not required. Model testing creates a temporary conversation solely for the short prompt. Signing out clears prior model-test results but keeps model configurations and preset bindings.
+- **Model limits:** Discovery uses each model's default context window from the Codex catalog for that Provider, with bundled defaults as a fallback. Refresh models updates existing saved models. Context remains Unknown if neither catalog supplies a valid value; automatic output limits remain Unknown. Explicit context and output overrides are retained. These values describe catalog defaults and do not configure runtime context capacity or enable compaction.
 - **Limitations:** Account entitlement and the bundled runtime determine availability. A subscription does not imply access to the separate OpenAI API. General Codex tasks, agent runs, and persistent conversations are not provided.
 
 ## Common questions

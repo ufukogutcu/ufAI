@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -12,6 +14,7 @@ import {
 } from "../src/provider-inference.js";
 import type { ConnectionProvider, ProviderModel } from "../src/contracts.js";
 import type { ConnectionOptions } from "../src/connections.js";
+import { CodexRuntime } from "../src/codex-runtime.js";
 
 function setup(options: ConnectionOptions = {}) {
   return createApp({
@@ -655,4 +658,66 @@ test("server shutdown cancels and settles model tests before closing storage", a
   await started;
   await app.close();
   assert.equal((await testing).json().success, false);
+});
+
+test("Codex refresh persists catalog defaults, retains manual overrides, and updates linked presets", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "ufai-codex-provider-test-"));
+  const runtimeFixture = fileURLToPath(new URL("./fixtures/codex-process.cjs", import.meta.url));
+  const catalogFixture = fileURLToPath(new URL("./fixtures/codex-catalog-process.cjs", import.meta.url));
+  const codex = new CodexRuntime(
+    directory,
+    (home) => spawn(process.execPath, [runtimeFixture, home, "success"], { stdio: ["pipe", "pipe", "pipe"] }),
+    2000,
+    60000,
+    (home, bundled) => spawn(process.execPath, [catalogFixture, home, bundled ? "bundled" : "provider", "success"], { stdio: ["pipe", "pipe", "pipe"] }),
+  );
+  const app = setup({ codex });
+  t.after(async () => {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  const id = await draft(app, "codex");
+  const login = await app.inject({ method: "POST", url: `/api/connections/${id}/login`, payload: {} });
+  assert.equal(login.statusCode, 200, login.body);
+  const home = join(directory, id);
+  const catalog = (context: number) => writeFile(join(home, "provider-catalog.json"), JSON.stringify({ models: [
+    { slug: "first", context_window: context, max_output_tokens: 9999 },
+  ] }));
+  await catalog(500000);
+  await writeFile(join(home, "bundled-catalog.json"), JSON.stringify({ models: [
+    { slug: "first", context_window: 272000 },
+    { slug: "second", context_window: 272000 },
+  ] }));
+  const refresh = () => app.inject({ method: "POST", url: `/api/connections/${id}/models/refresh` });
+  let response = await refresh();
+  assert.equal(response.statusCode, 200, response.body);
+  const items = response.json<{ items: ProviderModel[] }>().items;
+  assert.equal(items.find((m) => m.id === "first")?.discoveredContextWindow, 500000);
+  assert.equal(items.find((m) => m.id === "second")?.discoveredContextWindow, 272000);
+  assert.ok(items.every((m) => m.discoveredMaxOutputTokens === null && m.maxOutputTokens === null));
+  response = await app.inject({ method: "PATCH", url: `/api/connections/${id}`, payload: { draft: false } });
+  assert.equal(response.statusCode, 200, response.body);
+  const preset = await app.inject({ method: "POST", url: "/api/model-presets", payload: { name: "Codex defaults", connectionId: id, modelId: "first" } });
+  assert.equal(preset.statusCode, 201, preset.body);
+  assert.equal(preset.json().contextWindow, 500000);
+  const modelUrl = `/api/connections/${id}/models/first`;
+  response = await app.inject({ method: "PATCH", url: modelUrl, payload: { contextWindowOverride: 600000, maxOutputTokensOverride: 42 } });
+  assert.equal(response.statusCode, 200, response.body);
+  await catalog(400000);
+  response = await refresh();
+  assert.equal(response.statusCode, 200, response.body);
+  let model = (await app.inject(modelUrl)).json<ProviderModel>();
+  assert.equal(model.discoveredContextWindow, 400000);
+  assert.equal(model.contextWindow, 600000);
+  assert.equal(model.maxOutputTokens, 42);
+  const readPreset = async () => (await app.inject("/api/model-presets")).json().items.find((p: { id: string }) => p.id === preset.json().id);
+  assert.equal((await readPreset()).contextWindow, 600000);
+  assert.equal((await readPreset()).maxOutputTokens, 42);
+  response = await app.inject({ method: "PATCH", url: modelUrl, payload: { contextWindowOverride: null, maxOutputTokensOverride: null } });
+  assert.equal(response.statusCode, 200, response.body);
+  model = response.json<ProviderModel>();
+  assert.equal(model.contextWindow, 400000);
+  assert.equal(model.maxOutputTokens, null);
+  assert.equal((await readPreset()).contextWindow, 400000);
+  assert.equal((await readPreset()).maxOutputTokens, null);
 });

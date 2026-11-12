@@ -1,20 +1,25 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { test, type TestContext } from "node:test";
 import { CodexRuntime, type CodexLauncher } from "../src/codex-runtime.js";
+import type { CodexCatalogLauncher } from "../src/codex-process.js";
 const fixture = fileURLToPath(
   new URL("./fixtures/codex-process.cjs", import.meta.url),
+);
+const catalogFixture = fileURLToPath(
+  new URL("./fixtures/codex-catalog-process.cjs", import.meta.url),
 );
 async function setup(
   t: TestContext,
   mode = "success",
   timeout = 1000,
   idle = 60_000,
+  catalogMode = "success",
 ) {
   const directory = await mkdtemp(join(tmpdir(), "ufai-codex-test-"));
   const homes: string[] = [];
@@ -27,12 +32,21 @@ async function setup(
     children.push(child);
     return child;
   };
-  const runtime = new CodexRuntime(directory, launcher, timeout, idle);
+  const catalogCalls: { home: string; bundled: boolean }[] = [];
+  const catalogLauncher: CodexCatalogLauncher = (home, bundled) => {
+    catalogCalls.push({ home, bundled });
+    const child = spawn(process.execPath, [catalogFixture, home, bundled ? "bundled" : "provider", catalogMode], {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    children.push(child);
+    return child;
+  };
+  const runtime = new CodexRuntime(directory, launcher, timeout, idle, catalogLauncher);
   t.after(async () => {
     await runtime.close();
     await rm(directory, { recursive: true, force: true });
   });
-  return { runtime, homes, children, directory, launcher };
+  return { runtime, homes, children, directory, launcher, catalogCalls };
 }
 test("Codex handshake, same-chunk OAuth completion, pagination, isolation, persistence and logout", async (t) => {
   const { runtime, homes, children, directory, launcher } = await setup(t);
@@ -148,4 +162,43 @@ test("Codex test cancellation settles the active turn and closes the child", asy
       (child) => child.exitCode !== null || child.signalCode !== null,
     ),
   );
+});
+
+test("Codex discovery enriches only enumerated models with provider defaults and bundled fallback", async (t) => {
+  const { runtime, homes, catalogCalls } = await setup(t);
+  await runtime.login("one", false);
+  const home = homes[0]!;
+  await writeFile(join(home, "provider-catalog.json"), JSON.stringify({ models: [
+    { slug: "first", context_window: 500000, max_context_window: 872000, effective_context_window_percent: 95, max_output_tokens: 100 },
+    { slug: "hidden", context_window: 999999 },
+    { slug: "not-listed", context_window: 999999 },
+  ] }));
+  await writeFile(join(home, "bundled-catalog.json"), JSON.stringify({ models: [
+    { slug: "first", context_window: 272000 },
+    { slug: "second", context_window: 272000 },
+  ] }));
+  const first = runtime.models("one");
+  assert.equal(runtime.models("one"), first, "concurrent discovery is coalesced");
+  assert.deepEqual(await first, [
+    { id: "first", name: "First", contextWindow: 500000, maxOutputTokens: null },
+    { id: "second", name: "Second", contextWindow: 272000, maxOutputTokens: null },
+  ]);
+  assert.deepEqual(catalogCalls, [{ home, bundled: false }, { home, bundled: true }]);
+  await runtime.login("two", false);
+  assert.deepEqual((await runtime.models("two")).map((m) => m.contextWindow), [null, null]);
+});
+
+test("Codex catalog helpers are stopped and awaited on runtime close and connection removal", async (t) => {
+  for (const action of ["close", "remove"] as const) {
+    const { runtime, catalogCalls, children, directory } = await setup(t, "success", 1000, 60000, "hang");
+    await runtime.login("one", false);
+    const discovery = runtime.models("one");
+    while (!catalogCalls.length) await delay(5);
+    if (action === "close") await runtime.close();
+    else await runtime.remove("one");
+    assert.deepEqual((await discovery).map((m) => m.contextWindow), [null, null]);
+    assert.equal(catalogCalls.length, 1, "cancellation prevents starting bundled fallback");
+    assert.ok(children.every((child) => child.exitCode !== null || child.signalCode !== null));
+    if (action === "remove") await assert.rejects(access(join(directory, "one")));
+  }
 });
