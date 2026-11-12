@@ -8,7 +8,6 @@ import {
   Palette,
   Settings,
   SlidersHorizontal,
-  Sparkles,
 } from "lucide-react";
 import { DashboardProvider } from "./components/DashboardProvider";
 import { Tooltip } from "./components/Tooltip";
@@ -165,13 +164,9 @@ function Shell() {
           {expanded && (
             <span className={styles.wordmark}>
               <RelayWordmark />
-              <span>AGENT WORKSPACE</span>
             </span>
           )}
         </a>
-        <div className={styles.navHeading}>
-          {expanded ? "WORKSPACE" : <span />}
-        </div>
         <nav aria-label="Main navigation" className={styles.nav}>
           {pages.map((item) => (
             <Tooltip
@@ -181,14 +176,13 @@ function Shell() {
             >
               <a
                 href={`#/${item.id}`}
-                className={`${styles.navItem} ${page === item.id ? styles.active : ""}`}
+                className={`${styles.navItem} ${page === item.id ? `${styles.active} glassSurface` : ""}`}
                 aria-label={item.label}
                 aria-current={page === item.id ? "page" : undefined}
                 onClick={(event) => navigate(event, item.id)}
               >
-                <item.icon size={19} strokeWidth={1.65} />
+                <item.icon size={20} strokeWidth={1.65} aria-hidden="true" />
                 {expanded && <span>{item.label}</span>}
-                {page === item.id && expanded && <ChevronRight size={13} />}
               </a>
             </Tooltip>
           ))}
@@ -241,13 +235,7 @@ function Shell() {
             <ChevronRight size={12} />
             <span>{current.label}</span>
           </div>
-          <div className={styles.topbarRight}>
-            <span className={styles.projectTag}>
-              <Sparkles size={12} />
-              Your space to build
-            </span>
-            <span className={styles.localFirst}>LOCAL FIRST</span>
-          </div>
+          <span className={styles.localFirst}>Local workspace</span>
         </div>
         <main id="main-content" tabIndex={-1} className={styles.main}>
           {settingsError && (
@@ -277,14 +265,6 @@ function Shell() {
             </section>
           )}
         </main>
-        <footer className={styles.statusbar}>
-          <span>
-            <span className={styles.statusDot} />
-            ufAI<span className={styles.statusDivider}>/</span>Local agent
-            workspace
-          </span>
-          <span>Made for the way you work.</span>
-        </footer>
       </div>
     </div>
   );

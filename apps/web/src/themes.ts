@@ -26,6 +26,11 @@ export function resolveColors(
     ]),
   ) as ThemeColors;
 }
+// A running backend may still use the catalog from before a frontend rebuild.
+export function resolveTheme(theme: Theme): Theme {
+  if (colorKeys.every((key) => theme.colors[key] !== undefined)) return theme;
+  return { ...theme, colors: resolveColors(theme.mode, theme.colors) };
+}
 export const defaultThemes: Theme[] = catalog.themes.map((theme) => ({
   ...theme,
   mode: theme.mode as ThemeMode,
@@ -49,10 +54,11 @@ export function applyTheme(
   theme: Theme,
   element: HTMLElement = document.documentElement,
 ) {
+  const colors = resolveTheme(theme).colors;
   for (const key of colorKeys)
     element.style.setProperty(
       catalog.tokens[key].cssVariable,
-      theme.colors[key],
+      colors[key],
     );
   element.style.colorScheme = theme.mode;
   element.dataset.themeMode = theme.mode;

@@ -9,3 +9,6 @@ data/
 .DS_Store
 coverage/
 [Aa][Gg][Ee][Nn][Tt][Ss].md
+
+# Project-local agent skills and their generated files
+/.agents/

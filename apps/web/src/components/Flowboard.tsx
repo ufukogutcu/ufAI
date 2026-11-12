@@ -30,7 +30,7 @@ function ViewControls() {
     void setViewport(defaultViewport);
   }
   return (
-    <Panel position="bottom-left" className={styles.controls}>
+    <Panel position="bottom-left" className={`${styles.controls} glassSurface`}>
       <Tooltip content="Zoom out">
         <button
           className="iconButton"
@@ -125,7 +125,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
         />
         <ViewControls />
         <Panel position="top-left" className={styles.label}>
-          <span className={styles.statusDot} /> FLOWBOARD{" "}
+          <span className={styles.statusDot} /> Flowboard{" "}
           <span className={styles.badge}>0 agents</span>
         </Panel>
         <Panel position="bottom-right" className={styles.hint}>
@@ -133,17 +133,16 @@ function Board({ workspaceId }: { workspaceId: string }) {
         </Panel>
       </ReactFlow>
       <div className={styles.empty}>
-        <div className={styles.illustration}>
+        <div className={styles.illustration} aria-hidden="true">
           <Workflow size={34} strokeWidth={1.25} />
         </div>
-        <span className="eyebrow">ROOM FOR YOUR NEXT IDEA</span>
         <h2>Your workspace starts here</h2>
         <p>
           A canvas for your agents and the ways they work together.
-          <br />
+        </p>
+        <p className={styles.comingSoon}>
           Agent editing and connections are coming next.
         </p>
-        <span className={styles.emptyTag}>An open canvas. A fresh start.</span>
       </div>
     </div>
   );

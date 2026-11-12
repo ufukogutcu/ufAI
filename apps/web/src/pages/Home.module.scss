@@ -9,14 +9,14 @@
   flex-shrink: 0;
   align-items: center;
   gap: 8px;
-  padding: 0 25px;
-  min-height: 53px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  padding: 8px 32px;
+  min-height: 64px;
 }
 .tabs {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
   overflow-x: auto;
   min-width: 0;
   scrollbar-width: thin;
@@ -26,12 +26,13 @@
   flex: 0 0 auto;
   align-items: center;
   gap: 9px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  padding: 17px 15px 15px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  min-height: 40px;
+  padding: 9px 14px;
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   max-width: 260px;
   span {
     overflow: hidden;
@@ -45,15 +46,18 @@
     color: var(--text);
     background: var(--hover);
   }
+  &:focus-visible {
+    outline-offset: -3px;
+  }
 }
 .active {
   color: var(--accent-light);
-  border-bottom-color: var(--accent);
-  background: linear-gradient(0deg, var(--tab-active), transparent);
+  font-weight: 500;
+  background-image: linear-gradient(var(--tab-active), var(--tab-active));
 }
 .workspaceActions {
   display: flex;
-  gap: 2px;
+  gap: 4px;
   margin-left: auto;
   border-left: 1px solid var(--border);
   padding-left: 12px;
@@ -81,7 +85,11 @@
 }
 .canvas {
   flex: 1;
-  min-height: 320px;
+  min-height: 360px;
+  margin: 0 24px 24px;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  overflow: hidden;
 }
 .workspaceForm {
   display: flex;
@@ -90,15 +98,23 @@
 }
 @media (max-width: 640px) {
   .workspaceBar {
-    padding: 0 8px;
-    gap: 2px;
+    padding: 4px 12px;
+    gap: 4px;
   }
   .workspaceActions {
     padding-left: 4px;
+  }
+  .canvas {
+    margin: 0 12px 12px;
+    border-radius: 16px;
   }
   .tab {
     max-width: 160px;
     padding-left: 8px;
     padding-right: 8px;
   }
+}
+
+@media (pointer: coarse) {
+  .tab { min-height: 44px; }
 }

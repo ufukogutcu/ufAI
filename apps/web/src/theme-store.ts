@@ -2,7 +2,12 @@ import { createContext, useContext } from "react";
 import { createStore, useStore } from "zustand";
 import type { SettingsStore } from "./settings-store";
 import { errorMessage, getPage, request } from "./api";
-import { defaultThemes, type Theme, type ThemeInput } from "./themes";
+import {
+  defaultThemes,
+  resolveTheme,
+  type Theme,
+  type ThemeInput,
+} from "./themes";
 
 interface ThemeState {
   themes: Theme[];
@@ -33,7 +38,7 @@ export function createThemeStore(settings: SettingsStore) {
       try {
         const page = await getPage<Theme>("/themes", offset);
         set((state) => ({
-          themes: page.items.reduce(
+          themes: page.items.map(resolveTheme).reduce(
             merge,
             more ? state.themes : [...defaultThemes],
           ),
@@ -46,7 +51,7 @@ export function createThemeStore(settings: SettingsStore) {
       }
     },
     save: async (id, input) => {
-      const theme = await settings
+      const result = await settings
         .getState()
         .mutate(() =>
           request<Theme>(
@@ -55,6 +60,7 @@ export function createThemeStore(settings: SettingsStore) {
             input,
           ),
         );
+      const theme = resolveTheme(result);
       set((state) => ({
         themes: merge(state.themes, theme),
         total: state.total + (id ? 0 : 1),

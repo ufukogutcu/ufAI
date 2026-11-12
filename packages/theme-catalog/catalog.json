@@ -711,6 +711,66 @@
       "region": "canvas",
       "light": "#c9ccda",
       "dark": "#353944"
+    },
+    "glass-surface": {
+      "cssVariable": "--glass-surface",
+      "label": "Glass surface",
+      "description": "Translucent material for selected navigation, workspace tabs and canvas controls.",
+      "components": [
+        "Selected navigation",
+        "Workspace tabs",
+        "Canvas controls",
+        "Navigation theme preview"
+      ],
+      "group": "Surfaces",
+      "region": "navigation",
+      "light": "#ffffffdb",
+      "dark": "#24262ee8"
+    },
+    "glass-border": {
+      "cssVariable": "--glass-border",
+      "label": "Glass edge",
+      "description": "Soft outline around navigation and control glass.",
+      "components": [
+        "Selected navigation",
+        "Workspace tabs",
+        "Canvas controls",
+        "Navigation theme preview"
+      ],
+      "group": "Navigation",
+      "region": "navigation",
+      "light": "#ffffffd9",
+      "dark": "#ffffff26"
+    },
+    "glass-highlight": {
+      "cssVariable": "--glass-highlight",
+      "label": "Glass highlight",
+      "description": "Inset top reflection on navigation and control glass.",
+      "components": [
+        "Selected navigation",
+        "Workspace tabs",
+        "Canvas controls",
+        "Navigation theme preview"
+      ],
+      "group": "Decorative effects",
+      "region": "navigation",
+      "light": "#ffffffef",
+      "dark": "#ffffff1f"
+    },
+    "glass-shadow": {
+      "cssVariable": "--glass-shadow",
+      "label": "Glass shadow",
+      "description": "Soft elevation beneath navigation and control glass.",
+      "components": [
+        "Selected navigation",
+        "Workspace tabs",
+        "Canvas controls",
+        "Navigation theme preview"
+      ],
+      "group": "Decorative effects",
+      "region": "navigation",
+      "light": "#24203712",
+      "dark": "#00000033"
     }
   }
 }

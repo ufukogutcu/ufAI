@@ -146,7 +146,7 @@ function ThemePreview({
                     <RelaySymbol />
                   </span>
                   <div className={styles.navActive}>Home</div>
-                  <div className={styles.tabSample}>Workspace tab</div>
+                  <div className={`${styles.tabSample} glassSurface`}>Workspace tab</div>
                   <div className={styles.presetSample}>
                     <span>✦</span> Selected preset
                   </div>
@@ -797,12 +797,10 @@ export default function Themes() {
     <section className={styles.page}>
       <header className="pageHeader">
         <div>
-          <span className="eyebrow">MAKE IT YOURS</span>
           <h1>
-            <Palette size={23} />
             Themes
           </h1>
-          <p>Choose your atmosphere. Shape every detail.</p>
+          <p>Choose a theme or make it your own.</p>
         </div>
         <button className="button primary" onClick={handleCreate}>
           <Plus size={15} />

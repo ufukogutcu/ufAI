@@ -663,11 +663,10 @@ function PresetLibrary() {
     <section className={styles.page} aria-label="Model presets">
       <header className="pageHeader">
         <div>
-          <span className="eyebrow">SET ONCE. MAKE IT YOURS.</span>
           <h1>
             Model presets<span className="count">{total}</span>
           </h1>
-          <p>Your go-to configurations, ready for any workspace.</p>
+          <p>Model configurations shared across your workspaces.</p>
         </div>
         <button
           className="button primary"
@@ -707,7 +706,7 @@ function PresetLibrary() {
             !presets.length && (
               <div className={styles.libraryEmpty}>
                 <SlidersHorizontal size={23} />
-                <h3>A library of possibilities</h3>
+                <h2>No presets yet</h2>
                 <p>Save your favorite model setups here.</p>
               </div>
             )
@@ -777,7 +776,6 @@ function PresetLibrary() {
               <div className="emptyIcon">
                 <SlidersHorizontal size={28} strokeWidth={1.4} />
               </div>
-              <span className="eyebrow">YOUR MODELS, YOUR DEFAULTS</span>
               <h2>
                 {presets.length
                   ? "Find your starting point"

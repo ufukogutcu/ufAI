@@ -9,6 +9,8 @@ import {
   hexColor,
   normalizeColor,
   resolveColors,
+  resolveTheme,
+  applyTheme,
   themeStyle,
   type Theme,
 } from "../src/themes";
@@ -23,6 +25,78 @@ const custom: Theme = {
   builtIn: false,
   colors: { ...defaultThemes[0]!.colors, text: "#112233" },
 };
+
+function legacyTheme(theme: Theme): Theme {
+  const colors = { ...theme.colors };
+  for (const key of [
+    "glass-surface",
+    "glass-border",
+    "glass-highlight",
+    "glass-shadow",
+  ] as const) {
+    delete (colors as Partial<Theme["colors"]>)[key];
+  }
+  return { ...theme, colors };
+}
+
+test("older settings responses gain missing theme colors on startup, refresh and writes", async (t) => {
+  for (const mode of ["light", "dark"] as const) {
+    const older = legacyTheme({ ...custom, mode });
+    const snapshot = { ...initialSettings(), activeTheme: older };
+    const settings = createSettingsStore(snapshot);
+    const mock = t.mock.method(globalThis, "fetch", async () => Response.json(snapshot));
+    function verify() {
+      const active = settings.getState().snapshot.activeTheme;
+      assert.equal(active.id, older.id);
+      assert.equal(active.colors.text, custom.colors.text);
+      for (const key of colorKeys) assert.match(active.colors[key], hexColor, key);
+      assert.equal(active.colors["glass-surface"], catalog.tokens["glass-surface"][mode]);
+      assert.equal(older.colors["glass-surface"], undefined);
+    }
+    verify();
+    await settings.getState().refresh();
+    verify();
+    await settings.getState().update({ sidebarExpanded: true });
+    verify();
+    await settings.getState().mutate(async () => "saved");
+    verify();
+    mock.mock.restore();
+  }
+});
+
+test("older theme library and save responses are complete before reaching the editor", async (t) => {
+  const older = legacyTheme(custom);
+  const snapshot = { ...initialSettings(), activeTheme: older };
+  const settings = createSettingsStore(snapshot);
+  const store = createThemeStore(settings);
+  t.mock.method(globalThis, "fetch", async (url: string, init?: RequestInit) => {
+    if (url === "/api/settings") return Response.json(snapshot);
+    if (init?.method === "POST" || init?.method === "PATCH") return Response.json(older);
+    return Response.json({ items: [older], total: 1 });
+  });
+  await store.getState().load();
+  const loaded = store.getState().themes.find((theme) => theme.id === custom.id)!;
+  for (const key of colorKeys) assert.match(loaded.colors[key], hexColor, key);
+  assert.equal(loaded.colors.text, custom.colors.text);
+  const saved = await store.getState().save(custom.id, custom);
+  assert.equal(store.getState().themes.find((theme) => theme.id === custom.id), saved);
+  for (const key of colorKeys) assert.match(saved.colors[key], hexColor, key);
+  assert.equal(saved.colors.text, custom.colors.text);
+});
+
+test("startup palette application fills missing colors without mutating server records", () => {
+  const older = legacyTheme({ ...custom, mode: "dark" });
+  const properties = new Map<string, string>();
+  const element = {
+    style: { setProperty: (key: string, value: string) => properties.set(key, value), colorScheme: "" },
+    dataset: {},
+  };
+  applyTheme(older, element as unknown as HTMLElement);
+  assert.equal(properties.get("--glass-surface"), catalog.tokens["glass-surface"].dark);
+  assert.equal(properties.get("--text"), custom.colors.text);
+  assert.equal(older.colors["glass-surface"], undefined);
+  assert.equal(resolveTheme(custom), custom);
+});
 
 test("theme mutations update server-owned selection and preserve unrelated themes and drafts on failure", async (t) => {
   const { settings } = await connectedSetup(t);
@@ -105,6 +179,30 @@ test("catalog has complete palettes, unique variables, editor groups and preview
       colors: { ...custom.colors, text: custom.colors.background },
     }).some((message) => message.startsWith("Main text:")),
   );
+});
+
+test("older custom palettes inherit glass scopes while preserving saved overrides", () => {
+  for (const mode of ["light", "dark"] as const) {
+    const resolved = resolveColors(mode, {
+      text: "#123456",
+      "tab-active": "#abcdef80",
+    });
+    assert.equal(resolved.text, "#123456");
+    assert.equal(resolved["tab-active"], "#abcdef80");
+    for (const key of [
+      "glass-surface",
+      "glass-border",
+      "glass-highlight",
+      "glass-shadow",
+    ] as const) {
+      assert.equal(resolved[key], catalog.tokens[key][mode]);
+      assert.equal(catalog.tokens[key].region, "navigation");
+    }
+    assert.equal(
+      resolveColors(mode, { "glass-surface": "#123456aa" })["glass-surface"],
+      "#123456aa",
+    );
+  }
 });
 
 test("application color literals and CSS variables must come from the theme catalog", async () => {

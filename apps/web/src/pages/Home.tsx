@@ -207,7 +207,7 @@ export default function Home() {
               aria-selected={workspace.id === activeId}
               aria-controls="workspace-panel"
               tabIndex={workspace.id === activeId ? 0 : -1}
-              className={`${styles.tab} ${workspace.id === activeId ? styles.active : ""}`}
+              className={`${styles.tab} ${workspace.id === activeId ? `${styles.active} glassSurface` : ""}`}
               onClick={() => select(workspace.id)}
               onKeyDown={(event) => {
                 let next: number | undefined;

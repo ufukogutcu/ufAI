@@ -2,6 +2,14 @@ import { createContext, useContext } from "react";
 import { createStore, useStore } from "zustand";
 import type { AppSettings, SettingsResponse } from "../../server/src/contracts";
 import { errorMessage, request } from "./api";
+import { resolveTheme } from "./themes";
+
+function resolveSnapshot(snapshot: SettingsResponse): SettingsResponse {
+  const activeTheme = resolveTheme(snapshot.activeTheme);
+  return activeTheme === snapshot.activeTheme
+    ? snapshot
+    : { ...snapshot, activeTheme };
+}
 
 type Retry = () => Promise<unknown>;
 interface SettingsState {
@@ -27,7 +35,8 @@ export function createSettingsStore(initial: SettingsResponse) {
       refreshing = (async () => {
         try {
           const snapshot = await request<SettingsResponse>("/settings");
-          if (started === revision) set({ snapshot, error: "" });
+          if (started === revision)
+            set({ snapshot: resolveSnapshot(snapshot), error: "" });
         } catch (error) {
           if (started === revision)
             set({ error: errorMessage(error), retry: refresh });
@@ -59,7 +68,7 @@ export function createSettingsStore(initial: SettingsResponse) {
             "PATCH",
             patch,
           );
-          set({ snapshot, error: "" });
+          set({ snapshot: resolveSnapshot(snapshot), error: "" });
         });
       } catch (error) {
         set({ error: errorMessage(error), retry: () => update(patch) });
@@ -71,7 +80,7 @@ export function createSettingsStore(initial: SettingsResponse) {
         // A completed CRUD action must not be reported as failed if this read fails.
         try {
           const snapshot = await request<SettingsResponse>("/settings");
-          set({ snapshot, error: "" });
+          set({ snapshot: resolveSnapshot(snapshot), error: "" });
         } catch (error) {
           set({ error: errorMessage(error), retry: refresh });
         }
@@ -79,7 +88,7 @@ export function createSettingsStore(initial: SettingsResponse) {
       });
     }
     return {
-      snapshot: initial,
+      snapshot: resolveSnapshot(initial),
       error: "",
       retry: refresh,
       refresh,
