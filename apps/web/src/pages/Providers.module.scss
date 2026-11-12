@@ -136,46 +136,78 @@
   display: flex;
   flex-direction: column;
 }
+.selectionToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--muted);
+  > span { margin-right: auto; }
+}
 .modelRow {
-  padding: 16px 0;
+  padding: 8px 0;
   border-bottom: 1px solid var(--border);
   min-width: 0;
 }
 .modelHeading {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
-  > div {
-    flex: 1;
-    min-width: 0;
+  min-height: 40px;
+  min-width: 0;
+}
+.modelIdentity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  cursor: pointer;
+  input {
+    flex: 0 0 16px;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    margin: 0;
+    accent-color: var(--accent);
   }
+  > span { min-width: 0; }
   strong {
     display: block;
     font-size: 14px;
     font-weight: 500;
+    line-height: 20px;
     overflow-wrap: anywhere;
   }
   small {
     display: block;
     color: var(--muted);
+    font-size: 12px;
+    line-height: 18px;
     overflow-wrap: anywhere;
-    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
   }
 }
 .modelActions {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
 }
-.limits {
+.modelDetails {
+  margin: 2px 0 0 26px;
+  font-size: 12px;
   color: var(--muted);
-  font-size: 13px;
-  line-height: 1.6;
-  margin: 8px 0;
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
+  summary { cursor: pointer; width: fit-content; padding: 2px 0; }
+}
+.testingIcon { animation: modelTestSpin 1s linear infinite; }
+@keyframes modelTestSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .testingIcon { animation: none; } }
+@media (any-pointer: coarse) {
+  .modelIdentity, .modelActions :global(.iconButton), .modelDetails summary, .selectionToolbar button { min-height: 44px; }
+  .modelActions :global(.iconButton) { min-width: 44px; }
 }
 .status {
   font-size: 12px;
@@ -210,13 +242,4 @@
 }
 .deleteAction {
   margin-left: auto;
-}
-@media (max-width: 640px) {
-  .modelHeading {
-    flex-wrap: wrap;
-  }
-  .modelActions {
-    width: 100%;
-    justify-content: flex-start;
-  }
 }

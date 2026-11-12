@@ -11,6 +11,8 @@ export type {
   ConnectionProvider,
   DiscoveredModel,
   ProviderModel,
+  ModelSelection,
+  SelectionImpact,
   ModelTestResult,
   CodexLoginStatus,
 } from "../../server/src/contracts";
@@ -20,6 +22,7 @@ export class RequestError extends Error {
     message: string,
     public fields: Record<string, string> = {},
     public status?: number,
+    public selectionImpact?: ApiError["selectionImpact"],
   ) {
     super(message);
   }
@@ -51,6 +54,7 @@ export async function request<T>(
       result?.error ?? `Request failed (${response.status}). Please try again.`,
       result?.fields,
       response.status,
+      result?.selectionImpact,
     );
   }
   return response.status === 204

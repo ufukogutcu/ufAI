@@ -31,6 +31,7 @@ interface DashboardState {
   viewports: Record<string, Viewport>;
   loadWorkspaces: (more?: boolean) => Promise<void>;
   loadPresets: (more?: boolean) => Promise<void>;
+  clearPresetModels: (connectionId: string, modelIds: string[]) => void;
   viewportErrors: Record<string, string>;
   beginViewportInteraction: (id: string) => void;
   endViewportInteraction: (id: string) => void;
@@ -298,6 +299,16 @@ export function createDashboardStore(settings: SettingsStore) {
           ),
         };
       });
+    },
+    clearPresetModels: (connectionId, modelIds) => {
+      const disabled = new Set(modelIds);
+      presetRevision++;
+      set(state => ({
+        presets: state.presets.map(preset =>
+          preset.connectionId === connectionId && preset.modelId && disabled.has(preset.modelId)
+            ? { ...preset, modelId: null, contextWindow: null, maxOutputTokens: null }
+            : preset),
+      }));
     },
     savePreset: async (id, input) => {
       const preset = await request<ModelPreset>(

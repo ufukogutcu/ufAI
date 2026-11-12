@@ -187,7 +187,7 @@ export function registerConnections(
       fields.apiKey = "Enter an API key.";
     if (patch.draft !== undefined && typeof patch.draft !== "boolean")
       fields.draft = "Choose true or false.";
-    if (patch.draft === false && (!existing || !models.count(existing.id)))
+    if (patch.draft === false && !existing)
       fields.models = "Add at least one model before saving the Provider.";
     if (existing && !existing.draft && patch.draft === true)
       fields.draft = "Saved Providers cannot become setup drafts.";
@@ -216,8 +216,11 @@ export function registerConnections(
     database.prepare(`INSERT INTO connections (id, provider, name, endpoint, credential, draft, createdAt, updatedAt)
     VALUES (@id, @provider, @name, @endpoint, @credential, @draft, @createdAt, @updatedAt)
     ON CONFLICT(id) DO UPDATE SET name=@name, endpoint=@endpoint, credential=@credential, draft=@draft, updatedAt=@updatedAt`);
-  function save(row: Row): ProviderConnection {
+  function save(row: Row, selection?: unknown, confirmationToken?: unknown): ProviderConnection {
     return database.transaction(() => {
+      if (selection !== undefined) models.applySelection(row.id, selection, confirmationToken, !row.draft);
+      if (!row.draft && !models.count(row.id, true))
+        throw new InputError({ models: "Select at least one model before saving the Provider." });
       const previous = get.get(row.id) as Row | undefined;
       if (
         previous &&
@@ -250,10 +253,14 @@ export function registerConnections(
   });
   app.patch<{ Params: { id: string } }>(
     "/api/connections/:id",
+    { bodyLimit: 8 * 1024 * 1024 },
     async (request) => {
       const row = required(request.params.id);
       editable(row.id);
-      return save(validate(request.body, row));
+      const { modelSelection, confirmationToken, ...connection } = objectBody(request.body);
+      if (confirmationToken !== undefined && modelSelection === undefined)
+        throw new InputError({ models: "Selection confirmation requires model changes." });
+      return save(validate(connection, row), modelSelection, confirmationToken);
     },
   );
   app.delete<{ Params: { id: string } }>(
@@ -306,6 +313,9 @@ export function registerConnections(
       required(request.params.id);
       const { limit, offset } = pagination(request.query);
       const query = (request.query as { q?: unknown }).q;
+      const enabled = (request.query as { enabled?: unknown }).enabled;
+      if (enabled !== undefined && enabled !== "true")
+        throw new InputError({ enabled: "Use true to list selected models only." });
       if (
         query !== undefined &&
         (typeof query !== "string" || query.length > 300)
@@ -316,9 +326,17 @@ export function registerConnections(
         limit,
         offset,
         typeof query === "string" ? query : "",
+        enabled === "true",
       );
     },
   );
+  app.get<{ Params: { id: string } }>("/api/connections/:id/model-selection", async request => {
+    required(request.params.id);
+    const query = (request.query as { q?: unknown }).q;
+    if (query !== undefined && (typeof query !== "string" || query.length > 300))
+      throw new InputError({ q: "Enter at most 300 search characters." });
+    return models.selection(request.params.id, typeof query === "string" ? query : "");
+  });
   app.post<{ Params: { id: string } }>(
     "/api/connections/:id/models/refresh",
     async (request) => {
@@ -572,9 +590,9 @@ export function registerConnections(
     const model = input.modelId
       ? models.get(connection.id, input.modelId)
       : undefined;
-    if (input.modelId && !model)
+    if (input.modelId && (!model || !model.enabled))
       throw new InputError({
-        modelId: "Choose a model saved in this Provider.",
+        modelId: "Choose a selected model saved in this Provider.",
       });
     return {
       ...input,

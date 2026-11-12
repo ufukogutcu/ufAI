@@ -634,13 +634,14 @@ test("migration 7 removes provider defaults and preserves configuration, catalog
     ALTER TABLE connections ADD COLUMN isDefault INTEGER NOT NULL DEFAULT 0 CHECK (isDefault IN (0, 1));
     CREATE UNIQUE INDEX connections_default ON connections(provider) WHERE isDefault = 1;
     UPDATE connections SET isDefault = 1 WHERE id IN ('saved', 'setup');
+    ALTER TABLE provider_models DROP COLUMN enabled;
     PRAGMA user_version = 6;
   `);
   db.close();
   for (let attempt = 0; attempt < 2; attempt++) {
     db = openDatabase(path);
     try {
-      assert.equal(db.pragma("user_version", { simple: true }), 7);
+      assert.equal(db.pragma("user_version", { simple: true }), 8);
       assert.deepEqual(db.pragma("foreign_key_check"), []);
       assert.equal(
         db.prepare(

@@ -18,7 +18,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 7)
+    if (version > 8)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -154,6 +154,11 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
           ALTER TABLE connections DROP COLUMN isDefault;
         `);
         database.pragma("user_version = 7");
+      })();
+    if (version < 8)
+      database.transaction(() => {
+        database.exec("ALTER TABLE provider_models ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))");
+        database.pragma("user_version = 8");
       })();
   } catch (error) {
     database.close();

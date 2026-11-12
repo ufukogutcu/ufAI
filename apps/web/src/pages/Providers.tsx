@@ -9,6 +9,7 @@ import {
 import {
   ArrowLeft,
   Check,
+  LoaderCircle,
   Pencil,
   Play,
   Plus,
@@ -23,9 +24,14 @@ import {
   type CodexLoginStatus,
   type ConnectionProvider,
   type ModelTestResult,
+  type ModelSelection,
+  type SelectionImpact,
   type ProviderConnection,
   type ProviderModel,
 } from "../api";
+import { useDashboard } from "../store";
+import { Tooltip } from "../components/Tooltip";
+import { reconcileSelection, selectModels, selectedCount, selectionChanges, type SelectionDraft } from "../model-selection";
 import { useConnections } from "../connection-store";
 import {
   providerCategories,
@@ -411,6 +417,15 @@ function ProviderEditor({
   const [fields, setFields] = useState<Record<string, string>>({});
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalog, setCatalog] = useState<ModelPage>({ items: [], total: 0 });
+  const [selectionDraft, setSelectionDraft] = useState<SelectionDraft>(() => ({ saved: new Map(), changes: new Map() }));
+  const [selectionLoading, setSelectionLoading] = useState(true);
+  const [selectionLoadError, setSelectionLoadError] = useState("");
+  const [selectionImpact, setSelectionImpact] = useState<SelectionImpact | null>(null);
+  const loadPresets = useDashboard(state => state.loadPresets);
+  const clearPresetModels = useDashboard(state => state.clearPresetModels);
+  const enabledCount = selectedCount(selectionDraft);
+  const selectionDirty = selectionDraft.changes.size > 0;
+  const selectionErrorId = useId();
   const [createdModelId, setCreatedModelId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [offset, setOffset] = useState(0);
@@ -437,7 +452,7 @@ function ProviderEditor({
   const mounted = useRef(true);
   const dirty =
     baseline !== JSON.stringify([provider, name, endpoint, apiKey]);
-  useUnsavedChanges(dirty || modelDirty || (!!id && draft));
+  useUnsavedChanges(dirty || selectionDirty || modelDirty || (!!id && draft));
   const refreshLocal = useCallback(() => setRevision((v) => v + 1), []);
   function clearProviderFields() {
     setEndpoint("");
@@ -490,6 +505,27 @@ function ProviderEditor({
     };
   }, [provider, removeConnection]);
   useEffect(() => refreshOnFocus(async () => refreshLocal()), [refreshLocal]);
+  useEffect(() => {
+    const controller = new AbortController();
+    if (!id) {
+      setSelectionLoading(false);
+      return;
+    }
+    setSelectionLoading(true);
+    setSelectionLoadError("");
+    void request<{ items: ModelSelection[] }>(`/connections/${id}/model-selection`, "GET", undefined, controller.signal)
+      .then(result => {
+        if (!controller.signal.aborted) {
+          setSelectionDraft(current => reconcileSelection(current, result.items));
+          setSelectionLoading(false);
+        }
+      })
+      .catch(error => {
+        if (!controller.signal.aborted) setSelectionLoadError(errorMessage(error));
+      })
+      .finally(() => { if (!controller.signal.aborted) setSelectionLoading(false); });
+    return () => controller.abort();
+  }, [id, revision]);
   useEffect(() => {
     const controller = new AbortController();
     if (!id) {
@@ -570,7 +606,7 @@ function ProviderEditor({
   }, [id, provider, loginRevision, refreshLocal]);
   useEffect(() => {
     if (Object.keys(fields).length)
-      document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+      document.querySelector<HTMLElement>('[aria-invalid="true"], [role="alert"][tabindex="-1"]')?.focus();
   }, [fields]);
   function fail(error: unknown) {
     setError(errorMessage(error));
@@ -653,22 +689,73 @@ function ProviderEditor({
       if (mounted.current) setBusy(false);
     }
   }
-  async function finish(event: FormEvent) {
+  function finish(event: FormEvent) {
     event.preventDefault();
+    void saveProvider();
+  }
+  async function saveProvider(confirmationToken?: string) {
+    if (!provider || selectionLoading || selectionLoadError) return;
+    if (!enabledCount) {
+      setFields({ models: "Select at least one model before saving the Provider." });
+      return;
+    }
+    if (!id) return;
     setBusy(true);
     setError("");
     setFields({});
     try {
-      const current = await persist();
-      await saveConnection(current, { draft: false });
+      const saved = await saveConnection(id, {
+        provider, name,
+        ...(provider === "openai-compatible" || provider === "ollama" ? { endpoint: endpoint || (provider === "ollama" ? "http://localhost:11434" : "") } : {}),
+        ...(apiKey ? { apiKey } : {}),
+        draft: false,
+        modelSelection: selectionChanges(selectionDraft),
+        ...(confirmationToken ? { confirmationToken } : {}),
+      });
       resource.current.discard = false;
+      clearPresetModels(id, [...selectionDraft.saved.keys()].filter(modelId => !(selectionDraft.changes.get(modelId) ?? selectionDraft.saved.get(modelId))));
       setDraft(false);
-      onSaved(current);
+      setName(saved.name);
+      setEndpoint(saved.endpoint ?? "");
+      setApiKey("");
+      setHasCredential(saved.hasCredential);
+      setBaseline(JSON.stringify([saved.provider, saved.name, saved.endpoint ?? "", ""]));
+      setSelectionDraft(current => ({ saved: new Map([...current.saved].map(([modelId, enabled]) => [modelId, current.changes.get(modelId) ?? enabled])), changes: new Map() }));
+      setSelectionImpact(null);
+      refreshLocal();
+      await loadPresets();
+      onSaved(saved.id);
     } catch (error) {
-      fail(error);
+      if (error instanceof RequestError && error.selectionImpact) setSelectionImpact(error.selectionImpact);
+      else {
+        setSelectionImpact(null);
+        fail(error);
+      }
     } finally {
       if (mounted.current) setBusy(false);
     }
+  }
+  function toggleModel(modelId: string, enabled: boolean) {
+    setSelectionDraft(current => selectModels(current, [modelId], enabled));
+    setFields(current => ({ ...current, models: "" }));
+  }
+  async function selectMatching(enabled: boolean) {
+    if (!id) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await request<{ items: ModelSelection[] }>(`/connections/${id}/model-selection?q=${encodeURIComponent(query)}`);
+      if (mounted.current) {
+        // Include models another session added since our last snapshot.
+        setSelectionDraft(current => {
+          const saved = new Map(current.saved);
+          for (const model of result.items) if (!saved.has(model.id)) saved.set(model.id, model.enabled);
+          return selectModels({ ...current, saved }, result.items.map(model => model.id), enabled);
+        });
+        setFields(current => ({ ...current, models: "" }));
+      }
+    } catch (error) { if (mounted.current) fail(error); }
+    finally { if (mounted.current) setBusy(false); }
   }
   async function addModel() {
     setBusy(true);
@@ -937,8 +1024,14 @@ function ProviderEditor({
                 Add model
               </button>
             </div>
+            <div className={styles.selectionToolbar}>
+              <span role="status">{selectionLoading ? "Loading model selections…" : `${enabledCount.toLocaleString()} of ${selectionDraft.saved.size.toLocaleString()} selected`}</span>
+              <button type="button" className="textButton" disabled={!id || selectionLoading || !!selectionLoadError} onClick={() => void selectMatching(true)}>Select all{query ? " matching" : ""}</button>
+              <button type="button" className="textButton" disabled={!id || selectionLoading || !!selectionLoadError} onClick={() => void selectMatching(false)}>Unselect all{query ? " matching" : ""}</button>
+            </div>
+            {selectionLoadError && <p className="fieldError" role="alert">{selectionLoadError}{" "}<button type="button" className="textButton" onClick={refreshLocal}>Retry model selections</button></p>}
             {fields.models && (
-              <Appearance kind="fade"><p className="fieldError" role="alert">
+              <Appearance kind="fade"><p id={selectionErrorId} className="fieldError" role="alert" tabIndex={-1}>
                 {fields.models}
               </p></Appearance>
             )}
@@ -959,61 +1052,47 @@ function ProviderEditor({
             </Field>
             <p className={shared.modelStatus}>
               Discovery and testing are optional. Add a model manually if its
-              list cannot be loaded.
+              list cannot be loaded. Only checked models appear in model selections. Checkbox changes apply when you save this Provider.
             </p>
             <div className={styles.modelList}>
               {catalog.items.map((model) => (
                 <Appearance kind="fade" key={model.id} ready={model.id === createdModelId}><article className={styles.modelRow} onAnimationEnd={clearCreatedModelAppearance}>
-                  <AppearanceGroup>
                   <div className={styles.modelHeading}>
-                    <div>
-                      <strong>{model.name}</strong>
-                      <small>{model.id}</small>
-                    </div>
+                    <label className={styles.modelIdentity}>
+                      <input type="checkbox" name="enabledModels" value={model.id}
+                        aria-label={`Include ${model.name} in model selections`}
+                        aria-invalid={!!fields.models}
+                        aria-describedby={fields.models ? selectionErrorId : undefined}
+                        disabled={selectionLoading || !!selectionLoadError}
+                        checked={selectionDraft.changes.get(model.id) ?? selectionDraft.saved.get(model.id) ?? model.enabled}
+                        onChange={event => toggleModel(model.id, event.target.checked)} />
+                      <span>
+                        <strong title={model.name}>{model.name}</strong>
+                        <small>
+                          {model.name !== model.id && <><span title={model.id}>{model.id}</span> · </>}
+                          Context: {model.contextWindow?.toLocaleString() ?? "Unknown"} · Output: {model.maxOutputTokens?.toLocaleString() ?? "Unknown"}
+                          {model.manual ? " · Manual" : ""}
+                          {model.contextWindowOverride !== null || model.maxOutputTokensOverride !== null ? " · Custom limits" : ""}
+                        </small>
+                      </span>
+                    </label>
                     <div className={styles.modelActions}>
-                      <button
-                        type="button"
-                        className="button secondary"
-                        aria-label={`Edit ${model.name}`}
-                        onClick={() => setModelEditor({ model })}
-                      >
-                        <Pencil size={14} aria-hidden="true" />
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="button secondary"
-                        aria-label={`Test ${model.name}`}
-                        disabled={dirty}
-                        title={
-                          dirty
-                            ? "Apply or save connection changes first"
-                            : "Send a short test prompt"
-                        }
-                        onClick={() => void test(model)}
-                      >
-                        <Play size={14} aria-hidden="true" />
-                        {testing === model.id ? "Testing…" : "Test"}
-                      </button>
+                      <Tooltip content={`Edit ${model.name}`}><button type="button" className="iconButton"
+                        aria-label={`Edit ${model.name}`} onClick={() => setModelEditor({ model })}>
+                        <Pencil size={15} aria-hidden="true" />
+                      </button></Tooltip>
+                      <Tooltip content={dirty ? "Apply or save connection changes first" : testing === model.id ? "Testing…" : `Test ${model.name}`}>
+                        <button type="button" className="iconButton" aria-label={testing === model.id ? `Testing ${model.name}` : `Test ${model.name}`}
+                          disabled={dirty || !!testing} aria-busy={testing === model.id} onClick={() => void test(model)}>
+                          {testing === model.id ? <LoaderCircle className={styles.testingIcon} size={15} aria-hidden="true" /> : <Play size={15} aria-hidden="true" />}
+                        </button>
+                      </Tooltip>
                     </div>
                   </div>
-                  <p className={styles.limits}>
-                    Context:{" "}
-                    {model.contextWindow?.toLocaleString() ?? "Unknown"} tokens
-                    · Maximum output:{" "}
-                    {model.maxOutputTokens?.toLocaleString() ?? "Unknown"}{" "}
-                    tokens
-                  </p>
-                  <p className={styles.status}>
-                    {model.manual ? "Manually added" : "Discovered"}
-                    {!model.available && !model.manual
-                      ? " · Not returned by the latest refresh; kept in your list"
-                      : ""}
-                    {model.contextWindowOverride !== null ||
-                    model.maxOutputTokensOverride !== null
-                      ? " · Custom limits"
-                      : ""}
-                  </p>
+                  {(model.lastTest || model.legacyLimits.length > 0 || (!model.available && !model.manual)) && (
+                  <details className={styles.modelDetails}>
+                    <summary>{model.lastTest ? model.lastTest.success ? "Test passed" : "Test failed" : "Model details"}</summary>
+                    {!model.available && !model.manual && <p className={styles.status}>Not returned by the latest refresh; kept in your list.</p>}
                   {model.legacyLimits.length > 0 && (
                     <p className={`${styles.status} ${styles.failure}`}>
                       Previous presets used different limits:{" "}
@@ -1040,7 +1119,7 @@ function ProviderEditor({
                         : model.lastTest.error}
                     </p></Appearance>
                   )}
-                  </AppearanceGroup>
+                  </details>)}
                 </article></Appearance>
               ))}
             </div>
@@ -1135,7 +1214,7 @@ function ProviderEditor({
             </button>
             <button
               className="button primary"
-              disabled={!provider || busy || !!testing}
+              disabled={!provider || busy || !!testing || selectionLoading || !!selectionLoadError}
             >
               <Check size={14} aria-hidden="true" />
               {busy ? "Working…" : "Save Provider"}
@@ -1143,6 +1222,17 @@ function ProviderEditor({
           </div>
         </footer>
       </form>
+      {selectionImpact && (
+        <Dialog title="Clear linked model choices?" busy={busy} onClose={() => setSelectionImpact(null)}>
+          <p>Saving this Provider will clear the model choice from {selectionImpact.total.toLocaleString()} linked {selectionImpact.total === 1 ? "preset" : "presets"}. Their Provider and compaction settings will be kept.</p>
+          <ul>{selectionImpact.presets.map(preset => <li key={preset.id}>{preset.name}</li>)}</ul>
+          {selectionImpact.total > selectionImpact.presets.length && <p>And {(selectionImpact.total - selectionImpact.presets.length).toLocaleString()} more.</p>}
+          <div className="dialogActions">
+            <button type="button" className="button secondary" disabled={busy} onClick={() => setSelectionImpact(null)}>Cancel</button>
+            <button type="button" className="button primary" disabled={busy} onClick={() => void saveProvider(selectionImpact.confirmationToken)}>{busy ? "Saving…" : "Save & clear model choices"}</button>
+          </div>
+        </Dialog>
+      )}
       {id && modelEditor && (
         <ModelEditor
           connectionId={id}

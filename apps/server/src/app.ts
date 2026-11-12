@@ -7,6 +7,7 @@ import { registerSettings } from "./settings.js";
 import { registerThemes } from "./themes.js";
 import { openDatabase } from "./database.js";
 import { registerConnections, type ConnectionOptions } from "./connections.js";
+import { SelectionConfirmationError } from "./provider-models.js";
 import { ConnectionError } from "./model-providers.js";
 import type {
   Compaction,
@@ -60,6 +61,8 @@ export function createApp(
   });
   const database = openDatabase(options.databasePath);
   app.setErrorHandler((error, request, reply) => {
+    if (error instanceof SelectionConfirmationError)
+      return reply.code(409).send({ error: error.message, selectionImpact: error.impact });
     if (error instanceof ConnectionError)
       return reply.code(error.statusCode).send({ error: error.message });
     if (error instanceof InputError)

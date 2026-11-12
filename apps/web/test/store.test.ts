@@ -217,3 +217,30 @@ test("an old preset refresh cannot overwrite a newer successful save", async (t)
   assert.equal(store.getState().presets[0]?.name, "New");
   assert.equal(store.getState().presetStatus, "ready");
 });
+
+test("confirmed provider selection repairs loaded preset bindings and prevents stale refresh restoration", async t => {
+  const linked = { ...presetRecord("linked"), connectionId: "provider", modelId: "hidden", contextWindow: 1000, maxOutputTokens: 100 };
+  const unrelated = { ...presetRecord("unrelated"), connectionId: "other", modelId: "hidden" };
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>(resolve => { finish = resolve; });
+  let reads = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    reads++;
+    return reads === 1 ? Response.json({ items: [linked, unrelated], total: 2 }) : pending;
+  });
+  const store = createDashboardStore(createSettingsStore(initialSettings()));
+  await store.getState().loadPresets();
+  const other = store.getState().presets[1];
+  const loading = store.getState().loadPresets();
+  store.getState().clearPresetModels("provider", ["hidden"]);
+  finish(Response.json({ items: [linked, unrelated], total: 2 }));
+  await loading;
+  const repaired = store.getState().presets[0]!;
+  assert.equal(repaired.modelId, null);
+  assert.equal(repaired.contextWindow, null);
+  assert.equal(repaired.maxOutputTokens, null);
+  assert.equal(repaired.connectionId, "provider");
+  assert.deepEqual(repaired.compaction, linked.compaction);
+  assert.equal(repaired.updatedAt, linked.updatedAt);
+  assert.equal(store.getState().presets[1], other);
+});

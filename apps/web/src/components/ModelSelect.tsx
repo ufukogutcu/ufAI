@@ -26,6 +26,7 @@ export function ModelSelect({
   });
   const [selected, setSelected] = useState<ProviderModel | null>(null);
   const [message, setMessage] = useState("");
+  const [selectedMessage, setSelectedMessage] = useState("");
   useEffect(() => refreshOnFocus(async () => setRevision((v) => v + 1)), []);
   useEffect(() => {
     const controller = new AbortController();
@@ -34,7 +35,7 @@ export function ModelSelect({
     if (!connectionId) return;
     const timer = setTimeout(() => {
       void request<{ items: ProviderModel[]; total: number }>(
-        `/connections/${connectionId}/models?limit=50&offset=${offset}&q=${encodeURIComponent(query)}`,
+        `/connections/${connectionId}/models?enabled=true&limit=50&offset=${offset}&q=${encodeURIComponent(query)}`,
         "GET",
         undefined,
         controller.signal,
@@ -54,6 +55,7 @@ export function ModelSelect({
   useEffect(() => {
     const controller = new AbortController();
     setSelected(null);
+    setSelectedMessage("");
     onResolved(null);
     if (connectionId && value)
       void request<ProviderModel>(
@@ -65,11 +67,12 @@ export function ModelSelect({
         .then((model) => {
           if (!controller.signal.aborted) {
             setSelected(model);
-            onResolved(model);
+            onResolved(model.enabled ? model : null);
+            if (!model.enabled) setSelectedMessage("This model is no longer selected in its Provider. Choose another model.");
           }
         })
         .catch((error) => {
-          if (!controller.signal.aborted) setMessage(errorMessage(error));
+          if (!controller.signal.aborted) setSelectedMessage(errorMessage(error));
         });
     return () => controller.abort();
   }, [connectionId, value, onResolved, revision]);
@@ -107,7 +110,7 @@ export function ModelSelect({
           >
             <option value="">None</option>
             {value && !page.items.some((m) => m.id === value) && (
-              <option value={value}>{selected?.name ?? value}</option>
+              <option value={value} disabled={selected?.enabled === false}>{selected?.name ?? value}{selected?.enabled === false ? " (unselected)" : ""}</option>
             )}
             {page.items.map((model) => (
               <option key={model.id} value={model.id}>
@@ -140,9 +143,9 @@ export function ModelSelect({
           </button>
         </div>
       )}
-      {message && (
+      {(message || selectedMessage) && (
         <Appearance kind="fade"><p className="fieldError" role="status">
-          {message}
+          {message || selectedMessage}
         </p></Appearance>
       )}
     </div>

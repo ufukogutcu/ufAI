@@ -1,8 +1,11 @@
+import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import type {
   DiscoveredModel,
   ModelTestResult,
   ProviderModel,
+  ModelSelection,
+  SelectionImpact,
 } from "./contracts.js";
 import { ConnectionError } from "./model-providers.js";
 import { InputError, objectBody } from "./validation.js";
@@ -11,21 +14,29 @@ type Row = Omit<
   ProviderModel,
   | "contextWindow"
   | "maxOutputTokens"
+  | "enabled"
   | "manual"
   | "available"
   | "lastTest"
   | "legacyLimits"
 > & {
+  enabled: number;
   manual: number;
   available: number;
   lastTest: string | null;
   legacyLimits: string;
 };
+export class SelectionConfirmationError extends Error {
+  constructor(public impact: SelectionImpact) {
+    super("Saving will clear model choices from linked presets. Confirm to continue.");
+  }
+}
 export class ProviderModels {
   constructor(private db: Database.Database) {}
   private public(row: Row): ProviderModel {
     return {
       ...row,
+      enabled: !!row.enabled,
       manual: !!row.manual,
       available: !!row.available,
       lastTest: row.lastTest
@@ -47,20 +58,20 @@ export class ProviderModels {
       .get(connectionId, id) as Row | undefined;
     return row ? this.public(row) : undefined;
   }
-  count(connectionId: string): number {
+  count(connectionId: string, enabledOnly = false): number {
     return (
       this.db
         .prepare(
-          "SELECT count(*) AS total FROM provider_models WHERE connectionId = ?",
+          `SELECT count(*) AS total FROM provider_models WHERE connectionId = ?${enabledOnly ? " AND enabled = 1" : ""}`,
         )
         .get(connectionId) as { total: number }
     ).total;
   }
-  list(connectionId: string, limit: number, offset: number, query = "") {
+  list(connectionId: string, limit: number, offset: number, query = "", enabledOnly = false) {
     // instr treats search text literally, including SQL wildcard characters.
     const args = [connectionId, query.toLowerCase(), query.toLowerCase()];
     const where =
-      "connectionId = ? AND (instr(lower(name), ?) > 0 OR instr(lower(id), ?) > 0)";
+      `connectionId = ? AND (instr(lower(name), ?) > 0 OR instr(lower(id), ?) > 0)${enabledOnly ? " AND enabled = 1" : ""}`;
     return {
       items: (
         this.db
@@ -77,6 +88,82 @@ export class ProviderModels {
           .get(...args) as { total: number }
       ).total,
     };
+  }
+  selection(connectionId: string, query = ""): { items: ModelSelection[] } {
+    const rows = this.db
+      .prepare(`SELECT id, enabled FROM provider_models WHERE connectionId = ?
+        AND (instr(lower(name), ?) > 0 OR instr(lower(id), ?) > 0) ORDER BY id LIMIT 5000`)
+      .all(connectionId, query.toLowerCase(), query.toLowerCase()) as {
+        id: string;
+        enabled: number;
+      }[];
+    return {
+      items: rows.map((row) => ({ id: row.id, enabled: !!row.enabled })),
+    };
+  }
+  // Called within the connection save transaction; confirmation failures roll back every write.
+  applySelection(
+    connectionId: string,
+    input: unknown,
+    confirmationToken: unknown,
+    requireSelected: boolean,
+  ) {
+    if (!Array.isArray(input) || input.length > 5000)
+      throw new InputError({ models: "Choose at most 5,000 model changes." });
+    const catalog = new Set(
+      this.selection(connectionId).items.map((model) => model.id),
+    );
+    const seen = new Set<string>();
+    for (const item of input) {
+      if (
+        !item || typeof item !== "object" || Array.isArray(item) ||
+        Object.keys(item).some((key) => key !== "id" && key !== "enabled") ||
+        typeof item.id !== "string" || typeof item.enabled !== "boolean" ||
+        !catalog.has(item.id) || seen.has(item.id)
+      )
+        throw new InputError({
+          models: "Choose each model once from this Provider’s saved catalog.",
+        });
+      seen.add(item.id);
+    }
+    if (
+      confirmationToken !== undefined &&
+      (typeof confirmationToken !== "string" || !/^[a-f0-9]{64}$/.test(confirmationToken))
+    )
+      throw new InputError({ models: "Invalid selection confirmation." });
+    const changes = input as ModelSelection[];
+    const update = this.db.prepare(
+      "UPDATE provider_models SET enabled = ? WHERE connectionId = ? AND id = ?",
+    );
+    for (const item of changes)
+      update.run(item.enabled ? 1 : 0, connectionId, item.id);
+    if (requireSelected && !this.count(connectionId, true))
+      throw new InputError({
+        models: "Select at least one model before saving the Provider.",
+      });
+    const normalized = [...changes].sort((a, b) => a.id.localeCompare(b.id));
+    const hash = createHash("sha256").update(JSON.stringify([connectionId, normalized]));
+    const impact: SelectionImpact = {
+      total: 0,
+      presets: [],
+      confirmationToken: "",
+    };
+    const affected = this.db.prepare(`SELECT p.id, p.name, p.modelId FROM model_presets p
+      JOIN provider_models m ON m.connectionId = p.connectionId AND m.id = p.modelId
+      WHERE p.connectionId = ? AND m.enabled = 0 ORDER BY p.id`);
+    for (const value of affected.iterate(connectionId)) {
+      const row = value as { id: string; name: string; modelId: string };
+      hash.update(JSON.stringify(row));
+      impact.total++;
+      if (impact.presets.length < 20)
+        impact.presets.push({ id: row.id, name: row.name });
+    }
+    impact.confirmationToken = hash.digest("hex");
+    if (impact.total && confirmationToken !== impact.confirmationToken)
+      throw new SelectionConfirmationError(impact);
+    this.db.prepare(`UPDATE model_presets SET modelId = NULL, contextWindow = NULL, maxOutputTokens = NULL
+      WHERE connectionId = ? AND modelId IN (SELECT id FROM provider_models WHERE connectionId = ? AND enabled = 0)`)
+      .run(connectionId, connectionId);
   }
   save(connectionId: string, body: unknown, id?: string) {
     const patch = objectBody(body);
@@ -195,11 +282,11 @@ export class ProviderModels {
     })();
   }
   remove(connectionId: string, id: string, draft: boolean) {
-    if (!this.get(connectionId, id))
-      throw new ConnectionError("Model not found.", 404);
-    if (!draft && this.count(connectionId) <= 1)
+    const model = this.get(connectionId, id);
+    if (!model) throw new ConnectionError("Model not found.", 404);
+    if (!draft && model.enabled && this.count(connectionId, true) <= 1)
       throw new ConnectionError(
-        "A saved Provider needs at least one model. Delete the Provider instead.",
+        "A saved Provider needs at least one selected model. Delete the Provider instead.",
         409,
       );
     this.db.transaction(() => {

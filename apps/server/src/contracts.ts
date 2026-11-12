@@ -61,6 +61,8 @@ export interface ConnectionInput {
   endpoint?: string | null;
   apiKey?: string;
   draft?: boolean;
+  modelSelection?: ModelSelection[];
+  confirmationToken?: string;
 }
 export interface ProviderConnection {
   id: string;
@@ -85,7 +87,17 @@ export interface ModelTestResult {
   reply: string;
   error: string | null;
 }
+export interface ModelSelection {
+  id: string;
+  enabled: boolean;
+}
+export interface SelectionImpact {
+  total: number;
+  presets: { id: string; name: string }[];
+  confirmationToken: string;
+}
 export interface ProviderModel extends DiscoveredModel {
+  enabled: boolean;
   connectionId: string;
   discoveredContextWindow: number | null;
   discoveredMaxOutputTokens: number | null;
@@ -113,6 +125,7 @@ export interface Page<T> {
 
 export interface ApiError {
   error: string;
+  selectionImpact?: SelectionImpact;
   fields?: Record<string, string>;
 }
 
