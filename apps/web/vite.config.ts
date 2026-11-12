@@ -46,7 +46,11 @@ export default defineConfig({
     port: Number(process.env.WEB_PORT ?? 5173),
     strictPort: true,
     proxy: {
-      "/api": `http://${process.env.HOST ?? "127.0.0.1"}:${process.env.PORT ?? 3000}`,
+      "/api": {
+        target: `http://${process.env.HOST ?? "127.0.0.1"}:${process.env.PORT ?? 3000}`,
+        // Keep Host aligned with the browser Origin for connection-route checks.
+        changeOrigin: false,
+      },
     },
   },
 });
