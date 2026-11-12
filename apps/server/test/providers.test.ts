@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
+import { restoreOutputColumns } from "./legacy-schema.js";
 import {
   discoverOllama,
   testApiModel,
@@ -225,7 +226,7 @@ test("shared limits update linked presets, incomplete selections save, and delet
   await app.inject({
     method: "PATCH",
     url: `/api/connections/${id}/models/manual`,
-    payload: { contextWindowOverride: 2000, maxOutputTokensOverride: 1000 },
+    payload: { contextWindowOverride: 2000 },
   });
   let changed = (await app.inject("/api/model-presets"))
     .json()
@@ -259,7 +260,7 @@ test("shared limits update linked presets, incomplete selections save, and delet
   assert.equal(changed.provider, null);
   assert.deepEqual(changed.compaction, preset.compaction);
 });
-test("model validation rejects invalid limits and duplicate IDs without changing the saved model", async (t) => {
+test("model validation rejects invalid context and duplicate IDs without changing the saved model", async (t) => {
   const app = setup();
   t.after(() => app.close());
   const id = await draft(app);
@@ -299,7 +300,7 @@ test("model validation rejects invalid limits and duplicate IDs without changing
     400,
   );
 });
-test("all API test adapters send a small prompt, use correct auth, cap output, and recognize text", async () => {
+test("all API test adapters send a small prompt, use correct auth, budget only Anthropic, and recognize text", async () => {
   const providers: Exclude<ConnectionProvider, "codex">[] = [
     "openai",
     "xai",
@@ -334,23 +335,23 @@ test("all API test adapters send a small prompt, use correct auth, cap output, a
           : "Bearer private",
       );
       if (provider === "anthropic") {
-        assert.equal(body.max_tokens, 100);
+        assert.equal(body.max_tokens, 2048);
         return Response.json({ content: [{ type: "text", text: "Yes" }] });
       }
       if (provider === "google") {
         assert.ok(String(url).endsWith("/models/test:generateContent"));
-        assert.equal(body.generationConfig.maxOutputTokens, 100);
+        assert.equal(body.generationConfig, undefined);
         return Response.json({
           candidates: [{ content: { parts: [{ text: "Yes" }] } }],
         });
       }
       if (provider === "ollama") {
         assert.equal(body.stream, false);
-        assert.equal(body.options.num_predict, 100);
+        assert.equal(body.options, undefined);
         return Response.json({ message: { content: "Yes" }, done: true });
       }
       if (provider === "openai" || provider === "xai") {
-        assert.equal(body.max_output_tokens, 100);
+        assert.equal(body.max_output_tokens, undefined);
         return Response.json({
           status: "completed",
           output: [
@@ -361,7 +362,7 @@ test("all API test adapters send a small prompt, use correct auth, cap output, a
           ],
         });
       }
-      assert.equal(body.max_tokens, 100);
+      assert.equal(body.max_tokens, undefined);
       return Response.json({
         choices: [{ message: { content: "Yes" }, finish_reason: "stop" }],
       });
@@ -372,7 +373,6 @@ test("all API test adapters send a small prompt, use correct auth, cap output, a
         "https://example.com",
         "private",
         "test",
-        100,
         new AbortController().signal,
         fetcher,
       ),
@@ -391,7 +391,6 @@ test("all API test adapters send a small prompt, use correct auth, cap output, a
         "https://example.com",
         null,
         "test",
-        null,
         new AbortController().signal,
         async () => Response.json({ secret: "PRIVATE" }, { status }),
       ),
@@ -403,7 +402,6 @@ test("all API test adapters send a small prompt, use correct auth, cap output, a
       "https://example.com",
       null,
       "test",
-      null,
       new AbortController().signal,
       async () =>
         Response.json({
@@ -553,15 +551,16 @@ test("migration 6 preserves linked models, conflicting historical limits, and un
   t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "state.sqlite");
   const db = openDatabase(path);
+  restoreOutputColumns(db);
   db.exec(`DROP TABLE provider_models; ALTER TABLE connections DROP COLUMN draft;
     ALTER TABLE connections ADD COLUMN isDefault INTEGER NOT NULL DEFAULT 0 CHECK (isDefault IN (0, 1));
     CREATE UNIQUE INDEX connections_default ON connections(provider) WHERE isDefault = 1;
     INSERT INTO connections (id, provider, name, endpoint, credential, isDefault, createdAt, updatedAt)
     VALUES ('saved', 'openai', 'Saved', NULL, NULL, 1, 'created', 'updated');
-    INSERT INTO model_presets VALUES ('one', 'One', 'provider', 'openai', NULL, 'same', 1000, 100, 'saved', 'percentage', 80, 'created', 'updated');
-    INSERT INTO model_presets VALUES ('two', 'Two', 'provider', 'openai', NULL, 'same', 2000, 200, 'saved', NULL, NULL, 'created', 'updated');
-    INSERT INTO model_presets VALUES ('three', 'Three', 'provider', 'openai', NULL, 'unique', 3000, 300, 'saved', NULL, NULL, 'created', 'updated');
-    INSERT INTO model_presets VALUES ('unlinked', 'Unlinked', 'provider', 'custom', 'My old service', 'old', 4000, 400, NULL, 'tokens', 2000, 'created', 'updated');
+    INSERT INTO model_presets (id, name, integrationKind, provider, customProviderName, modelId, contextWindow, maxOutputTokens, connectionId, compactionMode, compactionValue, createdAt, updatedAt) VALUES ('one', 'One', 'provider', 'openai', NULL, 'same', 1000, 100, 'saved', 'percentage', 80, 'created', 'updated');
+    INSERT INTO model_presets (id, name, integrationKind, provider, customProviderName, modelId, contextWindow, maxOutputTokens, connectionId, compactionMode, compactionValue, createdAt, updatedAt) VALUES ('two', 'Two', 'provider', 'openai', NULL, 'same', 2000, 200, 'saved', NULL, NULL, 'created', 'updated');
+    INSERT INTO model_presets (id, name, integrationKind, provider, customProviderName, modelId, contextWindow, maxOutputTokens, connectionId, compactionMode, compactionValue, createdAt, updatedAt) VALUES ('three', 'Three', 'provider', 'openai', NULL, 'unique', 3000, 300, 'saved', NULL, NULL, 'created', 'updated');
+    INSERT INTO model_presets (id, name, integrationKind, provider, customProviderName, modelId, contextWindow, maxOutputTokens, connectionId, compactionMode, compactionValue, createdAt, updatedAt) VALUES ('unlinked', 'Unlinked', 'provider', 'custom', 'My old service', 'old', 4000, 400, NULL, 'tokens', 2000, 'created', 'updated');
     PRAGMA user_version = 5;`);
   const settings = db.prepare("SELECT * FROM app_settings").get();
   db.close();
@@ -700,7 +699,7 @@ test("Codex refresh persists catalog defaults, retains manual overrides, and upd
   const items = response.json<{ items: ProviderModel[] }>().items;
   assert.equal(items.find((m) => m.id === "first")?.discoveredContextWindow, 500000);
   assert.equal(items.find((m) => m.id === "second")?.discoveredContextWindow, 272000);
-  assert.ok(items.every((m) => m.discoveredMaxOutputTokens === null && m.maxOutputTokens === null));
+  assert.ok(items.every((m) => !("discoveredMaxOutputTokens" in m) && !("maxOutputTokens" in m)));
   const preset = await app.inject({ method: "POST", url: "/api/model-presets", payload: { name: "Codex defaults", connectionId: id, modelId: "first" } });
   assert.equal(preset.statusCode, 201, preset.body);
   assert.equal(preset.json().contextWindow, 500000);
@@ -710,7 +709,7 @@ test("Codex refresh persists catalog defaults, retains manual overrides, and upd
   assert.equal((await refresh()).statusCode, 200);
   assert.equal((await app.inject(modelUrl)).json<ProviderModel>().contextWindow, 450000);
   assert.equal((await readPreset()).contextWindow, 450000);
-  response = await app.inject({ method: "PATCH", url: modelUrl, payload: { contextWindowOverride: 600000, maxOutputTokensOverride: 42 } });
+  response = await app.inject({ method: "PATCH", url: modelUrl, payload: { contextWindowOverride: 600000 } });
   assert.equal(response.statusCode, 200, response.body);
   await catalog(400000);
   response = await refresh();
@@ -718,28 +717,22 @@ test("Codex refresh persists catalog defaults, retains manual overrides, and upd
   let model = (await app.inject(modelUrl)).json<ProviderModel>();
   assert.equal(model.discoveredContextWindow, 400000);
   assert.equal(model.contextWindow, 600000);
-  assert.equal(model.maxOutputTokens, 42);
   assert.equal((await readPreset()).contextWindow, 600000);
-  assert.equal((await readPreset()).maxOutputTokens, 42);
   response = await app.inject({ method: "PATCH", url: modelUrl, payload: { contextWindowOverride: null } });
   assert.equal(response.statusCode, 200, response.body);
   model = response.json<ProviderModel>();
   assert.equal(model.contextWindow, 400000);
   assert.equal(model.contextWindowOverride, null);
-  assert.equal(model.maxOutputTokensOverride, 42);
-  assert.equal(model.maxOutputTokens, 42);
   assert.equal((await readPreset()).contextWindow, 400000);
-  assert.equal((await readPreset()).maxOutputTokens, 42);
   await catalog(300000);
   assert.equal((await refresh()).statusCode, 200);
   assert.equal((await readPreset()).contextWindow, 300000);
-  response = await app.inject({ method: "PATCH", url: modelUrl, payload: { contextWindowOverride: 600000, maxOutputTokensOverride: 500000 } });
+  response = await app.inject({ method: "PATCH", url: modelUrl, payload: { contextWindowOverride: 600000 } });
   assert.equal(response.statusCode, 200, response.body);
   response = await app.inject({ method: "PATCH", url: modelUrl, payload: { contextWindowOverride: null } });
-  assert.equal(response.statusCode, 400, response.body);
+  assert.equal(response.statusCode, 200, response.body);
   model = (await app.inject(modelUrl)).json<ProviderModel>();
-  assert.equal(model.contextWindowOverride, 600000);
+  assert.equal(model.contextWindowOverride, null);
   assert.equal(model.discoveredContextWindow, 300000);
-  assert.equal(model.maxOutputTokensOverride, 500000);
-  assert.equal((await readPreset()).contextWindow, 600000);
+  assert.equal((await readPreset()).contextWindow, 300000);
 });

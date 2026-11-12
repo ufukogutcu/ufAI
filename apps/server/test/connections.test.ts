@@ -6,6 +6,7 @@ import { test } from "node:test";
 import Database from "better-sqlite3";
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
+import { restoreOutputColumns } from "./legacy-schema.js";
 import { ConnectionSecrets } from "../src/connection-secrets.js";
 import type { CodexAdapter } from "../src/codex-runtime.js";
 import { discoverApiModels } from "../src/model-providers.js";
@@ -522,7 +523,6 @@ test("Codex routes handle sign-in, device fallback, cancellation, logout and san
         id: "codex-model",
         name: "Codex model",
         contextWindow: null,
-        maxOutputTokens: null,
       },
     ],
     remove: async (id) => {
@@ -602,12 +602,12 @@ test("migration 7 removes provider defaults and preserves configuration, catalog
     VALUES ('second', 'openai', 'Second', NULL, NULL, 0, 'created', 'updated'),
       ('setup', 'codex', 'Unfinished setup', NULL, NULL, 1, 'created', 'updated');
     INSERT INTO provider_models (connectionId, id, name, discoveredContextWindow,
-      discoveredMaxOutputTokens, contextWindowOverride, maxOutputTokensOverride,
+      contextWindowOverride,
       manual, available, lastTest, legacyLimits)
-    VALUES ('saved', 'manual', 'Saved model', 10000, 1000, 8000, 800, 1, 0,
+    VALUES ('saved', 'manual', 'Saved model', 10000, 8000, 1, 0,
       '{"success":true,"testedAt":"tested","durationMs":5,"reply":"OK","error":null}',
-      '[{"contextWindow":9000,"maxOutputTokens":900}]'),
-      ('second', 'other', 'Other model', NULL, NULL, NULL, NULL, 1, 1, NULL, '[]');
+      '[]'),
+      ('second', 'other', 'Other model', NULL, NULL, 1, 1, NULL, '[]');
     INSERT INTO model_presets (id, name, integrationKind, provider, modelId,
       connectionId, compactionMode, compactionValue, createdAt, updatedAt)
     VALUES ('linked', 'Linked', 'provider', 'openai', 'manual', 'saved',
@@ -629,6 +629,9 @@ test("migration 7 removes provider defaults and preserves configuration, catalog
     );
   }
   const expected = snapshot(db);
+  restoreOutputColumns(db);
+  db.exec(`UPDATE provider_models SET discoveredMaxOutputTokens = 1000, maxOutputTokensOverride = 800,
+    legacyLimits = '[{"contextWindow":9000,"maxOutputTokens":900}]' WHERE connectionId = 'saved'`);
   // Restore the removed v6 column and index to exercise an existing installation.
   db.exec(`
     ALTER TABLE connections ADD COLUMN isDefault INTEGER NOT NULL DEFAULT 0 CHECK (isDefault IN (0, 1));
@@ -641,7 +644,7 @@ test("migration 7 removes provider defaults and preserves configuration, catalog
   for (let attempt = 0; attempt < 2; attempt++) {
     db = openDatabase(path);
     try {
-      assert.equal(db.pragma("user_version", { simple: true }), 8);
+      assert.equal(db.pragma("user_version", { simple: true }), 9);
       assert.deepEqual(db.pragma("foreign_key_check"), []);
       assert.equal(
         db.prepare(
@@ -671,6 +674,7 @@ test("migration 5 removes notes and preserves legacy records, settings and times
   t.after(() => rm(directory, { recursive: true, force: true }));
   const databasePath = join(directory, "test.sqlite");
   const old = openDatabase(databasePath);
+  restoreOutputColumns(old);
   old.exec(`DROP TABLE provider_models; DROP INDEX model_presets_connection; ALTER TABLE model_presets DROP COLUMN connectionId; DROP TABLE connections;
     ALTER TABLE model_presets ADD COLUMN notes TEXT NOT NULL DEFAULT '';
     INSERT INTO model_presets (id, name, integrationKind, provider, customProviderName, modelId, contextWindow, maxOutputTokens, compactionMode, compactionValue, createdAt, updatedAt, notes)

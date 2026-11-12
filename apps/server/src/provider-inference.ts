@@ -87,7 +87,6 @@ export async function discoverOllama(
           id,
           name: id,
           contextWindow: null,
-          maxOutputTokens: null,
         });
     }
     let next = 0;
@@ -136,7 +135,6 @@ export async function testApiModel(
   endpoint: string,
   apiKey: string | null,
   modelId: string,
-  maxOutputTokens: number | null,
   signal: AbortSignal,
   fetcher: typeof fetch = fetch,
 ): Promise<string> {
@@ -149,7 +147,6 @@ export async function testApiModel(
     else if (provider === "google") headers["x-goog-api-key"] = apiKey;
     else headers.Authorization = `Bearer ${apiKey}`;
   }
-  const cap = Math.min(2048, maxOutputTokens ?? 2048);
   let path: string;
   let body: Record<string, unknown>;
   if (provider === "anthropic") {
@@ -157,14 +154,14 @@ export async function testApiModel(
     path = "/messages";
     body = {
       model: modelId,
-      max_tokens: cap,
+      // Required by Anthropic; this budget belongs only to the reply test.
+      max_tokens: 2048,
       messages: [{ role: "user", content: TEST_PROMPT }],
     };
   } else if (provider === "google") {
     path = `/models/${encodeURIComponent(modelId)}:generateContent`;
     body = {
       contents: [{ parts: [{ text: TEST_PROMPT }] }],
-      generationConfig: { maxOutputTokens: cap },
     };
   } else if (provider === "ollama") {
     path = "/api/chat";
@@ -172,14 +169,12 @@ export async function testApiModel(
       model: modelId,
       stream: false,
       messages: [{ role: "user", content: TEST_PROMPT }],
-      options: { num_predict: cap },
     };
   } else if (provider === "openai" || provider === "xai") {
     path = "/responses";
     body = {
       model: modelId,
       input: TEST_PROMPT,
-      max_output_tokens: cap,
       store: false,
     };
   } else {
@@ -187,7 +182,6 @@ export async function testApiModel(
     body = {
       model: modelId,
       messages: [{ role: "user", content: TEST_PROMPT }],
-      max_tokens: cap,
       stream: false,
     };
   }

@@ -15,7 +15,7 @@ Some terms describe planned capabilities. Check the platform guide before presen
 | Workspace | A grouping for related agents and work; currently a name, optional description, and empty flowboard |
 | Flowboard | The visual board belonging to a workspace |
 | Agent Preset | A named reusable configuration with optional saved Provider/model choices and compaction settings |
-| Model provider | A service or local endpoint offering model access; ufAI supports connection setup, model discovery, shared model limits, and short prompt tests; general inference is unavailable |
+| Model provider | A service or local endpoint offering model access; ufAI supports connection setup, model discovery, shared model context windows, and short prompt tests; general inference is unavailable |
 | Agent runtime | An existing agent system such as Codex; ufAI currently supports Codex sign-in, model discovery, and short prompt tests; general agent execution is unavailable |
 | Provider | A named saved service/account/endpoint configuration with at least one model; Agent Presets select from these records |
 | Agent | A planned configured identity with instructions, skills, a model/runtime, and permissions |

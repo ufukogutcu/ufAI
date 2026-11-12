@@ -13,7 +13,6 @@ import { InputError, objectBody } from "./validation.js";
 type Row = Omit<
   ProviderModel,
   | "contextWindow"
-  | "maxOutputTokens"
   | "enabled"
   | "manual"
   | "available"
@@ -46,8 +45,6 @@ export class ProviderModels {
         row.legacyLimits,
       ) as ProviderModel["legacyLimits"],
       contextWindow: row.contextWindowOverride ?? row.discoveredContextWindow,
-      maxOutputTokens:
-        row.maxOutputTokensOverride ?? row.discoveredMaxOutputTokens,
     };
   }
   get(connectionId: string, id: string): ProviderModel | undefined {
@@ -161,7 +158,7 @@ export class ProviderModels {
     impact.confirmationToken = hash.digest("hex");
     if (impact.total && confirmationToken !== impact.confirmationToken)
       throw new SelectionConfirmationError(impact);
-    this.db.prepare(`UPDATE model_presets SET modelId = NULL, contextWindow = NULL, maxOutputTokens = NULL
+    this.db.prepare(`UPDATE model_presets SET modelId = NULL, contextWindow = NULL
       WHERE connectionId = ? AND modelId IN (SELECT id FROM provider_models WHERE connectionId = ? AND enabled = 0)`)
       .run(connectionId, connectionId);
   }
@@ -174,7 +171,6 @@ export class ProviderModels {
           "id",
           "name",
           "contextWindowOverride",
-          "maxOutputTokensOverride",
         ].includes(key)
       )
         errors[key] = "Unknown field.";
@@ -196,46 +192,27 @@ export class ProviderModels {
     const name = patch.name ?? existing?.name ?? modelId;
     if (typeof name !== "string" || !name.trim() || name.length > 300)
       errors.name = "Enter a model name between 1 and 300 characters.";
-    const limits = {
-      contextWindowOverride: existing?.contextWindowOverride ?? null,
-      maxOutputTokensOverride: existing?.maxOutputTokensOverride ?? null,
-    };
-    for (const key of [
-      "contextWindowOverride",
-      "maxOutputTokensOverride",
-    ] as const) {
-      if (patch[key] !== undefined) {
-        const value = patch[key];
-        if (
-          value !== null &&
-          (typeof value !== "number" ||
-            !Number.isSafeInteger(value) ||
-            value < 1)
-        )
-          errors[key] =
-            "Enter a positive safe integer, or leave empty for automatic.";
-        else limits[key] = value as number | null;
-      }
+    let contextWindowOverride = existing?.contextWindowOverride ?? null;
+    if (patch.contextWindowOverride !== undefined) {
+      const value = patch.contextWindowOverride;
+      if (
+        value !== null &&
+        (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
+      )
+        errors.contextWindowOverride =
+          "Enter a positive safe integer, or leave empty for automatic.";
+      else contextWindowOverride = value as number | null;
     }
-    const context =
-      limits.contextWindowOverride ?? existing?.discoveredContextWindow;
-    const output =
-      limits.maxOutputTokensOverride ?? existing?.discoveredMaxOutputTokens;
-    if (context && output && output > context)
-      errors.maxOutputTokensOverride =
-        "Maximum output must not exceed context.";
     if (Object.keys(errors).length) throw new InputError(errors);
     if (existing)
       this.db
         .prepare(
-          `UPDATE provider_models SET name = ?, contextWindowOverride = ?, maxOutputTokensOverride = ?, legacyLimits = ? WHERE connectionId = ? AND id = ?`,
+          `UPDATE provider_models SET name = ?, contextWindowOverride = ?, legacyLimits = ? WHERE connectionId = ? AND id = ?`,
         )
         .run(
           (name as string).trim(),
-          limits.contextWindowOverride,
-          limits.maxOutputTokensOverride,
-          patch.contextWindowOverride !== undefined ||
-            patch.maxOutputTokensOverride !== undefined
+          contextWindowOverride,
+          patch.contextWindowOverride !== undefined
             ? "[]"
             : JSON.stringify(existing.legacyLimits),
           connectionId,
@@ -244,14 +221,13 @@ export class ProviderModels {
     else
       this.db
         .prepare(
-          `INSERT INTO provider_models (connectionId, id, name, contextWindowOverride, maxOutputTokensOverride, manual, available) VALUES (?, ?, ?, ?, ?, 1, 0)`,
+          `INSERT INTO provider_models (connectionId, id, name, contextWindowOverride, manual, available) VALUES (?, ?, ?, ?, 1, 0)`,
         )
         .run(
           connectionId,
           (modelId as string).trim(),
           (name as string).trim(),
-          limits.contextWindowOverride,
-          limits.maxOutputTokensOverride,
+          contextWindowOverride,
         );
     return this.get(connectionId, (modelId as string).trim())!;
   }
@@ -263,16 +239,15 @@ export class ProviderModels {
         )
         .run(connectionId);
       const upsert = this.db
-        .prepare(`INSERT INTO provider_models (connectionId, id, name, discoveredContextWindow, discoveredMaxOutputTokens) VALUES (?, ?, ?, ?, ?)
+        .prepare(`INSERT INTO provider_models (connectionId, id, name, discoveredContextWindow) VALUES (?, ?, ?, ?)
         ON CONFLICT(connectionId, id) DO UPDATE SET name = excluded.name,
-        discoveredContextWindow = excluded.discoveredContextWindow, discoveredMaxOutputTokens = excluded.discoveredMaxOutputTokens, available = 1`);
+        discoveredContextWindow = excluded.discoveredContextWindow, available = 1`);
       for (const m of models)
         upsert.run(
           connectionId,
           m.id,
           m.name,
           m.contextWindow,
-          m.maxOutputTokens,
         );
       if (this.count(connectionId) > 5000)
         throw new ConnectionError(
@@ -297,7 +272,7 @@ export class ProviderModels {
         .run(connectionId, id);
       this.db
         .prepare(
-          "UPDATE model_presets SET modelId = NULL, contextWindow = NULL, maxOutputTokens = NULL WHERE connectionId = ? AND modelId = ?",
+          "UPDATE model_presets SET modelId = NULL, contextWindow = NULL WHERE connectionId = ? AND modelId = ?",
         )
         .run(connectionId, id);
     })();

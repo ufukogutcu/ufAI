@@ -54,7 +54,7 @@ export function workspaceInput(
   return { name, description };
 }
 
-// Provider identity and limits are resolved from saved records, never preset overrides.
+// Provider identity and context are resolved from saved records, never preset overrides.
 export function presetInput(
   body: unknown,
   existing?: PresetConfiguration,
@@ -106,7 +106,6 @@ export function presetInput(
     provider: null,
     customProviderName: null,
     contextWindow: null,
-    maxOutputTokens: null,
     compaction,
   };
 }

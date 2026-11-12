@@ -180,8 +180,8 @@ test("Codex discovery enriches only enumerated models with provider defaults and
   const first = runtime.models("one");
   assert.equal(runtime.models("one"), first, "concurrent discovery is coalesced");
   assert.deepEqual(await first, [
-    { id: "first", name: "First", contextWindow: 500000, maxOutputTokens: null },
-    { id: "second", name: "Second", contextWindow: 272000, maxOutputTokens: null },
+    { id: "first", name: "First", contextWindow: 500000 },
+    { id: "second", name: "Second", contextWindow: 272000 },
   ]);
   assert.deepEqual(catalogCalls, [{ home, bundled: false }, { home, bundled: true }]);
   await runtime.login("two", false);

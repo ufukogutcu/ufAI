@@ -2,7 +2,7 @@
 
 An open-source, local-first application for one user to organize AI agents in multiple workspaces through a browser interface. One local backend and SQLite database hold the shared setup across browser sessions.
 
-**Status: early functional dashboard.** The application includes floating page navigation, saved workspace tabs with empty pannable flowboards, project-wide Agent Presets and Providers libraries, and locked light/dark defaults with custom themes backed by SQLite. Settings is an empty page. Saved API connections, bundled Codex subscription sign-in, dedicated Ollama setup, model discovery/manual catalogs, shared model limits, and short model tests are available on Providers. Agent editing/execution, general inference, compaction execution, skills, messaging, and triggers remain planned.
+**Status: early functional dashboard.** The application includes floating page navigation, saved workspace tabs with empty pannable flowboards, project-wide Agent Presets and Providers libraries, and locked light/dark defaults with custom themes backed by SQLite. Settings is an empty page. Saved API connections, bundled Codex subscription sign-in, dedicated Ollama setup, model discovery/manual catalogs, shared model context windows, and short model tests are available on Providers. Agent editing/execution, general inference, compaction execution, skills, messaging, and triggers remain planned.
 
 ## Stack
 
@@ -68,8 +68,8 @@ SQLite is created at `data/ufai.sqlite` on server startup, with WAL mode and for
 ## Dashboard
 
 - **Home:** create, rename, and delete workspaces; switch between empty flowboards with pan, zoom, and reset controls. Board viewports are saved per workspace in SQLite after pan/zoom interactions.
-- **Providers:** configure named API, Codex subscription, custom OpenAI-compatible, and local Ollama connections. Discover or manually add models, refresh the saved catalog, edit shared context/output limits, and send a short test prompt. Saving requires at least one model, while discovery and testing remain optional. Codex is bundled and needs no separate CLI install.
-- **Agent Presets:** create, edit, and delete reusable agent configurations. Only a name is required; choose a saved Provider/model and optional percentage or absolute-token compaction threshold when ready. Model limits are shared through Providers. These presets do not execute agents or compaction.
+- **Providers:** configure named API, Codex subscription, custom OpenAI-compatible, and local Ollama connections. Discover or manually add models, refresh the saved catalog, edit shared context windows, and send a short test prompt. Saving requires at least one model, while discovery and testing remain optional. Codex is bundled and needs no separate CLI install.
+- **Agent Presets:** create, edit, and delete reusable agent configurations. Only a name is required; choose a saved Provider/model and optional percentage or absolute-token compaction threshold when ready. Model context windows are shared through Providers. These presets do not execute agents or compaction.
 - **Theme:** permanent Light Mode and Dark Mode, a shared Light Mode default, and custom theme creation/duplication/editing with a contained visual preview. Custom themes and the active selection persist in SQLite for the whole local setup.
 - **Settings:** empty page reserved for later work.
 

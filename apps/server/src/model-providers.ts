@@ -78,21 +78,10 @@ export function normalizeModel(
       m.max_input_tokens ??
       m.inputTokenLimit,
   );
-  const rawOutput = limit(
-    m.max_output_tokens ??
-      m.max_completion_tokens ??
-      m.max_tokens ??
-      m.outputTokenLimit ??
-      record(m.top_provider).max_completion_tokens,
-  );
   return {
     id,
     name: typeof name === "string" ? name.slice(0, 300) : id,
     contextWindow,
-    maxOutputTokens:
-      rawOutput && contextWindow && rawOutput > contextWindow
-        ? null
-        : rawOutput,
   };
 }
 

@@ -43,7 +43,6 @@ export interface PresetConfiguration {
   customProviderName: string | null;
   modelId: string | null;
   contextWindow: number | null;
-  maxOutputTokens: number | null;
   connectionId: string | null;
   compaction: Compaction | null;
 }
@@ -78,7 +77,6 @@ export interface DiscoveredModel {
   id: string;
   name: string;
   contextWindow: number | null;
-  maxOutputTokens: number | null;
 }
 export interface ModelTestResult {
   success: boolean;
@@ -100,15 +98,12 @@ export interface ProviderModel extends DiscoveredModel {
   enabled: boolean;
   connectionId: string;
   discoveredContextWindow: number | null;
-  discoveredMaxOutputTokens: number | null;
   contextWindowOverride: number | null;
-  maxOutputTokensOverride: number | null;
   manual: boolean;
   available: boolean;
   lastTest: ModelTestResult | null;
   legacyLimits: {
     contextWindow: number | null;
-    maxOutputTokens: number | null;
   }[];
 }
 export interface CodexLoginStatus {

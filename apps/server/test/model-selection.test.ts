@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createApp } from "../src/app.js";
 import { ProviderModels } from "../src/provider-models.js";
 import { openDatabase } from "../src/database.js";
+import { restoreOutputColumns } from "./legacy-schema.js";
 import type { ModelSelection, SelectionImpact } from "../src/contracts.js";
 
 type App = ReturnType<typeof createApp>;
@@ -85,7 +86,6 @@ test("confirmation is atomic, cancel leaves saved records unchanged, impact chan
     const cleared = (await app.inject("/api/model-presets")).json().items.find((item: { id: string }) => item.id === linked.id);
     assert.equal(cleared.modelId, null);
     assert.equal(cleared.contextWindow, null);
-    assert.equal(cleared.maxOutputTokens, null);
     assert.equal(cleared.connectionId, id);
     assert.deepEqual(cleared.compaction, first.compaction);
     assert.equal(cleared.name, linked.name);
@@ -134,6 +134,7 @@ test("migration 8 and restart preserve selections, catalog refresh retains flags
   t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "state.sqlite");
   const db = openDatabase(path);
+  restoreOutputColumns(db);
   db.exec(`INSERT INTO connections (id, provider, name, draft, createdAt, updatedAt) VALUES ('old', 'ollama', 'Old', 0, 'created', 'updated');
     INSERT INTO provider_models (connectionId, id, name) VALUES ('old', 'old-model', 'Old model');
     ALTER TABLE provider_models DROP COLUMN enabled;
@@ -174,9 +175,9 @@ test("discovered models retain deselection and newly discovered models default t
   try {
     db.exec("INSERT INTO connections (id, provider, name, draft, createdAt, updatedAt) VALUES ('p', 'ollama', 'P', 1, 'created', 'updated')");
     const models = new ProviderModels(db);
-    models.merge("p", [{ id: "old", name: "Old", contextWindow: 1000, maxOutputTokens: 100 }]);
+    models.merge("p", [{ id: "old", name: "Old", contextWindow: 1000 }]);
     db.transaction(() => models.applySelection("p", [{ id: "old", enabled: false }], undefined, false))();
-    models.merge("p", [{ id: "old", name: "Renamed", contextWindow: 2000, maxOutputTokens: 200 }, { id: "new", name: "New", contextWindow: null, maxOutputTokens: null }]);
+    models.merge("p", [{ id: "old", name: "Renamed", contextWindow: 2000 }, { id: "new", name: "New", contextWindow: null }]);
     assert.equal(models.get("p", "old")?.enabled, false);
     assert.equal(models.get("p", "old")?.name, "Renamed");
     assert.equal(models.get("p", "new")?.enabled, true);

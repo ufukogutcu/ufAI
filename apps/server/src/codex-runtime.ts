@@ -415,7 +415,6 @@ class CodexClient {
               ? model.displayName.slice(0, 300)
               : model.model,
           contextWindow: null,
-          maxOutputTokens: null,
         });
       }
       if (models.length > 5000)

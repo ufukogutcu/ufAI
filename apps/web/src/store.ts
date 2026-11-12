@@ -306,7 +306,7 @@ export function createDashboardStore(settings: SettingsStore) {
       set(state => ({
         presets: state.presets.map(preset =>
           preset.connectionId === connectionId && preset.modelId && disabled.has(preset.modelId)
-            ? { ...preset, modelId: null, contextWindow: null, maxOutputTokens: null }
+            ? { ...preset, modelId: null, contextWindow: null }
             : preset),
       }));
     },

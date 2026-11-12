@@ -166,7 +166,6 @@ function ModelContextWarning({
   const descriptionId = useId();
   const difference = contextDifference(model);
   if (!difference) return null;
-  const outputTooLarge = model.maxOutputTokens !== null && model.maxOutputTokens > difference.automatic;
 
   async function applyAutomaticContext() {
     setBusy(true);
@@ -177,9 +176,7 @@ function ModelContextWarning({
       warningRef.current?.closest("article")?.querySelector<HTMLButtonElement>("[data-model-edit]")?.focus();
       onSaved(saved);
     } catch (error) {
-      setError(error instanceof RequestError && error.fields.maxOutputTokensOverride
-        ? "Maximum output exceeds the automatic context. Use Edit to adjust the output limit first."
-        : errorMessage(error));
+      setError(errorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -191,12 +188,11 @@ function ModelContextWarning({
         <TriangleAlert size={14} aria-hidden="true" />
         <span>Fetched context differs: {difference.automatic.toLocaleString()} tokens. Your manual value: {difference.manual.toLocaleString()} tokens.</span>
       </p>
-      <button type="button" className="textButton" disabled={busy || outputTooLarge}
+      <button type="button" className="textButton" disabled={busy}
         aria-label={`Use automatic context for ${model.name}`} aria-describedby={descriptionId}
         aria-busy={busy} onClick={applyAutomaticContext}>
         {busy ? "Saving…" : "Use automatic context"}
       </button>
-      {outputTooLarge && <p>Maximum output exceeds the automatic context. Use Edit to adjust the output limit first.</p>}
       {error && <p className="fieldError" role="alert">{error}</p>}
     </div>
   );
@@ -221,17 +217,14 @@ function ModelEditor({
   const [context, setContext] = useState(
     model?.contextWindowOverride?.toString() ?? "",
   );
-  const [output, setOutput] = useState(
-    model?.maxOutputTokensOverride?.toString() ?? "",
-  );
   const [baseline] = useState(() =>
-    JSON.stringify([id, name, context, output]),
+    JSON.stringify([id, name, context]),
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [confirm, setConfirm] = useState<"discard" | "delete" | null>(null);
-  const dirty = baseline !== JSON.stringify([id, name, context, output]);
+  const dirty = baseline !== JSON.stringify([id, name, context]);
   useEffect(() => {
     onDirty(dirty);
     return () => onDirty(false);
@@ -259,7 +252,6 @@ function ModelEditor({
           id,
           name: name.trim() || id,
           contextWindowOverride: context === "" ? null : Number(context),
-          maxOutputTokensOverride: output === "" ? null : Number(output),
         },
       );
       onSaved(model ? undefined : saved.id);
@@ -371,34 +363,14 @@ function ModelEditor({
                 />
               )}
             </Field>
-            <Field
-              label="Maximum output override"
-              error={fields.maxOutputTokensOverride}
-              hint={`Automatic: ${model?.discoveredMaxOutputTokens?.toLocaleString() ?? "Unknown"} tokens`}
-            >
-              {(props) => (
-                <input
-                  {...props}
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  max={Number.MAX_SAFE_INTEGER}
-                  step={1}
-                  value={output}
-                  onChange={(event) => setOutput(event.target.value)}
-                  placeholder="Automatic / unknown…"
-                />
-              )}
-            </Field>
             <button
               type="button"
               className="textButton"
               onClick={() => {
                 setContext("");
-                setOutput("");
               }}
             >
-              Reset limits to automatic
+              Reset context to automatic
             </button>
           </fieldset>
           {error && (
@@ -1144,9 +1116,9 @@ function ProviderEditor({
                         <strong title={model.name}>{model.name}</strong>
                         <small>
                           {model.name !== model.id && <><span title={model.id}>{model.id}</span> · </>}
-                          Context: {model.contextWindow?.toLocaleString() ?? "Unknown"} · Output: {model.maxOutputTokens?.toLocaleString() ?? "Unknown"}
+                          Context: {model.contextWindow?.toLocaleString() ?? "Unknown"}
                           {model.manual ? " · Manual" : ""}
-                          {model.contextWindowOverride !== null || model.maxOutputTokensOverride !== null ? " · Custom limits" : ""}
+                          {model.contextWindowOverride !== null ? " · Custom context" : ""}
                         </small>
                       </span>
                     </label>
@@ -1170,14 +1142,14 @@ function ProviderEditor({
                     {!model.available && !model.manual && <p className={styles.status}>Not returned by the latest refresh; kept in your list.</p>}
                   {model.legacyLimits.length > 0 && (
                     <p className={`${styles.status} ${styles.failure}`}>
-                      Previous presets used different limits:{" "}
+                      Previous presets used different context windows:{" "}
                       {model.legacyLimits
                         .map(
                           (l) =>
-                            `${l.contextWindow?.toLocaleString() ?? "Unknown"} context / ${l.maxOutputTokens?.toLocaleString() ?? "Unknown"} output`,
+                            `${l.contextWindow?.toLocaleString() ?? "Unknown"} tokens`,
                         )
                         .join("; ")}
-                      . Edit this model to choose shared limits.
+                      . Edit this model to choose a shared context window.
                     </p>
                   )}
                   {model.lastTest && (

@@ -169,9 +169,7 @@ function PresetEditor({
           />
           <p className={styles.modelStatus}>
             Context window:{" "}
-            {model?.contextWindow?.toLocaleString() ?? "Unknown"} tokens ·
-            Maximum output:{" "}
-            {model?.maxOutputTokens?.toLocaleString() ?? "Unknown"} tokens
+            {model?.contextWindow?.toLocaleString() ?? "Unknown"} tokens
           </p>
           {(!draft.connectionId || !draft.modelId) && (
             <p className={styles.modelStatus}>

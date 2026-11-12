@@ -41,7 +41,6 @@ function toRow(input: PresetConfiguration) {
   return {
     ...rest,
     contextWindow: null,
-    maxOutputTokens: null,
     compactionMode: compaction?.mode ?? null,
     compactionValue: compaction?.value ?? null,
   };
@@ -211,14 +210,14 @@ export function createApp(
   );
   const presetInsert = database.prepare(`INSERT INTO model_presets (
     id, name, integrationKind, provider, customProviderName, modelId,
-    contextWindow, maxOutputTokens, connectionId, compactionMode, compactionValue, createdAt, updatedAt
+    contextWindow, connectionId, compactionMode, compactionValue, createdAt, updatedAt
   ) VALUES (
     @id, @name, @integrationKind, @provider, @customProviderName, @modelId,
-    @contextWindow, @maxOutputTokens, @connectionId, @compactionMode, @compactionValue, @createdAt, @updatedAt
+    @contextWindow, @connectionId, @compactionMode, @compactionValue, @createdAt, @updatedAt
   )`);
   const presetUpdate = database.prepare(`UPDATE model_presets SET name = @name,
     integrationKind = @integrationKind, provider = @provider, customProviderName = @customProviderName,
-    modelId = @modelId, contextWindow = @contextWindow, maxOutputTokens = @maxOutputTokens,
+    modelId = @modelId, contextWindow = @contextWindow,
     connectionId = @connectionId, compactionMode = @compactionMode, compactionValue = @compactionValue,
     updatedAt = @updatedAt WHERE id = @id`);
   const presetDelete = database.prepare(

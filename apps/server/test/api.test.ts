@@ -207,7 +207,6 @@ test("agent presets allow name-only records, nullable compaction, partial patch 
     "integrationKind",
     "modelId",
     "contextWindow",
-    "maxOutputTokens",
     "compaction",
   ] as const)
     assert.equal(preset[key], null);
@@ -374,7 +373,7 @@ test("version 3 migration adds empty descriptions without changing existing work
     .prepare("INSERT INTO workspace_viewports VALUES (?, 12, -24, 1.5)")
     .run(workspace.id);
   old.exec(
-    "DROP TABLE provider_models; DROP INDEX model_presets_connection; ALTER TABLE model_presets DROP COLUMN connectionId; DROP TABLE connections; ALTER TABLE model_presets ADD COLUMN notes TEXT NOT NULL DEFAULT ''; ALTER TABLE workspaces DROP COLUMN description; PRAGMA user_version = 3;",
+    "DROP TABLE provider_models; DROP INDEX model_presets_connection; ALTER TABLE model_presets DROP COLUMN connectionId; DROP TABLE connections; ALTER TABLE model_presets ADD COLUMN maxOutputTokens INTEGER; ALTER TABLE model_presets ADD COLUMN notes TEXT NOT NULL DEFAULT ''; ALTER TABLE workspaces DROP COLUMN description; PRAGMA user_version = 3;",
   );
   old.close();
   let app = createApp({ databasePath, serveStatic: false });
@@ -407,12 +406,12 @@ test("newer database versions fail without downgrading schema", async (t) => {
   t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "test.sqlite");
   const db = openDatabase(path);
-  assert.equal(db.pragma("user_version", { simple: true }), 8);
+  assert.equal(db.pragma("user_version", { simple: true }), 9);
   assert.equal(db.pragma("foreign_keys", { simple: true }), 1);
-  db.pragma("user_version = 9");
+  db.pragma("user_version = 10");
   db.close();
   assert.throws(() => openDatabase(path), /newer version/);
   const inspection = new Database(path, { readonly: true });
-  assert.equal(inspection.pragma("user_version", { simple: true }), 9);
+  assert.equal(inspection.pragma("user_version", { simple: true }), 10);
   inspection.close();
 });

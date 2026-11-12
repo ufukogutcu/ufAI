@@ -18,7 +18,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 8)
+    if (version > 9)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -159,6 +159,25 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
       database.transaction(() => {
         database.exec("ALTER TABLE provider_models ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))");
         database.pragma("user_version = 8");
+      })();
+    if (version < 9)
+      database.transaction(() => {
+        database.exec(`
+          ALTER TABLE provider_models DROP COLUMN discoveredMaxOutputTokens;
+          ALTER TABLE provider_models DROP COLUMN maxOutputTokensOverride;
+          ALTER TABLE model_presets DROP COLUMN maxOutputTokens;
+          UPDATE provider_models SET legacyLimits = (
+            SELECT CASE WHEN count(*) > 1
+              THEN json_group_array(json_object('contextWindow', context))
+              ELSE '[]' END
+            FROM (
+              SELECT DISTINCT json_extract(value, '$.contextWindow') AS context
+              FROM json_each(provider_models.legacyLimits)
+              ORDER BY context
+            )
+          ) WHERE legacyLimits != '[]';
+        `);
+        database.pragma("user_version = 9");
       })();
   } catch (error) {
     database.close();

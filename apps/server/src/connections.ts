@@ -279,7 +279,7 @@ export function registerConnections(
         database.transaction(() => {
           database
             .prepare(
-              "UPDATE model_presets SET connectionId = NULL, modelId = NULL, provider = NULL, integrationKind = NULL, customProviderName = NULL, contextWindow = NULL, maxOutputTokens = NULL WHERE connectionId = ?",
+              "UPDATE model_presets SET connectionId = NULL, modelId = NULL, provider = NULL, integrationKind = NULL, customProviderName = NULL, contextWindow = NULL WHERE connectionId = ?",
             )
             .run(row.id);
           database.prepare("DELETE FROM connections WHERE id = ?").run(row.id);
@@ -478,7 +478,6 @@ export function registerConnections(
                 endpoint(row),
                 key(row),
                 model.id,
-                model.maxOutputTokens,
                 controller.signal,
                 options.fetcher,
               );
@@ -580,7 +579,6 @@ export function registerConnections(
         integrationKind: null,
         customProviderName: null,
         contextWindow: null,
-        maxOutputTokens: null,
       };
     const connection = get.get(input.connectionId) as Row | undefined;
     if (!connection || connection.draft)
@@ -600,7 +598,6 @@ export function registerConnections(
       integrationKind: connection.provider === "codex" ? "runtime" : "provider",
       customProviderName: null,
       contextWindow: model?.contextWindow ?? null,
-      maxOutputTokens: model?.maxOutputTokens ?? null,
     };
   };
 }

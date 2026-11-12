@@ -15,7 +15,7 @@ test("context comparisons require a known automatic value and a differing manual
 });
 
 test("switching to automatic context patches only that override and returns saved metadata", async (t) => {
-  const saved = { id: "model/with space", contextWindowOverride: null, contextWindow: 272000, maxOutputTokensOverride: 42 };
+  const saved = { id: "model/with space", contextWindowOverride: null, contextWindow: 272000 };
   t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
     assert.equal(url, "/api/connections/provider/models/model%2Fwith%20space");
     assert.equal(init.method, "PATCH");
@@ -27,12 +27,12 @@ test("switching to automatic context patches only that override and returns save
 
 test("failed switches expose request and validation errors for inline feedback", async (t) => {
   const fetch = t.mock.method(globalThis, "fetch", async () => Response.json({
-    error: "Check the model limits.", fields: { maxOutputTokensOverride: "Maximum output must not exceed context." },
+    error: "Check the model context.", fields: { contextWindowOverride: "Context is unavailable." },
   }, { status: 400 }));
   const model = { connectionId: "provider", id: "model" };
   await assert.rejects(resetContextToAutomatic(model), (error: unknown) => {
     assert.ok(error instanceof RequestError);
-    assert.equal(error.fields.maxOutputTokensOverride, "Maximum output must not exceed context.");
+    assert.equal(error.fields.contextWindowOverride, "Context is unavailable.");
     return true;
   });
   fetch.mock.mockImplementation(async () => { throw new Error("Disconnected"); });

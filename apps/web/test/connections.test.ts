@@ -54,13 +54,13 @@ test("model discovery ignores old responses and cancellation; errors preserve ma
   const cancel = loader.load("second", (state) => states.push(state));
   second.resolve({
     items: [
-      { id: "new", name: "New", contextWindow: null, maxOutputTokens: null },
+      { id: "new", name: "New", contextWindow: null },
     ],
   });
   await tick();
   first.resolve({
     items: [
-      { id: "old", name: "Old", contextWindow: null, maxOutputTokens: null },
+      { id: "old", name: "Old", contextWindow: null },
     ],
   });
   await tick();

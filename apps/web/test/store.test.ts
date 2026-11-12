@@ -114,7 +114,6 @@ test("preset state changes only after a successful server response", async (t) =
     integrationKind: null,
     customProviderName: null,
     contextWindow: null,
-    maxOutputTokens: null,
     id: "preset",
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -166,7 +165,6 @@ function presetRecord(id: string): ModelPreset {
     integrationKind: null,
     customProviderName: null,
     contextWindow: null,
-    maxOutputTokens: null,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
   };
@@ -219,7 +217,7 @@ test("an old preset refresh cannot overwrite a newer successful save", async (t)
 });
 
 test("confirmed provider selection repairs loaded preset bindings and prevents stale refresh restoration", async t => {
-  const linked = { ...presetRecord("linked"), connectionId: "provider", modelId: "hidden", contextWindow: 1000, maxOutputTokens: 100 };
+  const linked = { ...presetRecord("linked"), connectionId: "provider", modelId: "hidden", contextWindow: 1000 };
   const unrelated = { ...presetRecord("unrelated"), connectionId: "other", modelId: "hidden" };
   let finish!: (response: Response) => void;
   const pending = new Promise<Response>(resolve => { finish = resolve; });
@@ -238,7 +236,6 @@ test("confirmed provider selection repairs loaded preset bindings and prevents s
   const repaired = store.getState().presets[0]!;
   assert.equal(repaired.modelId, null);
   assert.equal(repaired.contextWindow, null);
-  assert.equal(repaired.maxOutputTokens, null);
   assert.equal(repaired.connectionId, "provider");
   assert.deepEqual(repaired.compaction, linked.compaction);
   assert.equal(repaired.updatedAt, linked.updatedAt);
