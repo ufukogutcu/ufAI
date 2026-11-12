@@ -47,7 +47,6 @@ test("removed model fields are rejected on create and update without changing co
 
 test("migration 9 removes output storage, preserves unrelated state, and keeps only context conflicts across reopen", async t => {
   const directory = await mkdtemp(join(tmpdir(), "ufai-output-removal-"));
-  t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "state.sqlite");
   let db = openDatabase(path);
   const tables = ["connections", "provider_models", "model_presets", "workspaces", "app_settings", "workspace_viewports", "themes"];
@@ -91,7 +90,7 @@ test("migration 9 removes output storage, preserves unrelated state, and keeps o
   for (let attempt = 0; attempt < 2; attempt++) {
     db = openDatabase(path);
     try {
-      assert.equal(db.pragma("user_version", { simple: true }), 10);
+      assert.equal(db.pragma("user_version", { simple: true }), 11);
       assert.deepEqual(db.pragma("foreign_key_check"), []);
       assert.deepEqual(snapshot(db), expected);
       for (const table of ["provider_models", "model_presets"]) {
@@ -103,7 +102,7 @@ test("migration 9 removes output storage, preserves unrelated state, and keeps o
     }
   }
   const app = createApp({ databasePath: path, serveStatic: false });
-  t.after(() => app.close());
+  t.after(async () => {await app.close();await rm(directory, {recursive:true,force:true});});
   const models = (await app.inject("/api/connections/provider/models")).json().items;
   assert.deepEqual(models.find((model: { id: string }) => model.id === "conflict").legacyLimits,
     [{ contextWindow: null }, { contextWindow: 1000 }, { contextWindow: 2000 }]);

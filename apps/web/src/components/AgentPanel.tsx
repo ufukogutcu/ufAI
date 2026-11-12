@@ -24,6 +24,7 @@ import type {
   AgentMessage,
   AgentTask,
 } from "../../../server/src/contracts";
+import { FolderLocation } from "./FolderLocation";
 import { Field } from "./FormField";
 import { Dialog } from "./Dialog";
 import styles from "./AgentPanel.module.scss";
@@ -507,6 +508,7 @@ export function AgentPanel({
     [newTask, setNewTask] = useState(false),
     [error, setError] = useState(""),
     [deleting, setDeleting] = useState(false),
+    [deleteBusy, setDeleteBusy] = useState(false),
     [source, setSource] = useState<{
       message: AgentMessage;
       taskId: string;
@@ -674,6 +676,11 @@ export function AgentPanel({
                 All tasks
               </button>
               <h3>{current?.title ?? "Task"}</h3>
+              <FolderLocation
+                kind="task"
+                ownerId={taskId}
+                label="Task working folder"
+              />
               <div className={styles.actions}>
                 <span>
                   {current?.status.replaceAll("_", " ")}
@@ -784,10 +791,11 @@ export function AgentPanel({
       {tab === "Configuration" && (
         <div className={styles.scroll}>
           <AgentForm agent={agent} onSave={save} />
+          <FolderLocation kind="agent" ownerId={agent.id} label="Agent files" />
           <hr />
           <p className={styles.muted}>
             Deleting this agent removes its conversations and memories, and
-            cancels its work.
+            cancels its work and permanently deletes its managed files.
           </p>
           <button
             className="button"
@@ -799,22 +807,47 @@ export function AgentPanel({
         </div>
       )}
       {deleting && (
-        <Dialog title="Delete agent?" onClose={() => setDeleting(false)}>
-          <p>Delete {agent.name} and all its conversations and memories?</p>
+        <Dialog
+          title="Delete agent?"
+          busy={deleteBusy}
+          onClose={() => setDeleting(false)}
+        >
+          <p>
+            Permanently delete {agent.name}, its conversations, memories, and
+            all files in its agent and task folders? Its work will be cancelled.
+            This cannot be undone.
+          </p>
+          {error && (
+            <p role="alert" className="error">
+              {error}
+            </p>
+          )}
+          {deleteBusy && (
+            <p role="status">
+              Cleaning up files… This continues if the page closes.
+            </p>
+          )}
           <div className={styles.actions}>
-            <button className="button" onClick={() => setDeleting(false)}>
+            <button
+              className="button"
+              disabled={deleteBusy}
+              onClick={() => setDeleting(false)}
+            >
               Keep Agent
             </button>
             <button
               className="button danger"
-              onClick={() =>
+              disabled={deleteBusy}
+              onClick={() => {
+                setDeleteBusy(true);
                 void store
                   .getState()
                   .remove(agent.id)
                   .catch((e) => setError(errorMessage(e)))
-              }
+                  .finally(() => setDeleteBusy(false));
+              }}
             >
-              Delete Agent
+              {deleteBusy ? "Deleting files…" : "Delete Agent and files"}
             </button>
           </div>
         </Dialog>

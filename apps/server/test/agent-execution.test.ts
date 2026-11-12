@@ -1,3 +1,4 @@
+import { deleteOwner } from "./deletion-helper.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
@@ -298,12 +299,9 @@ test("agent APIs validate private access, relationships, pagination, and workspa
   );
   assert.equal(
     (
-      await app.inject({
-        method: "DELETE",
-        url: `/api/workspaces/${workspace}`,
-      })
+      await deleteOwner(app,`/api/workspaces/${workspace}`)
     ).statusCode,
-    204,
+    202,
   );
   assert.equal((await app.inject(`/api/agents/${agent.id}`)).statusCode, 404);
 });

@@ -205,8 +205,9 @@
   }
 }
 .node {
-  min-width: 180px;
-  max-width: 260px;
+  position: relative;
+  width: 224px;
+  height: 104px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
@@ -222,12 +223,15 @@
     font-size: 15px;
     font-weight: 500;
     max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     overflow-wrap: anywhere;
     padding: 0;
     min-height: 28px;
   }
   p {
-    margin: 8px 0 0;
+    margin: 6px 0;
     color: var(--muted);
     font-size: 12px;
   }
@@ -331,4 +335,13 @@
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+@media (any-pointer: coarse) {
+  .node {
+    padding: 8px;
+  }
+  .node p {
+    margin: 3px 0;
+  }
 }

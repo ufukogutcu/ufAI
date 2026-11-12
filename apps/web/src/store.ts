@@ -1,3 +1,4 @@
+import { deleteManaged } from "./managed-files";
 import { createContext, useContext } from "react";
 import { createStore, useStore } from "zustand";
 import {
@@ -272,7 +273,7 @@ export function createDashboardStore(settings: SettingsStore) {
     deleteWorkspace: async (id) => {
       await settings
         .getState()
-        .mutate(() => request(`/workspaces/${id}`, "DELETE"));
+        .mutate(() => deleteManaged(`/workspaces/${id}`));
       viewportRevisions.set(id, (viewportRevisions.get(id) ?? 0) + 1);
       await Promise.all([viewportLoads.get(id), viewportWrites.get(id)]);
       viewportRevisions.delete(id);

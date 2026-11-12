@@ -239,7 +239,7 @@ test("application color literals and CSS variables must come from the theme cata
       for (const match of source.matchAll(/var\((--[\w-]+)/g)) {
         // Layout variables are structural, not editable palette scopes.
         if ([
-          "--swatch", "--radius-floating", "--radius-panel",
+          "--swatch", "--cluster-color", "--radius-floating", "--radius-panel",
           "--radius-control", "--radius-compact",
           "--control-height", "--icon-control-size", "--nav-target-size",
           "--nav-gap", "--nav-index", "--dock-padding", "--dock-padding-block", "--dock-left",

@@ -8,6 +8,7 @@ const a: Agent = {
   name: "Researcher",
   instructions: "Help",
   presetId: null,
+  clusterId: null,
   x: 10,
   y: 20,
   revision: 1,
@@ -23,7 +24,12 @@ test("unchanged workspace snapshots retain node and agent references; status upd
     globalThis.fetch = old;
   });
   let agent = a;
-  globalThis.fetch = async () => Response.json({ items: [agent], total: 1 });
+  globalThis.fetch = async (url) =>
+    Response.json(
+      String(url).includes("/agents")
+        ? { items: [agent], total: 1 }
+        : { items: [], total: 0 },
+    );
   const s = createAgentStore();
   await s.getState().loadWorkspace("workspace");
   const nodes = s.getState().nodes.workspace,
@@ -72,7 +78,11 @@ test("position writes coalesce and stale workspace snapshots cannot reset an uns
       }
       return Response.json({ ...a, ...input });
     }
-    return Response.json({ items: [a], total: 1 });
+    return Response.json(
+      String(_url).includes("/agents")
+        ? { items: [a], total: 1 }
+        : { items: [], total: 0 },
+    );
   };
   const s = createAgentStore();
   await s.getState().loadWorkspace("workspace");
@@ -122,4 +132,249 @@ test("older message pages merge without losing refreshed streamed text or duplic
     s.getState().messages.task!.map((v) => v.content),
     ["Earlier", "Complete"],
   );
+});
+
+test("Cluster layout preserves absolute persistence, relative rendering, deterministic drop targets, and unchanged node identities", async () => {
+  const { workspaceNodes, dropCluster } = await import("../src/canvas-layout");
+  const cluster = {
+    id: "department",
+    workspaceId: a.workspaceId,
+    name: "Research",
+    description: "",
+    x: 100,
+    y: 100,
+    width: 600,
+    height: 360,
+    colorSlot: 0,
+    createdAt: "now",
+    updatedAt: "now",
+  };
+  const member = { ...a, clusterId: cluster.id, x: 124, y: 172 };
+  const nodes = workspaceNodes([member], [cluster], []);
+  assert.equal(nodes[0]!.type, "cluster");
+  assert.equal(nodes[1]!.parentId, cluster.id);
+  assert.deepEqual(nodes[1]!.position, { x: 24, y: 72 });
+  assert.equal(
+    workspaceNodes([{ ...member, state: "running" }], [cluster], nodes),
+    nodes,
+  );
+  assert.equal(dropCluster([cluster], 124, 172), cluster.id);
+  assert.equal(dropCluster([cluster], 900, 172), null);
+  assert.equal(dropCluster([cluster], 124, -10), null);
+  const small = { ...cluster, id: "small", width: 320, height: 200 };
+  assert.equal(dropCluster([cluster, small], 124, 172), "small");
+  assert.equal(
+    dropCluster(
+      [
+        { ...small, id: "z" },
+        { ...small, id: "b" },
+      ],
+      124,
+      172,
+    ),
+    "b",
+  );
+  const moved = workspaceNodes(
+    [{ ...member, x: 224, y: 272 }],
+    [{ ...cluster, x: 200, y: 200 }],
+    nodes,
+  );
+  assert.equal(moved[1], nodes[1]);
+  assert.notEqual(moved[0], nodes[0]);
+  const ungrouped = workspaceNodes([{ ...member, clusterId: null }], [], nodes);
+  assert.equal(ungrouped[0]!.parentId, undefined);
+  assert.deepEqual(ungrouped[0]!.position, { x: 124, y: 172 });
+});
+
+test("failed membership writes preserve the requested position and membership through refresh and retry", async (t) => {
+  const original = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+  const cluster = {
+    id: "cluster",
+    workspaceId: a.workspaceId,
+    name: "Team",
+    description: "",
+    x: 0,
+    y: 0,
+    width: 600,
+    height: 360,
+    colorSlot: 0,
+    createdAt: "now",
+    updatedAt: "now",
+  };
+  let fail = true,
+    agent = a;
+  globalThis.fetch = async (url, init) => {
+    if (init?.method === "PATCH") {
+      if (fail) return Response.json({ error: "Try again" }, { status: 500 });
+      agent = { ...agent, ...JSON.parse(String(init.body)) };
+      return Response.json(agent);
+    }
+    return Response.json(
+      String(url).includes("/agents")
+        ? { items: [agent], total: 1 }
+        : String(url).includes("/clusters")
+          ? { items: [cluster], total: 1 }
+          : { items: [], total: 0 },
+    );
+  };
+  const s = createAgentStore();
+  await s.getState().loadWorkspace(a.workspaceId);
+  await s.getState().moveAgent(a.id, 24, 72, cluster.id);
+  await s.getState().loadWorkspace(a.workspaceId);
+  assert.equal(s.getState().agents[a.id]!.clusterId, cluster.id);
+  assert.equal(s.getState().agents[a.id]!.x, 24);
+  assert.equal(s.getState().positionError, "Try again");
+  fail = false;
+  await s.getState().retryPositions();
+  assert.equal(agent.clusterId, cluster.id);
+  assert.equal(agent.y, 72);
+  assert.equal(s.getState().positionError, "");
+});
+
+test("workspace and membership mutations win over an older in-flight workspace refresh", async (t) => {
+  const original = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+  let agent = a,
+    resolveOld!: (value: Response) => void,
+    hold = false;
+  globalThis.fetch = async (url, init) => {
+    if (init?.method === "PATCH") {
+      agent = { ...agent, ...JSON.parse(String(init.body)) };
+      return Response.json(agent);
+    }
+    if (String(url).includes("/agents")) {
+      if (hold) {
+        hold = false;
+        return new Promise<Response>((r) => {
+          resolveOld = r;
+        });
+      }
+      return Response.json({ items: [agent], total: 1 });
+    }
+    return Response.json({ items: [], total: 0 });
+  };
+  const s = createAgentStore();
+  await s.getState().loadWorkspace(a.workspaceId);
+  hold = true;
+  const old = s.getState().loadWorkspace(a.workspaceId);
+  // The deletion snapshot is fetched before the agent page.
+  for (let i = 0; i < 20 && !resolveOld; i++)
+    await new Promise((r) => setImmediate(r));
+  await s.getState().update(a.id, { name: "New name" });
+  resolveOld(Response.json({ items: [a], total: 1 }));
+  await old;
+  assert.equal(s.getState().agents[a.id]!.name, "New name");
+});
+
+test("failed Cluster layout writes can be retried and group movements coalesce without stale responses winning", async (t) => {
+  const original = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+  let cluster = {
+    id: "cluster",
+    workspaceId: a.workspaceId,
+    name: "Team",
+    description: "",
+    x: 0,
+    y: 0,
+    width: 600,
+    height: 360,
+    colorSlot: 0,
+    createdAt: "now",
+    updatedAt: "now",
+  };
+  let agent = { ...a, clusterId: cluster.id, x: 24, y: 72 },
+    fail = true,
+    hold = false,
+    release!: () => void;
+  const writes: Record<string, number>[] = [];
+  globalThis.fetch = async (url, init) => {
+    if (init?.method === "PATCH") {
+      const input = JSON.parse(String(init.body));
+      writes.push(input);
+      if (fail)
+        return Response.json({ error: "Cluster save failed" }, { status: 500 });
+      if (hold) {
+        hold = false;
+        await new Promise<void>((r) => {
+          release = r;
+        });
+      }
+      const next = { ...cluster, ...input };
+      agent = {
+        ...agent,
+        x: agent.x + next.x - cluster.x,
+        y: agent.y + next.y - cluster.y,
+      };
+      cluster = next;
+      return Response.json(cluster);
+    }
+    return Response.json(
+      String(url).includes("/agents")
+        ? { items: [agent], total: 1 }
+        : String(url).includes("/clusters")
+          ? { items: [cluster], total: 1 }
+          : { items: [], total: 0 },
+    );
+  };
+  const store = createAgentStore();
+  await store.getState().loadWorkspace(a.workspaceId);
+  await assert.rejects(
+    store.getState().updateCluster(cluster.id, { x: 100, y: 100 }),
+    /Cluster save failed/,
+  );
+  assert.equal(store.getState().clusters.cluster!.x, 0);
+  fail = false;
+  await store.getState().retryPositions();
+  assert.equal(cluster.x, 100);
+  assert.equal(store.getState().agents[a.id]!.x, 124);
+  assert.equal(store.getState().positionError, "");
+  hold = true;
+  const first = store.getState().updateCluster(cluster.id, { x: 200 });
+  const second = store.getState().updateCluster(cluster.id, { x: 300 });
+  const third = store.getState().updateCluster(cluster.id, { x: 400 });
+  release();
+  await Promise.all([first, second, third]);
+  assert.deepEqual(writes, [
+    { x: 100, y: 100 },
+    { x: 100, y: 100 },
+    { x: 200 },
+    { x: 400 },
+  ]);
+  assert.equal(store.getState().clusters.cluster!.x, 400);
+  assert.equal(store.getState().agents[a.id]!.x, 424);
+});
+
+test("background layout snapshots defer to active canvas interactions, and older completion cannot unlock a newer drag", async (t) => {
+  const original = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+  let agent = a;
+  globalThis.fetch = async (url) =>
+    Response.json(
+      String(url).includes("/agents")
+        ? { items: [agent], total: 1 }
+        : { items: [], total: 0 },
+    );
+  const store = createAgentStore();
+  await store.getState().loadWorkspace(a.workspaceId);
+  const originalNodes = store.getState().nodes[a.workspaceId];
+  const old = store.getState().beginCanvasInteraction();
+  agent = { ...a, x: 200 };
+  await store.getState().loadWorkspace(a.workspaceId);
+  assert.equal(store.getState().nodes[a.workspaceId], originalNodes);
+  const latest = store.getState().beginCanvasInteraction();
+  store.getState().endCanvasInteraction(old);
+  await store.getState().loadWorkspace(a.workspaceId);
+  assert.equal(store.getState().nodes[a.workspaceId], originalNodes);
+  store.getState().endCanvasInteraction(latest);
+  await store.getState().loadWorkspace(a.workspaceId);
+  assert.equal(store.getState().agents[a.id]!.x, 200);
 });

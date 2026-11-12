@@ -548,7 +548,6 @@ test("timeouts and completed tests persist sanitized results; replacing credenti
 });
 test("migration 6 preserves linked models, conflicting historical limits, and unrelated state across reopen", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "ufai-provider-migration-"));
-  t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "state.sqlite");
   const db = openDatabase(path);
   restoreOutputColumns(db);
@@ -584,7 +583,7 @@ test("migration 6 preserves linked models, conflicting historical limits, and un
   assert.deepEqual(unlinked.compaction, { mode: "tokens", value: 2000 });
   await app.close();
   app = createApp({ databasePath: path, serveStatic: false });
-  t.after(() => app.close());
+  t.after(async () => {await app.close();await rm(directory, {recursive:true,force:true});});
   models = (await app.inject("/api/connections/saved/models")).json().items;
   assert.equal(models.length, 2);
   const inspection = openDatabase(path);

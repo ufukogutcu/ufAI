@@ -1,3 +1,4 @@
+import { deleteOwner } from "./deletion-helper.js";
 import { removeExecutionTables } from "./legacy-schema.js";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -46,19 +47,13 @@ test("health, workspace CRUD, pagination and parameterized names", async (t) => 
   assert.equal(page.total, 2);
   assert.equal(
     (
-      await app.inject({
-        method: "DELETE",
-        url: `/api/workspaces/${workspace.id}`,
-      })
+      await deleteOwner(app,`/api/workspaces/${workspace.id}`)
     ).statusCode,
-    204,
+    202,
   );
   assert.equal(
     (
-      await app.inject({
-        method: "DELETE",
-        url: `/api/workspaces/${workspace.id}`,
-      })
+      await deleteOwner(app,`/api/workspaces/${workspace.id}`)
     ).statusCode,
     404,
   );
@@ -312,7 +307,7 @@ test("migration is repeatable, records survive reopen, and deleted seed never re
   let app = createApp({ databasePath, serveStatic: false });
   try {
     const seed = (await app.inject("/api/workspaces")).json().items[0];
-    await app.inject({ method: "DELETE", url: `/api/workspaces/${seed.id}` });
+    await deleteOwner(app,`/api/workspaces/${seed.id}`);
     const workspace = (
       await app.inject({
         method: "POST",
@@ -340,10 +335,7 @@ test("migration is repeatable, records survive reopen, and deleted seed never re
       (await app.inject("/api/model-presets")).json().items[0],
       preset,
     );
-    await app.inject({
-      method: "DELETE",
-      url: `/api/workspaces/${workspace.id}`,
-    });
+    await deleteOwner(app,`/api/workspaces/${workspace.id}`);
     await app.close();
     app = createApp({ databasePath, serveStatic: false });
     assert.deepEqual((await app.inject("/api/workspaces")).json(), {
@@ -408,12 +400,12 @@ test("newer database versions fail without downgrading schema", async (t) => {
   t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "test.sqlite");
   const db = openDatabase(path);
-  assert.equal(db.pragma("user_version", { simple: true }), 10);
+  assert.equal(db.pragma("user_version", { simple: true }), 11);
   assert.equal(db.pragma("foreign_keys", { simple: true }), 1);
-  db.pragma("user_version = 11");
+  db.pragma("user_version = 12");
   db.close();
   assert.throws(() => openDatabase(path), /newer version/);
   const inspection = new Database(path, { readonly: true });
-  assert.equal(inspection.pragma("user_version", { simple: true }), 11);
+  assert.equal(inspection.pragma("user_version", { simple: true }), 12);
   inspection.close();
 });

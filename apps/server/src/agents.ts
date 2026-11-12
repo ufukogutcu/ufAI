@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
+import type { ManagedFiles } from "./managed-files.js";
 import { AgentExecution } from "./agent-execution.js";
 import { guard } from "./connections.js";
 import { ConnectionError } from "./model-providers.js";
@@ -38,6 +39,7 @@ export function registerAgents(
   app: FastifyInstance,
   db: Database.Database,
   execution: AgentExecution,
+  files: ManagedFiles,
 ) {
   app.addHook("onRequest", async (request) => {
     if (
@@ -54,11 +56,19 @@ export function registerAgents(
       throw new ConnectionError("Workspace not found.", 404);
   };
   const validate = (body: unknown, existing?: any) => {
-    const p = fields(body, ["name", "instructions", "presetId", "x", "y"]);
+    const p = fields(body, [
+      "name",
+      "instructions",
+      "presetId",
+      "x",
+      "y",
+      "clusterId",
+    ]);
     const v = {
       name: "",
       instructions: "",
       presetId: null,
+      clusterId: null,
       x: 0,
       y: 0,
       ...existing,
@@ -96,7 +106,7 @@ export function registerAgents(
         )
         .all(req.params.id, limit, offset) as { id: string }[];
       return {
-        items: rows.map((r) => execution.requiredAgent(r.id)),
+        items: rows.map((r) => execution.requiredAgent(r.id, true)),
         total: (
           db
             .prepare("SELECT count(*) AS n FROM agents WHERE workspaceId=?")
@@ -110,10 +120,39 @@ export function registerAgents(
     async (req, reply) => {
       workspace(req.params.id);
       const v = validate(req.body);
+      if (v.clusterId !== null) {
+        if (typeof v.clusterId !== "string")
+          invalid("clusterId", "Choose a Cluster in this workspace.");
+        const c = db
+          .prepare("SELECT * FROM clusters WHERE id=?")
+          .get(v.clusterId) as
+          | {
+              workspaceId: string;
+              x: number;
+              y: number;
+              width: number;
+              height: number;
+            }
+          | undefined;
+        if (!c || c.workspaceId !== req.params.id)
+          invalid("clusterId", "Choose a Cluster in this workspace.");
+        if (
+          c &&
+          (v.x + 112 < c.x ||
+            v.x + 112 > c.x + c.width ||
+            v.y + 52 < c.y + 48 ||
+            v.y + 52 > c.y + c.height)
+        )
+          invalid(
+            "clusterId",
+            "Place the agent inside the Cluster content area.",
+          );
+        files.assertAvailable(req.params.id, undefined, v.clusterId);
+      }
       const id = randomUUID(),
         ts = time();
       db.prepare(
-        "INSERT INTO agents(id,workspaceId,name,instructions,presetId,x,y,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO agents(id,workspaceId,name,instructions,presetId,x,y,clusterId,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)",
       ).run(
         id,
         req.params.id,
@@ -122,27 +161,57 @@ export function registerAgents(
         v.presetId,
         v.x,
         v.y,
+        v.clusterId,
         ts,
         ts,
       );
       execution.event(id);
+      files.kick();
       return reply.code(201).send(execution.requiredAgent(id));
     },
   );
   app.get<{ Params: { id: string } }>("/api/agents/:id", async (req) =>
-    execution.requiredAgent(req.params.id),
+    execution.requiredAgent(req.params.id, true),
   );
   app.patch<{ Params: { id: string } }>("/api/agents/:id", async (req) => {
     const old = execution.requiredAgent(req.params.id);
     const v = validate(req.body, old);
+    if (v.clusterId !== null) {
+      if (typeof v.clusterId !== "string")
+        invalid("clusterId", "Choose a Cluster in this workspace.");
+      const c = db
+        .prepare("SELECT * FROM clusters WHERE id=?")
+        .get(v.clusterId) as
+        | {
+            workspaceId: string;
+            x: number;
+            y: number;
+            width: number;
+            height: number;
+          }
+        | undefined;
+      if (!c || c.workspaceId !== old.workspaceId)
+        invalid("clusterId", "Choose a Cluster in this workspace.");
+      if (
+        c &&
+        (v.x + 112 < c.x ||
+          v.x + 112 > c.x + c.width ||
+          v.y + 52 < c.y + 48 ||
+          v.y + 52 > c.y + c.height)
+      )
+        invalid("clusterId", "Drop the agent inside the Cluster content area.");
+    }
+    files.assertAvailable(old.workspaceId, old.id, old.clusterId);
+    files.assertAvailable(old.workspaceId, old.id, v.clusterId);
     db.prepare(
-      "UPDATE agents SET name=?,instructions=?,presetId=?,x=?,y=?,revision=revision+?,updatedAt=? WHERE id=?",
+      "UPDATE agents SET name=?,instructions=?,presetId=?,x=?,y=?,clusterId=?,revision=revision+?,updatedAt=? WHERE id=?",
     ).run(
       v.name,
       v.instructions,
       v.presetId,
       v.x,
       v.y,
+      v.clusterId,
       Number(
         v.name !== old.name ||
           v.instructions !== old.instructions ||
@@ -157,15 +226,16 @@ export function registerAgents(
   app.delete<{ Params: { id: string } }>(
     "/api/agents/:id",
     async (req, reply) => {
-      const agent = execution.requiredAgent(req.params.id);
-      await execution.deleteAgents([agent.id], () => {
-        db.prepare(
-          "INSERT INTO execution_events(workspaceId,agentId,kind,createdAt) VALUES (?,?,'deleted',?)",
-        ).run(agent.workspaceId, agent.id, time());
-        db.prepare("DELETE FROM agents WHERE id=?").run(agent.id);
-      });
-      execution.events.emit("change", agent.workspaceId);
-      return reply.code(204).send();
+      const body = req.body as { confirmFilesDeletion?: unknown } | undefined;
+      return reply
+        .code(202)
+        .send(
+          files.requestDeletion(
+            "agent",
+            req.params.id,
+            body?.confirmFilesDeletion,
+          ),
+        );
     },
   );
   app.get<{ Params: { id: string } }>("/api/agents/:id/tasks", async (req) => {

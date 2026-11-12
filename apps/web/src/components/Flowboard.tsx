@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useMemo } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -8,7 +8,6 @@ import {
   useReactFlow,
   useViewport,
   useNodesState,
-  type NodeProps,
   type Viewport,
 } from "@xyflow/react";
 import { Minus, Plus, Scan, Workflow } from "lucide-react";
@@ -16,13 +15,16 @@ import {
   useAgents,
   useAgentStore,
   emptyNodes,
-  type AgentFlowNode,
+  type WorkspaceFlowNode,
 } from "../agent-store";
 import { AgentPanel, AgentForm } from "./AgentPanel";
 import { Dialog } from "./Dialog";
 import { refreshOnFocus } from "../focus-refresh";
 import { useNavigationGuard } from "../navigation-guard";
-import agentStyles from "./AgentPanel.module.scss";
+import { AgentNode, ClusterNode } from "./CanvasNodes";
+import { ClusterPanel } from "./ClusterPanel";
+import { dropCluster } from "../canvas-layout";
+import { errorMessage } from "../api";
 import { useSettings } from "../settings-store";
 import { useDashboard } from "../store";
 import { Tooltip } from "./Tooltip";
@@ -30,54 +32,7 @@ import styles from "./Flowboard.module.scss";
 import { GlassMaterial } from "./GlassMaterial";
 import { Appearance } from "./Appearance";
 
-const AgentNode = memo(function AgentNode({ data }: NodeProps<AgentFlowNode>) {
-  const agent = useAgents((s) => s.agents[data.agentId]);
-  const store = useAgentStore();
-  const guard = useNavigationGuard();
-  if (!agent) return null;
-  return (
-    <div
-      className={agentStyles.node}
-      onKeyDown={(event) => {
-        const direction: Record<string, [number, number]> = {
-          ArrowLeft: [-16, 0],
-          ArrowRight: [16, 0],
-          ArrowUp: [0, -16],
-          ArrowDown: [0, 16],
-        };
-        const step = direction[event.key];
-        if (step && event.target instanceof HTMLButtonElement) {
-          event.preventDefault();
-          event.stopPropagation();
-          void store
-            .getState()
-            .position(agent.id, agent.x + step[0], agent.y + step[1]);
-        }
-      }}
-    >
-      <button
-        className="nodrag"
-        onClick={(event) => {
-          event.stopPropagation();
-          guard(() => store.getState().select(agent.workspaceId, agent.id));
-        }}
-      >
-        {agent.name}
-      </button>
-      <p>
-        {agent.state === "running"
-          ? "Working"
-          : agent.state === "queued"
-            ? "Queued"
-            : agent.state === "idle"
-              ? "Ready"
-              : agent.state.replaceAll("_", " ")}{" "}
-        · {agent.queuedCount} queued
-      </p>
-    </div>
-  );
-});
-const nodeTypes = { agent: AgentNode };
+const nodeTypes = { agent: AgentNode, cluster: ClusterNode };
 const defaultViewport: Viewport = { x: 0, y: 0, zoom: 1 };
 
 function ViewControls() {
@@ -139,14 +94,25 @@ function Board({ workspaceId }: { workspaceId: string }) {
   );
   const createOpen = useAgents((s) => s.createIn === workspaceId);
   const [nodes, setNodes, onNodesChange] =
-    useNodesState<AgentFlowNode>(savedNodes);
-  const dragging = useRef(false);
+    useNodesState<WorkspaceFlowNode>(savedNodes);
+  const dragging = useRef(0);
+  const canvasInteracting = useAgents((s) => s.canvasInteracting);
   const guard = useNavigationGuard();
   const root = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
+  useEffect(
+    () => () => {
+      agentStore.setState((s) => ({
+        canvasInteracting: false,
+        dropTarget: null,
+        canvasGeneration: s.canvasGeneration + 1,
+      }));
+    },
+    [agentStore],
+  );
   useEffect(() => {
-    if (!dragging.current) setNodes(savedNodes);
-  }, [savedNodes, setNodes]);
+    if (!dragging.current && !canvasInteracting) setNodes(savedNodes);
+  }, [savedNodes, setNodes, canvasInteracting]);
   useEffect(() => {
     void agentStore.getState().loadWorkspace(workspaceId);
     let closed = false,
@@ -188,19 +154,70 @@ function Board({ workspaceId }: { workspaceId: string }) {
     };
   }, [agentStore, workspaceId]);
   const handleNodeClick = useCallback(
-    (_event: React.MouseEvent, node: AgentFlowNode) => {
-      guard(() => agentStore.getState().select(workspaceId, node.id));
+    (_event: React.MouseEvent, node: WorkspaceFlowNode) => {
+      if (node.type === "agent")
+        guard(() => agentStore.getState().select(workspaceId, node.id));
     },
     [agentStore, workspaceId, guard],
   );
-  const handleNodeDragStop = useCallback(
-    (_event: MouseEvent | TouchEvent, node: AgentFlowNode) => {
-      dragging.current = false;
-      void agentStore
-        .getState()
-        .position(node.id, node.position.x, node.position.y);
+  const absolutePosition = useCallback(
+    (node: WorkspaceFlowNode) => {
+      const parent = node.parentId
+        ? agentStore.getState().clusters[node.parentId]
+        : undefined;
+      return {
+        x: node.position.x + (parent?.x ?? 0),
+        y: node.position.y + (parent?.y ?? 0),
+      };
     },
     [agentStore],
+  );
+  const handleNodeDrag = useCallback(
+    (_event: MouseEvent | TouchEvent, node: WorkspaceFlowNode) => {
+      if (node.type !== "agent") return;
+      const p = absolutePosition(node),
+        groups = Object.values(agentStore.getState().clusters).filter(
+          (c) => c.workspaceId === workspaceId,
+        );
+      const target = dropCluster(groups, p.x, p.y);
+      if (agentStore.getState().dropTarget !== target)
+        agentStore.setState({ dropTarget: target });
+    },
+    [absolutePosition, agentStore, workspaceId],
+  );
+  const handleNodeDragStop = useCallback(
+    (_event: MouseEvent | TouchEvent, node: WorkspaceFlowNode) => {
+      const generation = dragging.current;
+      const p = absolutePosition(node),
+        state = agentStore.getState();
+      const action =
+        node.type === "cluster"
+          ? state.updateCluster(node.id, {
+              x: node.position.x,
+              y: node.position.y,
+            })
+          : state.moveAgent(
+              node.id,
+              p.x,
+              p.y,
+              dropCluster(
+                Object.values(state.clusters).filter(
+                  (c) => c.workspaceId === workspaceId,
+                ),
+                p.x,
+                p.y,
+              ),
+            );
+      void action
+        .catch((e) => agentStore.setState({ positionError: errorMessage(e) }))
+        .finally(() => {
+          if (dragging.current === generation) dragging.current = 0;
+          if (agentStore.getState().canvasGeneration !== generation) return;
+          agentStore.getState().endCanvasInteraction(generation);
+          setNodes(agentStore.getState().nodes[workspaceId] ?? emptyNodes);
+        });
+    },
+    [agentStore, absolutePosition, workspaceId, setNodes],
   );
   const mode = useSettings((state) => state.snapshot.activeTheme.mode);
   const viewport = useDashboard((state) => state.viewports[workspaceId]);
@@ -214,6 +231,13 @@ function Board({ workspaceId }: { workspaceId: string }) {
     [endInteraction, workspaceId],
   );
   const { setViewport, getViewport } = useReactFlow();
+  const clusterPosition = useMemo(
+    () => ({
+      x: (-viewport!.x + 240) / viewport!.zoom,
+      y: (-viewport!.y + 240) / viewport!.zoom,
+    }),
+    [viewport],
+  );
   const applying = useRef(false);
   useEffect(() => {
     if (!viewport) return;
@@ -252,8 +276,9 @@ function Board({ workspaceId }: { workspaceId: string }) {
         onNodesChange={onNodesChange}
         onNodeClick={handleNodeClick}
         onNodeDragStart={() => {
-          dragging.current = true;
+          dragging.current = agentStore.getState().beginCanvasInteraction();
         }}
+        onNodeDrag={handleNodeDrag}
         onNodeDragStop={handleNodeDragStop}
         nodesDraggable
         nodesFocusable={false}
@@ -288,6 +313,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
           </div>
         </Appearance>
       )}
+      <ClusterPanel workspaceId={workspaceId} position={clusterPosition} />
       {selected && (
         <AgentPanel
           key={selected.id}

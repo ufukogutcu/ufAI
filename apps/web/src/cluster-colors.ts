@@ -1,0 +1,18 @@
+export const clusterColors = [
+  "var(--cluster-color-1)",
+  "var(--cluster-color-2)",
+  "var(--cluster-color-3)",
+  "var(--cluster-color-4)",
+  "var(--cluster-color-5)",
+  "var(--cluster-color-6)",
+  "var(--cluster-color-7)",
+  "var(--cluster-color-8)",
+  "var(--cluster-color-9)",
+  "var(--cluster-color-10)",
+  "var(--cluster-color-11)",
+  "var(--cluster-color-12)",
+  "var(--cluster-color-13)",
+  "var(--cluster-color-14)",
+  "var(--cluster-color-15)",
+  "var(--cluster-color-16)",
+] as const;

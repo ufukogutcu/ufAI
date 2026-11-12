@@ -186,7 +186,10 @@ export interface CodexUsageSnapshot {
   planType: string | null;
   defaultLimit: CodexUsageLimit | null;
   limits: CodexUsageLimit[];
-  resetCredits: { availableCount: number; credits: CodexResetCredit[] | null } | null;
+  resetCredits: {
+    availableCount: number;
+    credits: CodexResetCredit[] | null;
+  } | null;
   ordinaryUsageAllowed: boolean | null;
   fetchedAt: string;
 }
@@ -194,40 +197,126 @@ export interface CodexResetInput {
   idempotencyKey: string;
   creditId?: string;
 }
-export type CodexResetOutcome = "reset" | "alreadyRedeemed" | "nothingToReset" | "noCredit";
+export type CodexResetOutcome =
+  | "reset"
+  | "alreadyRedeemed"
+  | "nothingToReset"
+  | "noCredit";
 
-export type TaskStatus = 'queued' | 'running' | 'awaiting_user' | 'completed' | 'blocked' | 'failed' | 'cancelled';
+export type TaskStatus =
+  | "queued"
+  | "running"
+  | "awaiting_user"
+  | "completed"
+  | "blocked"
+  | "failed"
+  | "cancelled";
 export interface Agent {
-  id: string; workspaceId: string; name: string; instructions: string;
-  presetId: string | null; x: number; y: number; revision: number;
-  createdAt: string; updatedAt: string;
-  state: TaskStatus | 'idle'; queuedCount: number;
+  id: string;
+  workspaceId: string;
+  name: string;
+  instructions: string;
+  clusterId: string | null;
+  presetId: string | null;
+  x: number;
+  y: number;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+  state: TaskStatus | "idle";
+  queuedCount: number;
 }
 export interface AgentTask {
-  id: string; agentId: string; conversationId: string; title: string;
-  status: TaskStatus; summary: string; error: string | null;
-  createdAt: string; updatedAt: string;
+  id: string;
+  agentId: string;
+  conversationId: string;
+  title: string;
+  status: TaskStatus;
+  summary: string;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 export interface AgentMessage {
-  id: string; conversationId: string; turnId: string | null; sequence: number;
-  role: 'user' | 'assistant'; content: string;
-  state: 'complete' | 'streaming' | 'incomplete'; createdAt: string;
+  id: string;
+  conversationId: string;
+  turnId: string | null;
+  sequence: number;
+  role: "user" | "assistant";
+  content: string;
+  state: "complete" | "streaming" | "incomplete";
+  createdAt: string;
 }
 export interface AgentTurn {
-  id: string; taskId: string | null; conversationId: string; agentId: string;
-  inputMessageId: string; attempt: number; status: string; phase: string;
-  snapshot: string | null; error: string | null; usage: string | null;
-  createdAt: string; updatedAt: string;
+  id: string;
+  taskId: string | null;
+  conversationId: string;
+  agentId: string;
+  inputMessageId: string;
+  attempt: number;
+  status: string;
+  phase: string;
+  snapshot: string | null;
+  error: string | null;
+  usage: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 export interface AgentMemory {
-  id: string; agentId: string; key: string; content: string;
-  kind: 'preference' | 'finding'; sources: string[]; revision: number;
-  createdAt: string; updatedAt: string;
+  id: string;
+  agentId: string;
+  key: string;
+  content: string;
+  kind: "preference" | "finding";
+  sources: string[];
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
 }
 export interface AgentWorkload {
-  agentId: string; capturedAt: string; tasks: AgentTask[];
-  running: AgentTurn[]; queuedCount: number; statusTurn: AgentTurn | null;
+  agentId: string;
+  capturedAt: string;
+  tasks: AgentTask[];
+  running: AgentTurn[];
+  queuedCount: number;
+  statusTurn: AgentTurn | null;
 }
 export interface TaskDetail {
-  task: AgentTask; turns: AgentTurn[];
+  task: AgentTask;
+  turns: AgentTurn[];
+}
+
+export interface Cluster {
+  id: string;
+  workspaceId: string;
+  name: string;
+  description: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  colorSlot: number;
+  createdAt: string;
+  updatedAt: string;
+}
+export type LocationKind = "workspace" | "cluster" | "agent" | "task";
+export interface ManagedLocation {
+  id: string;
+  kind: LocationKind;
+  ownerId: string;
+  workspaceId: string;
+  relativePath: string;
+  path: string;
+  state: "pending" | "ready" | "error";
+  error: string | null;
+}
+export interface DeletionOperation {
+  id: string;
+  kind: Exclude<LocationKind, "task">;
+  ownerId: string;
+  workspaceId: string;
+  state: "pending" | "running" | "failed" | "completed";
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
 }

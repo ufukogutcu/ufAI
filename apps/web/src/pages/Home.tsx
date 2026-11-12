@@ -1,3 +1,5 @@
+import { FolderLocation } from "../components/FolderLocation";
+import { DeletionProgress } from "../components/DeletionProgress";
 import { useNavigationGuard } from "../navigation-guard";
 import { useSettings } from "../settings-store";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
@@ -72,8 +74,8 @@ function WorkspaceDialog({
         {action.kind === "delete" ? (
           <p>
             Delete <strong>{action.name}</strong>? This permanently removes the
-            workspace, its agents, conversations, and memories, and cancels its
-            work. This cannot be undone.
+            workspace, its agents, conversations, memories, and all files in its
+            managed folders, and cancels its work. This cannot be undone.
           </p>
         ) : (
           <>
@@ -127,6 +129,18 @@ function WorkspaceDialog({
               )}
             </label>
           </>
+        )}
+        {action.kind === "edit" && (
+          <FolderLocation
+            kind="workspace"
+            ownerId={action.id}
+            label="Workspace shared folder"
+          />
+        )}
+        {busy && action.kind === "delete" && (
+          <p role="status">
+            Deleting managed files… Cleanup continues if this page closes.
+          </p>
         )}
         {error && (
           <Appearance kind="fade">
@@ -334,6 +348,7 @@ export default function Home() {
             </div>
           )}
         </div>
+        {active && <DeletionProgress workspaceId={active.id} />}
         {agentError && (
           <div className="errorBanner" role="alert">
             {agentError}{" "}
@@ -364,15 +379,31 @@ export default function Home() {
               <Appearance trigger={active.id}>
                 <h1>{active.name}</h1>
               </Appearance>
-              <button
-                className={`button ${styles.addAgent}`}
-                onClick={() =>
-                  guard(() => agentStore.setState({ createIn: active.id }))
-                }
-              >
-                <Plus size={15} aria-hidden="true" />
-                Add Agent
-              </button>
+              <div className={styles.creationActions}>
+                <button
+                  className="button"
+                  onClick={() =>
+                    guard(() =>
+                      agentStore.setState((s) => ({
+                        createClusterIn: active.id,
+                        selectedCluster: null,
+                        selected: { ...s.selected, [active.id]: null },
+                      })),
+                    )
+                  }
+                >
+                  <Plus size={15} aria-hidden="true" /> Add Cluster
+                </button>
+                <button
+                  className={`button ${styles.addAgent}`}
+                  onClick={() =>
+                    guard(() => agentStore.setState({ createIn: active.id }))
+                  }
+                >
+                  <Plus size={15} aria-hidden="true" />
+                  Add Agent
+                </button>
+              </div>
             </div>
             {active.description && (
               <Appearance trigger={active.id}>

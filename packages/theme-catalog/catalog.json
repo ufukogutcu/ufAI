@@ -825,6 +825,269 @@
       "region": "canvas",
       "light": "#0000001a",
       "dark": "#00000066"
+    },
+    "cluster-color-1": {
+      "cssVariable": "--cluster-color-1",
+      "label": "Cluster color 1",
+      "description": "Identity color 1 for Cluster outlines and member dots; names also identify membership.",
+      "components": [
+        "Cluster identity",
+        "Agent Cluster dot",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#2563a6",
+      "dark": "#76b5ee"
+    },
+    "cluster-color-2": {
+      "cssVariable": "--cluster-color-2",
+      "label": "Cluster color 2",
+      "description": "Identity color 2 for Cluster outlines and member dots; names also identify membership.",
+      "components": [
+        "Cluster identity",
+        "Agent Cluster dot",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#7b4cb5",
+      "dark": "#c0a0ec"
+    },
+    "cluster-color-3": {
+      "cssVariable": "--cluster-color-3",
+      "label": "Cluster color 3",
+      "description": "Identity color 3 for Cluster outlines and member dots; names also identify membership.",
+      "components": [
+        "Cluster identity",
+        "Agent Cluster dot",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#b14a72",
+      "dark": "#ee92b9"
+    },
+    "cluster-color-4": {
+      "cssVariable": "--cluster-color-4",
+      "label": "Cluster color 4",
+      "description": "Identity color 4 for Cluster outlines and member dots; names also identify membership.",
+      "components": [
+        "Cluster identity",
+        "Agent Cluster dot",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#a45c22",
+      "dark": "#eeb479"
+    },
+    "cluster-color-5": {
+      "cssVariable": "--cluster-color-5",
+      "label": "Cluster color 5",
+      "description": "Identity color 5 for Cluster outlines and member dots; names also identify membership.",
+      "components": [
+        "Cluster identity",
+        "Agent Cluster dot",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#2a7a61",
+      "dark": "#79cfad"
+    },
+    "cluster-color-6": {
+      "cssVariable": "--cluster-color-6",
+      "label": "Cluster color 6",
+      "description": "Identity color 6 for Cluster outlines and member dots; names also identify membership.",
+      "components": [
+        "Cluster identity",
+        "Agent Cluster dot",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#a13e43",
+      "dark": "#ee8e94"
+    },
+    "cluster-color-7": {
+      "cssVariable": "--cluster-color-7",
+      "label": "Cluster color 7",
+      "description": "Identity color 7 for Cluster outlines and member dots; names also identify membership.",
+      "components": [
+        "Cluster identity",
+        "Agent Cluster dot",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#47752e",
+      "dark": "#a3ce80"
+    },
+    "cluster-color-8": {
+      "cssVariable": "--cluster-color-8",
+      "label": "Cluster color 8",
+      "description": "Identity color 8 for Cluster outlines and member dots; names also identify membership.",
+      "components": [
+        "Cluster identity",
+        "Agent Cluster dot",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#756927",
+      "dark": "#d7c66f"
+    },
+    "cluster-color-9": {
+      "cssVariable": "--cluster-color-9",
+      "label": "Cluster color 9",
+      "description": "Identity color 9 for Cluster outlines and member dots; names also identify membership.",
+      "components": [
+        "Cluster identity",
+        "Agent Cluster dot",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#356d84",
+      "dark": "#7fc7dd"
+    },
+    "cluster-color-10": {
+      "cssVariable": "--cluster-color-10",
+      "label": "Cluster color 10",
+      "description": "Identity color 10 for Cluster outlines and member dots; names also identify membership.",
+      "components": [
+        "Cluster identity",
+        "Agent Cluster dot",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#9b4d94",
+      "dark": "#e79cdd"
+    },
+    "cluster-color-11": {
+      "cssVariable": "--cluster-color-11",
+      "label": "Cluster color 11",
+      "description": "Identity color 11 for Cluster outlines and member dots; names also identify membership.",
+      "components": [
+        "Cluster identity",
+        "Agent Cluster dot",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#4461a4",
+      "dark": "#99b1ed"
+    },
+    "cluster-color-12": {
+      "cssVariable": "--cluster-color-12",
+      "label": "Cluster color 12",
+      "description": "Identity color 12 for Cluster outlines and member dots; names also identify membership.",
+      "components": [
+        "Cluster identity",
+        "Agent Cluster dot",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#75614c",
+      "dark": "#d0b294"
+    },
+    "cluster-color-13": {
+      "cssVariable": "--cluster-color-13",
+      "label": "Cluster color 13",
+      "description": "Identity color 13 for Cluster outlines and member dots; names also identify membership.",
+      "components": [
+        "Cluster identity",
+        "Agent Cluster dot",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#347c7b",
+      "dark": "#80ceca"
+    },
+    "cluster-color-14": {
+      "cssVariable": "--cluster-color-14",
+      "label": "Cluster color 14",
+      "description": "Identity color 14 for Cluster outlines and member dots; names also identify membership.",
+      "components": [
+        "Cluster identity",
+        "Agent Cluster dot",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#8e6218",
+      "dark": "#dcb45e"
+    },
+    "cluster-color-15": {
+      "cssVariable": "--cluster-color-15",
+      "label": "Cluster color 15",
+      "description": "Identity color 15 for Cluster outlines and member dots; names also identify membership.",
+      "components": [
+        "Cluster identity",
+        "Agent Cluster dot",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#64689d",
+      "dark": "#b2b5de"
+    },
+    "cluster-color-16": {
+      "cssVariable": "--cluster-color-16",
+      "label": "Cluster color 16",
+      "description": "Identity color 16 for Cluster outlines and member dots; names also identify membership.",
+      "components": [
+        "Cluster identity",
+        "Agent Cluster dot",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#6b7851",
+      "dark": "#b6c897"
+    },
+    "cluster-surface": {
+      "cssVariable": "--cluster-surface",
+      "label": "Cluster surface",
+      "description": "Background inside a Cluster on the canvas.",
+      "components": [
+        "Cluster canvas group",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#f0f1f4b3",
+      "dark": "#1c1d20b3"
+    },
+    "cluster-border": {
+      "cssVariable": "--cluster-border",
+      "label": "Cluster border",
+      "description": "Neutral boundary around a Cluster.",
+      "components": [
+        "Cluster canvas group",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#b4b8c2",
+      "dark": "#50535d"
+    },
+    "cluster-drop-surface": {
+      "cssVariable": "--cluster-drop-surface",
+      "label": "Cluster drop target",
+      "description": "Background highlighting a Cluster while an agent is dragged over it.",
+      "components": [
+        "Cluster canvas group",
+        "Cluster palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#e4e7ecdd",
+      "dark": "#30343ddd"
     }
   }
 }

@@ -218,7 +218,6 @@ test("invalid connection input, mismatched bindings, and cross-origin requests a
 
 test("API credentials are encrypted, connection-bound, replaceable, and durable across restart", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "ufai-credentials-test-"));
-  t.after(() => rm(directory, { recursive: true, force: true }));
   const databasePath = join(directory, "test.sqlite");
   const seen: string[] = [];
   const fetcher: typeof fetch = async (_url, options) => {
@@ -230,7 +229,7 @@ test("API credentials are encrypted, connection-bound, replaceable, and durable 
     serveStatic: false,
     connections: { fetcher },
   });
-  t.after(() => app.close());
+  t.after(async () => {await app.close();await rm(directory, {recursive:true,force:true});});
   const connection = await add(app);
   const storage = new Database(databasePath);
   const ciphertext = (
@@ -646,7 +645,7 @@ test("migration 7 removes provider defaults and preserves configuration, catalog
   for (let attempt = 0; attempt < 2; attempt++) {
     db = openDatabase(path);
     try {
-      assert.equal(db.pragma("user_version", { simple: true }), 10);
+      assert.equal(db.pragma("user_version", { simple: true }), 11);
       assert.deepEqual(db.pragma("foreign_key_check"), []);
       assert.equal(
         db.prepare(
@@ -673,7 +672,6 @@ test("migration 7 removes provider defaults and preserves configuration, catalog
 
 test("migration 5 removes notes and preserves legacy records, settings and timestamps", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "ufai-v4-migration-"));
-  t.after(() => rm(directory, { recursive: true, force: true }));
   const databasePath = join(directory, "test.sqlite");
   const old = openDatabase(databasePath);
   restoreOutputColumns(old);
@@ -685,7 +683,7 @@ test("migration 5 removes notes and preserves legacy records, settings and times
   const settings = old.prepare("SELECT * FROM app_settings").get();
   old.close();
   const app = createApp({ databasePath, serveStatic: false });
-  t.after(() => app.close());
+  t.after(async () => {await app.close();await rm(directory, {recursive:true,force:true});});
   const preset = (await app.inject("/api/model-presets")).json().items[0];
   assert.equal(preset.id, "kept");
   assert.equal(preset.provider, null);

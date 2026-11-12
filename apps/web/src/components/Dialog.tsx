@@ -31,35 +31,36 @@ export function Dialog({
   }, []);
   return (
     <Appearance kind="dialog">
-    <dialog
-      ref={ref}
-      className={`${styles.dialog} glassSurface`}
-      aria-labelledby={titleId}
-      aria-busy={busy}
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) onClose();
-      }}
-    >
-      <GlassMaterial appearance="regular" />
-      <div className={styles.content}>
-        <div className={styles.heading}>
-          <h2 id={titleId}>{title}</h2>
-          <Tooltip content="Close dialog">
-            <button
-              type="button"
-              className="iconButton"
-              aria-label="Close dialog"
-              onClick={onClose}
-              disabled={busy}
-            >
-              <X size={18} />
-            </button>
-          </Tooltip>
+      <dialog
+        ref={ref}
+        className={`${styles.dialog} glassSurface nodrag nopan`}
+        onClick={(event) => event.stopPropagation()}
+        aria-labelledby={titleId}
+        aria-busy={busy}
+        onCancel={(event) => {
+          event.preventDefault();
+          if (!busy) onClose();
+        }}
+      >
+        <GlassMaterial appearance="regular" />
+        <div className={styles.content}>
+          <div className={styles.heading}>
+            <h2 id={titleId}>{title}</h2>
+            <Tooltip content="Close dialog">
+              <button
+                type="button"
+                className="iconButton"
+                aria-label="Close dialog"
+                onClick={onClose}
+                disabled={busy}
+              >
+                <X size={18} />
+              </button>
+            </Tooltip>
+          </div>
+          {children}
         </div>
-        {children}
-      </div>
-    </dialog>
+      </dialog>
     </Appearance>
   );
 }

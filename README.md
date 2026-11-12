@@ -2,7 +2,7 @@
 
 An open-source, local-first application for one user to organize AI agents in multiple workspaces through a browser interface. One local backend and SQLite database hold the shared setup across browser sessions.
 
-**Status: text-only agent execution and dashboard.** Workspaces contain canvas agents with live Agent Preset links, separate task chats, a read-only workload/status chat, automatic shared memory, and context compaction. Saved Providers cover all existing API types, Ollama, and bundled Codex. Navigation, themes, model catalogs, prompt tests, and Codex subscription usage remain available. External tools, skills, agent-to-agent messaging, Interfaces, Triggers, and the built-in assistant remain planned.
+**Status: text-only agent execution and dashboard.** Workspaces contain visual department Clusters, managed shared/agent/task folders, canvas agents with live Agent Preset links, separate task chats, a read-only workload/status chat, automatic shared memory, and context compaction. Saved Providers cover all existing API types, Ollama, and bundled Codex. Navigation, themes, model catalogs, prompt tests, and Codex subscription usage remain available. External tools, skills, agent-to-agent messaging, Interfaces, Triggers, and the built-in assistant remain planned.
 
 ## Stack
 
@@ -58,16 +58,16 @@ apps/
     vite.config.ts    Development server and API proxy
 packages/
   theme-catalog/      Shared color tokens, editor metadata and default palettes
-data/                 Generated local database; ignored by Git
+data/                 Generated local database and managed files; ignored by Git
 ```
 
-API keys are encrypted using a local key under `<database filename>.connections/`; Codex maintains isolated sign-in credentials inside that directory. Keep it with the database when backing up or moving ufAI, and keep these generated files out of Git.
+API keys are encrypted using a local key under `<database filename>.connections/`; Codex maintains isolated sign-in credentials inside that directory. Keep it with the database when backing up or moving ufAI, and keep these generated files out of Git. Managed files default to `<absolute database filename>.files/`; `UFAI_FILES_ROOT` can select a different root. Preserve that root, including its ownership marker, with installation backups. Relative overrides resolve from the server working directory; `.env` files are not automatically loaded.
 
-SQLite is created at `data/ufai.sqlite` on server startup, with WAL mode and foreign-key enforcement enabled. Versioned migrations create workspace, Agent Preset, Provider/model catalog, theme, application-settings, viewport, agent, task, transcript, memory, and execution-event tables, and seed one Default workspace once. Deleting the last workspace leaves an empty state; restarting does not recreate it. The connection closes during graceful shutdown.
+SQLite is created at `data/ufai.sqlite` on server startup, with WAL mode and foreign-key enforcement enabled. Versioned migrations create workspace, Agent Preset, Provider/model catalog, theme, application-settings, viewport, agent, task, transcript, memory, execution-event, Cluster, managed-location, and file-deletion tables, and seed one Default workspace once. Deleting the last workspace leaves an empty state; restarting does not recreate it. The connection closes during graceful shutdown.
 
 ## Dashboard
 
-- **Home:** create, rename, and delete workspaces; create and position agents on flowboards, then open their task, status, memory, and configuration panels. Pan, zoom, and reset controls remain available. Board viewports are saved per workspace in SQLite after pan/zoom interactions.
+- **Home:** create, rename, and delete workspaces; create and position agents on flowboards, then open their task, status, memory, and configuration panels. Pan, zoom, and reset controls remain available. Board viewports are saved per workspace in SQLite after pan/zoom interactions. Add Cluster creates a department; drag agents into or out of groups, or use their canvas menus. Each agent belongs to at most one Cluster. Group movement carries its members. Folder paths can be copied from workspace/Cluster editing, agent configuration, and task details. Deletion warns about permanent file removal and continues on the server, with retryable cleanup failures. Deleting a Cluster keeps its agents and their files/history. Folders do not enable model file access or act as sandboxes.
 - **Providers:** configure named API, Codex subscription, custom OpenAI-compatible, and local Ollama connections. Discover or manually add models, refresh the saved catalog, edit shared context windows, and send a short test prompt. Saving requires at least one model, while discovery and testing remain optional. Codex is bundled and needs no separate CLI install.
 - **Agent Presets:** create, edit, and delete reusable agent configurations. Only a name is required; choose a saved Provider/model and optional percentage or absolute-token compaction threshold when ready. Model context windows are shared through Providers. Agents link to presets; edits apply to later turns. Incomplete presets cannot run. Compaction is automatic during long tasks.
 - **Theme:** permanent Light Mode and Dark Mode, a shared Light Mode default, and custom theme creation/duplication/editing with a contained visual preview. Custom themes and the active selection persist in SQLite for the whole local setup.
@@ -75,7 +75,7 @@ SQLite is created at `data/ufai.sqlite` on server startup, with WAL mode and for
 
 Pages use hash URLs, including `#/home`, `#/providers`, and `#/agent-presets` (`#/model-presets` remains an alias). Workspace, preset, and custom theme records survive server restarts. Selected-workspace, active-theme, and canvas viewport preferences also survive restarts in SQLite. Settings load on open and refresh when returning to a tab. Old browser preferences are ignored; new settings start with Light Mode and the first existing workspace. Unsaved drafts and URL history remain temporary. Application accounts and multi-user tenancy are outside the product scope.
 
-`npm test` runs API/database integration, client-state, theme/settings/catalog, provider catalogs, model tests, discovery/Codex lifecycle, and preset calculation/validation, durable execution, memory/compaction, streaming adapters, Codex turn isolation, and SSE reconnect checks using temporary databases and protocol fixtures.
+`npm test` runs API/database integration, client-state, theme/settings/catalog, provider catalogs, model tests, discovery/Codex lifecycle, and preset calculation/validation, durable execution, memory/compaction, streaming adapters, Codex turn isolation, SSE reconnect, managed-folder migration/recovery, confirmed file deletion, and Cluster/client-layout checks using temporary databases and protocol fixtures.
 
 ## Knowledge for ufAI app agents
 

@@ -1,3 +1,4 @@
+import { deleteOwner } from "./deletion-helper.js";
 import { removeExecutionTables } from "./legacy-schema.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -188,26 +189,17 @@ test("deletions repair selected records and cascade viewports; empty setup stays
     url: `/api/workspaces/${middle.id}/viewport`,
     payload: { x: 100 },
   });
-  await server.inject({
-    method: "DELETE",
-    url: `/api/workspaces/${middle.id}`,
-  });
+  await deleteOwner(server,`/api/workspaces/${middle.id}`);
   assert.equal(
     (await server.inject("/api/settings")).json().settings.activeWorkspaceId,
     ordered[2].id,
   );
-  await server.inject({
-    method: "DELETE",
-    url: `/api/workspaces/${ordered[2].id}`,
-  });
+  await deleteOwner(server,`/api/workspaces/${ordered[2].id}`);
   assert.equal(
     (await server.inject("/api/settings")).json().settings.activeWorkspaceId,
     ordered[0].id,
   );
-  await server.inject({
-    method: "DELETE",
-    url: `/api/workspaces/${ordered[0].id}`,
-  });
+  await deleteOwner(server,`/api/workspaces/${ordered[0].id}`);
   assert.equal(
     (await server.inject("/api/settings")).json().activeWorkspace,
     null,
@@ -238,7 +230,6 @@ test("deletions repair selected records and cascade viewports; empty setup stays
 
 test("version 2 migration preserves data; all settings survive reopening by independent clients", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "ufai-settings-"));
-  t.after(() => rm(directory, { recursive: true, force: true }));
   const databasePath = join(directory, "local.sqlite");
   let server = createApp({ databasePath, serveStatic: false });
   const workspace = (await server.inject("/api/settings")).json()
@@ -266,6 +257,7 @@ test("version 2 migration preserves data; all settings survive reopening by inde
     "DROP TABLE provider_models; DROP INDEX model_presets_connection; ALTER TABLE model_presets DROP COLUMN connectionId; DROP TABLE connections; ALTER TABLE model_presets ADD COLUMN maxOutputTokens INTEGER; ALTER TABLE model_presets ADD COLUMN notes TEXT NOT NULL DEFAULT ''; DROP TABLE workspace_viewports; DROP TABLE app_settings; ALTER TABLE workspaces DROP COLUMN description; PRAGMA user_version = 2;",
   );
   old.close();
+  await rm(`${databasePath}.files`, {recursive:true,force:true}); // The fixture deliberately removed installation identity with v11 tables.
   server = createApp({ databasePath, serveStatic: false });
   const initial = (
     await server.inject("/api/settings")
@@ -297,6 +289,7 @@ test("version 2 migration preserves data; all settings survive reopening by inde
   t.after(async () => {
     await server.close();
     await otherClient.close();
+    await rm(directory, {recursive:true,force:true});
   });
   assert.deepEqual((await server.inject("/api/settings")).json(), saved);
   assert.deepEqual((await otherClient.inject("/api/settings")).json(), saved);
@@ -306,13 +299,10 @@ test("version 2 migration preserves data; all settings survive reopening by inde
     ).json(),
     { x: 17, y: -20, zoom: 1.5 },
   );
-  await otherClient.inject({
-    method: "DELETE",
-    url: `/api/workspaces/${workspace.id}`,
-  });
+  await deleteOwner(otherClient,`/api/workspaces/${workspace.id}`);
   await server.close();
   const storage = new Database(databasePath);
-  assert.equal(storage.pragma("user_version", { simple: true }), 10);
+  assert.equal(storage.pragma("user_version", { simple: true }), 11);
   assert.equal(
     (
       storage

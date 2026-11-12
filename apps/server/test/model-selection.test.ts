@@ -131,7 +131,6 @@ test("invalid selection input and zero-model finalization never write partial st
 
 test("migration 8 and restart preserve selections, catalog refresh retains flags, large saves use a bounded route limit", async t => {
   const directory = await mkdtemp(join(tmpdir(), "ufai-model-selection-"));
-  t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "state.sqlite");
   const db = openDatabase(path);
   restoreOutputColumns(db);
@@ -149,7 +148,7 @@ test("migration 8 and restart preserve selections, catalog refresh retains flags
   assert.equal((await selection(app, id))[0]?.enabled, false);
   await app.close();
   app = createApp({ databasePath: path, serveStatic: false });
-  t.after(() => app.close());
+  t.after(async () => {await app.close();await rm(directory, {recursive:true,force:true});});
   assert.equal((await selection(app, id))[0]?.enabled, false);
   // Seed the bounded maximum directly, avoiding thousands of HTTP setup calls.
   const storage = openDatabase(path);

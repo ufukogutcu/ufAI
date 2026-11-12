@@ -5,6 +5,8 @@ import Fastify, { type FastifyError } from "fastify";
 import fastifyStatic from "@fastify/static";
 import { ConnectionService } from "./connection-service.js";
 import { AgentExecution, type ExecutionOptions } from "./agent-execution.js";
+import { ManagedFiles } from "./managed-files.js";
+import { registerLocations } from "./locations.js";
 import { registerAgents } from "./agents.js";
 import { registerSettings } from "./settings.js";
 import { registerThemes } from "./themes.js";
@@ -52,6 +54,7 @@ function toRow(input: PresetConfiguration) {
 export function createApp(
   options: {
     databasePath?: string;
+    filesRoot?: string;
     logger?: boolean;
     serveStatic?: boolean;
     connections?: ConnectionOptions;
@@ -65,7 +68,9 @@ export function createApp(
   const database = openDatabase(options.databasePath);
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof SelectionConfirmationError)
-      return reply.code(409).send({ error: error.message, selectionImpact: error.impact });
+      return reply
+        .code(409)
+        .send({ error: error.message, selectionImpact: error.impact });
     if (error instanceof ConnectionError)
       return reply.code(error.statusCode).send({ error: error.message });
     if (error instanceof InputError)
@@ -94,15 +99,29 @@ export function createApp(
   app.addHook("onClose", async () => {
     database.close();
   });
-  const connections = new ConnectionService(database, options.connections?.fetcher, options.connections?.codex);
+  const connections = new ConnectionService(
+    database,
+    options.connections?.fetcher,
+    options.connections?.codex,
+  );
   const validatePresetConnection = registerConnections(
     app,
     database,
     options.connections,
     connections,
   );
-  const execution = new AgentExecution(database, connections, options.execution);
-  registerAgents(app, database, execution);
+  const files = new ManagedFiles(database, options.filesRoot);
+  const execution = new AgentExecution(
+    database,
+    connections,
+    options.execution,
+    files,
+  );
+  files.bind(execution);
+  registerAgents(app, database, execution, files);
+  registerLocations(app, database, execution, files);
+  app.addHook("onReady", async () => files.start());
+  app.addHook("onClose", async () => files.close());
   app.addHook("onClose", async () => execution.close());
 
   const workspaceList = database.prepare(
@@ -120,9 +139,6 @@ export function createApp(
   );
   const workspaceUpdate = database.prepare(
     "UPDATE workspaces SET name = @name, description = @description, updatedAt = @updatedAt WHERE id = @id",
-  );
-  const workspaceDelete = database.prepare(
-    "DELETE FROM workspaces WHERE id = ?",
   );
   app.get("/api/workspaces", async (request) => {
     const { limit, offset } = pagination(request.query);
@@ -146,6 +162,7 @@ export function createApp(
         .prepare("UPDATE app_settings SET activeWorkspaceId = ? WHERE id = 1")
         .run(workspace.id);
     })();
+    files.kick();
     return reply.code(201).send(workspace);
   });
   app.patch<{ Params: { id: string } }>(
@@ -156,6 +173,7 @@ export function createApp(
         | undefined;
       if (!existing)
         return reply.code(404).send({ error: "Workspace not found." });
+      files.assertAvailable(existing.id);
       const input = workspaceInput(request.body, existing);
       if (
         input.name === existing.name &&
@@ -173,42 +191,20 @@ export function createApp(
   app.delete<{ Params: { id: string } }>(
     "/api/workspaces/:id",
     async (request, reply) => {
-      if (!workspaceGet.get(request.params.id)) return reply.code(404).send({ error: "Workspace not found." });
-      let removed = false;
-      await execution.deleteWorkspace(request.params.id, () => {
-      removed = database.transaction(() => {
-        const workspace = workspaceGet.get(request.params.id) as
-          | Workspace
-          | undefined;
-        if (!workspace) return false;
-        const next = database
-          .prepare(
-            `SELECT id FROM workspaces WHERE (createdAt, id) > (?, ?)
-          ORDER BY createdAt, id LIMIT 1`,
-          )
-          .get(workspace.createdAt, workspace.id) as { id: string } | undefined;
-        const previous =
-          next ??
-          (database
-            .prepare(
-              `SELECT id FROM workspaces WHERE (createdAt, id) < (?, ?)
-          ORDER BY createdAt DESC, id DESC LIMIT 1`,
-            )
-            .get(workspace.createdAt, workspace.id) as
-            | { id: string }
-            | undefined);
-        database
-          .prepare(
-            "UPDATE app_settings SET activeWorkspaceId = ? WHERE activeWorkspaceId = ?",
-          )
-          .run(previous?.id ?? null, workspace.id);
-        workspaceDelete.run(workspace.id);
-        return true;
-      })();
-      });
-      if (!removed)
+      if (!workspaceGet.get(request.params.id))
         return reply.code(404).send({ error: "Workspace not found." });
-      return reply.code(204).send();
+      const body = request.body as
+        | { confirmFilesDeletion?: unknown }
+        | undefined;
+      return reply
+        .code(202)
+        .send(
+          files.requestDeletion(
+            "workspace",
+            request.params.id,
+            body?.confirmFilesDeletion,
+          ),
+        );
     },
   );
 

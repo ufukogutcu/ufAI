@@ -55,7 +55,7 @@ One local installation holds one shared setup across browser sessions. There are
 - **Steps:** On Home, use the plus button to create a workspace and its tab to select it. Create and Edit workspace accept a required name and an optional description of up to 4,000 characters. The selected workspace's description appears beneath its name when provided. Edit and delete controls apply to the active workspace.
 - **Saving and switching:** Save stores both fields; Cancel discards edits, and failed saves retain entered values for retry. Creating a workspace selects it. Arrow keys, Home, and End navigate tabs. Additional workspaces load through the load-more control.
 - **Deletion:** Confirmation is required. Deleting the selected workspace selects the next neighboring workspace, then the previous one if needed. Deleting every workspace leaves an empty state; restarting ufAI does not recreate the deleted workspace.
-- **Limitations:** Workspaces contain agents and their [flowboards](#agent-canvas). Communication permissions, shared resources, and automatic workflows remain planned. Deleting a workspace cancels its work and removes its agents, transcripts, and memories.
+- **Limitations:** Workspaces contain agents and their [flowboards](#agent-canvas). Managed shared folders and Clusters are available. Communication permissions and automatic workflows remain planned. Deleting a workspace cancels its work and permanently removes its agents, transcripts, memories, and managed files after confirmation. File cleanup may continue after the page closes; failed cleanup offers Retry deletion.
 
 ### agent-canvas
 
@@ -64,12 +64,29 @@ One local installation holds one shared setup across browser sessions. There are
 - **Steps:** Drag to pan, scroll to zoom, or use the zoom and reset-view buttons. Each workspace remembers its own completed view changes across reloads and restarts.
 - **Limitations:** Choose Add Agent at the upper-right of the workspace area, beside its title, then open its node to configure it or chat. Drag nodes to arrange them, or focus their name button and use arrow keys. Positions are saved after movement. Agent-to-agent connection lines are not available. Failed position saves offer Retry saves; unsaved positions are not durable until saved.
 
+### agent-clusters
+
+- **Status:** implemented
+- **Purpose:** Group agents into departments within a workspace.
+- **Steps:** Choose Add Cluster beside Add Agent. Give it a name and optional description. Drag an agent into its area to join, or outside all Clusters to leave. Each agent belongs to at most one Cluster. Use the canvas-control menu for membership and movement without dragging.
+- **Behavior:** Move a Cluster by its header to move its members together. Select its area to expose its bottom-right resize handle, or use its canvas menu to enter a size. Resizing cannot exclude existing members. Moving or resizing a Cluster over other agents does not add them automatically. Color dots and labels identify members; colors are reused when many Clusters exist.
+- **Editing and deletion:** Header controls edit the Cluster or show canvas controls. Deleting requires confirmation and permanently deletes its shared files. Member agents, their folders, tasks, histories, and positions are preserved outside the Cluster.
+- **Limitations:** Clusters do not yet grant agent messaging or tool permissions. They are organizational groups, not security sandboxes.
+
+### agent-working-directories
+
+- **Status:** implemented
+- **Purpose:** Give workspaces and Clusters shared folders, and agents persistent files with separate working folders for tasks.
+- **Steps:** Find a shared-folder path in Edit workspace or Edit Cluster; find agent files in Configuration and a task working folder in its task details. Use Copy path or select the path. Folder setup errors offer a retry.
+- **Behavior:** Names and Cluster reassignment do not change these paths. Task follow-ups and retries reuse their task folder; new tasks have separate folders. Confirmed owner deletion permanently removes its managed files. If cleanup fails, retry it from the workspace's deletion progress. Restart continues previously confirmed cleanup.
+- **Limitations:** ufAI currently shows paths, not a file browser. Existing computer folders cannot be registered yet. Agents still execute text-only tasks: they cannot read these folders, run commands, or exchange files through ufAI until file tools and attachments arrive. Folders organize files and do not isolate processes.
+
 ### agent-configuration
 
 - **Status:** partial
 - **Purpose:** Give an agent a persistent name, instructions, and live Agent Preset within one workspace.
 - **Steps:** On Home, choose Add Agent beside the workspace title. Save its name, optional instructions, and preset, then open the node’s Configuration section to edit it. An agent may be saved without a complete preset.
-- **Limitations:** Execution requires an enabled saved model, usable credentials, and a known context window of at least 1,024 tokens. Skills and external-tool permissions are not implemented. Deleting an agent requires confirmation and removes its work and memory.
+- **Limitations:** Execution requires an enabled saved model, usable credentials, and a known context window of at least 1,024 tokens. Skills and external-tool permissions are not implemented. Deleting an agent requires confirmation and permanently removes its work, memory, and agent/task files. Failed file cleanup remains visible for retry.
 
 ### agent-execution
 

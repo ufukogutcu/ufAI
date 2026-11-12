@@ -1,0 +1,139 @@
+.group {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--cluster-border);
+  border-top: 3px solid var(--cluster-color);
+  border-radius: var(--radius-panel);
+  background: var(--cluster-surface);
+  color: var(--text);
+  &[data-drop="true"] {
+    outline: 2px solid var(--cluster-color);
+    outline-offset: 3px;
+    background: var(--cluster-drop-surface);
+  }
+}
+.groupHeader {
+  height: 45px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  cursor: grab;
+  > button:first-of-type {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 4px;
+  }
+}
+.dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cluster-color);
+}
+.member {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--muted);
+  > span:last-child {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+}
+.nodeMenu {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+.agentName {
+  padding-right: 32px !important;
+}
+.folder {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  font-size: 12px;
+  code {
+    display: block;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    user-select: text;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-compact);
+    background: var(--panel);
+  }
+}
+.folderActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+}
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.menuFields {
+  display: grid;
+  gap: 12px;
+  label {
+    display: grid;
+    gap: 6px;
+  }
+}
+.moveButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+.resize {
+  color: var(--cluster-color);
+  border-color: var(--cluster-color) !important;
+  background: var(--surface) !important;
+  border-radius: 3px;
+  width: 16px !important;
+  height: 16px !important;
+}
+.progress {
+  pointer-events: auto;
+  margin: 8px 0;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  font-size: 13px;
+}
+@media (any-pointer: coarse) {
+  .resize {
+    width: 24px !important;
+    height: 24px !important;
+  }
+  .groupHeader > button {
+    min-height: 44px;
+  }
+}
+
+@media (any-pointer: coarse) {
+  .agentName {
+    padding-right: 44px !important;
+  }
+}

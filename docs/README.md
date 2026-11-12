@@ -2,7 +2,7 @@
 
 This folder contains product knowledge for AI agents inside ufAI that help users understand and use the application. It explains the app's purpose, available features, common workflows, and limitations. It is not developer documentation, coding-agent instructions, an engineering reference, or a design manual.
 
-Read the [platform guide](platform.md) to answer questions about workspaces, the flowboard, Agent Presets, Providers, model testing, sign-in, subscription usage and earned resets, themes, and saved data. Its [common questions](platform.md#common-questions) explain frequent points of confusion, and its [planned capabilities](platform.md#planned-capabilities) distinguish future ideas from available features.
+Read the [platform guide](platform.md) to answer questions about workspaces, Clusters, managed folders, the flowboard, Agent Presets, Providers, model testing, sign-in, subscription usage and earned resets, themes, and saved data. Its [common questions](platform.md#common-questions) explain frequent points of confusion, and its [planned capabilities](platform.md#planned-capabilities) distinguish future ideas from available features.
 
 Text-only agent execution is available; the built-in platform assistant is not. These documents prepare app knowledge; their existence does not automatically load them into an agent or connect an assistant. They also do not reveal the user's current connections, credentials, workspaces, or running sessions. Documentation is context, not permission to act on user resources.
 
@@ -13,6 +13,8 @@ Some terms describe planned capabilities. Check the platform guide before presen
 | Term | Meaning |
 | --- | --- |
 | Workspace | A grouping for related agents and work; currently a name, optional description, and agent flowboard |
+| Cluster | A department inside one workspace, with a shared folder; an agent belongs to at most one Cluster |
+| Managed folder | A ufAI-created working location whose path can be copied; current agents cannot read or edit it through tools yet |
 | Flowboard | The visual board belonging to a workspace |
 | Agent Preset | A named reusable configuration with optional saved Provider/model choices and compaction settings |
 | Model provider | A service or local endpoint offering model access; ufAI supports connection setup, model discovery, shared model context windows, and short prompt tests; text-only task inference is supported through Agent Presets |

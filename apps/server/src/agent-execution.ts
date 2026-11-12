@@ -14,6 +14,7 @@ import type {
   TextMessage,
   TextRequest,
 } from "./execution-types.js";
+import type { ManagedFiles } from "./managed-files.js";
 import { ConnectionService } from "./connection-service.js";
 import { ConnectionError } from "./model-providers.js";
 
@@ -49,6 +50,7 @@ export class AgentExecution {
     readonly db: Database.Database,
     private connections: ConnectionService,
     private options: ExecutionOptions = {},
+    private files?: ManagedFiles,
   ) {
     this.events.setMaxListeners(128);
     // Replies committed before a crash resume maintenance without repeating generation.
@@ -75,11 +77,12 @@ export class AgentExecution {
       this.wake();
     }
   }
-  requiredAgent(id: string): Agent {
+  requiredAgent(id: string, allowDeleting = false): Agent {
     const row = this.db.prepare("SELECT * FROM agents WHERE id = ?").get(id) as
       | Agent
       | undefined;
     if (!row) throw new ConnectionError("Agent not found.", 404);
+    if (!allowDeleting) this.files?.assertAvailable(row.workspaceId, id);
     if (this.deletingWorkspaces.has(row.workspaceId) || this.deleting.has(id))
       throw new ConnectionError("Agent deletion is in progress.", 409);
     const counts = this.db
@@ -187,6 +190,23 @@ export class AgentExecution {
         "INSERT INTO execution_events(workspaceId, agentId, kind, createdAt) VALUES (?, ?, ?, ?)",
       )
       .run(a.workspaceId, agentId, kind, now());
+    this.pruneEvents();
+    this.events.emit("change", a.workspaceId);
+  }
+  workspaceEvent(workspaceId: string, kind = "changed") {
+    if (
+      this.db.prepare("SELECT id FROM workspaces WHERE id=?").get(workspaceId)
+    ) {
+      this.db
+        .prepare(
+          "INSERT INTO execution_events(workspaceId,kind,createdAt) VALUES (?,?,?)",
+        )
+        .run(workspaceId, kind, now());
+      this.pruneEvents();
+    }
+    this.events.emit("change", workspaceId);
+  }
+  private pruneEvents() {
     this.db
       .prepare(
         "DELETE FROM execution_events WHERE sequence <= (SELECT coalesce(max(sequence),0)-50000 FROM execution_events)",
@@ -200,7 +220,13 @@ export class AgentExecution {
         )
         .run(new Date(Date.now() - 7 * 86400000).toISOString());
     }
-    this.events.emit("change", a.workspaceId);
+  }
+  async settleAgents(ids: string[]) {
+    const active = [...this.active.values()].filter((a) =>
+      ids.includes(a.agentId),
+    );
+    active.forEach((a) => a.controller.abort());
+    await Promise.allSettled(active.map((a) => a.promise));
   }
   submit(agentId: string, target: string, content: string, requestId: string) {
     this.requiredAgent(agentId);
@@ -309,6 +335,7 @@ export class AgentExecution {
       return { taskId, turnId };
     })();
     this.event(agentId);
+    this.files?.kick();
     this.wake();
     return result;
   }
@@ -417,6 +444,7 @@ export class AgentExecution {
     return { taskId: id, turnId };
   }
   assertWorkspaceAvailable(id: string) {
+    this.files?.assertAvailable(id);
     if (this.deletingWorkspaces.has(id))
       throw new ConnectionError("Workspace deletion is in progress.", 409);
   }
@@ -462,7 +490,8 @@ export class AgentExecution {
       setImmediate(() => this.pump());
   }
   pump() {
-    if (this.stopped || this.pumping) return;
+    if (this.stopped || this.pumping || (this.files && !this.files.ready))
+      return;
     this.pumping = true;
     try {
       const ready = this.db
@@ -475,6 +504,14 @@ export class AgentExecution {
         .all() as (AgentTurn & { generation: number })[];
       for (const turn of ready) {
         if (this.deleting.has(turn.agentId)) continue;
+        const owner = this.db
+          .prepare("SELECT workspaceId FROM agents WHERE id=?")
+          .get(turn.agentId) as { workspaceId: string };
+        try {
+          this.files?.assertAvailable(owner.workspaceId, turn.agentId);
+        } catch {
+          continue;
+        }
         const status = !turn.taskId;
         const running = [...this.active.values()];
         if (
