@@ -573,6 +573,12 @@
 .localSample {
   color: var(--success);
 }
+.usageSamples {
+  display: grid;
+  gap: 8px;
+  margin-block: 12px;
+  > span { display: flex; align-items: center; gap: 8px; }
+}
 .errorSample {
   background: var(--error-background);
   border-bottom: 1px solid var(--error-border);

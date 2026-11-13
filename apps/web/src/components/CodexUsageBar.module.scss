@@ -1,0 +1,22 @@
+.track {
+  display: block;
+  flex-shrink: 0;
+  width: 24px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--usage-track);
+}
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+.healthy { background: var(--usage-healthy); }
+.warning { background: var(--usage-warning); }
+.critical { background: var(--usage-critical); }
+
+@media (forced-colors: active) {
+  .track { outline: 1px solid currentColor; }
+  .fill { background: currentColor; forced-color-adjust: none; }
+}

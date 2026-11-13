@@ -2,6 +2,9 @@ import type { CodexCredits, CodexUsageSnapshot, CodexUsageWindow } from "./api";
 export function remainingPercent(usedPercent: number): number {
   return Math.max(0, 100 - usedPercent);
 }
+export function usageLevel(remaining: number): "healthy" | "warning" | "critical" {
+  return remaining > 50 ? "healthy" : remaining > 20 ? "warning" : "critical";
+}
 export function durationLabel(minutes: number | null): string {
   if (!minutes) return "Window";
   if (minutes % 1440 === 0) return `${minutes / 1440}d`;

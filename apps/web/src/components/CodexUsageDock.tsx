@@ -9,6 +9,7 @@ import type { CodexUsageWindow, ProviderConnection } from "../api";
 import { Dialog } from "./Dialog";
 import { GlassMaterial } from "./GlassMaterial";
 import { Tooltip } from "./Tooltip";
+import { CodexUsageBar } from "./CodexUsageBar";
 import styles from "./CodexUsageDock.module.scss";
 
 function useMinute() {
@@ -56,7 +57,7 @@ const UsageButton = memo(function UsageButton({ provider, onOpen }: { provider: 
   return <Tooltip content={usageTooltip(provider.name, entry?.snapshot, entry?.error ?? "", now)} placement="right" hoverDelayMs={100} live multiline>
     <button className={styles.usageButton} type="button" aria-label={`${provider.name}: ${summary || (entry?.disconnected ? "Sign in to view usage" : "Usage unavailable")}. Open usage details`} aria-haspopup="dialog" onClick={() => onOpen(provider.id)}>
       {windows.length ? windows.map((window) => <span key={entry?.snapshot?.defaultLimit?.primary === window ? "primary" : "secondary"} className={styles.compactWindow}>
-        <span>{durationLabel(window.windowDurationMins)}</span><strong>{remainingPercent(window.usedPercent)}%</strong>
+        <span>{durationLabel(window.windowDurationMins)}</span><CodexUsageBar remaining={remainingPercent(window.usedPercent)} />
       </span>) : entry?.disconnected ? <LogIn size={18} aria-hidden="true" /> : entry?.loading ? <LoaderCircle size={18} aria-hidden="true" /> : <span aria-hidden="true">—</span>}
       {entry?.error && !!windows.length && <AlertCircle className={styles.staleMark} size={10} aria-hidden="true" />}
     </button>

@@ -32,6 +32,7 @@ import {
 } from "../themes";
 import styles from "./Themes.module.scss";
 import { GlassMaterial } from "../components/GlassMaterial";
+import { CodexUsageBar } from "../components/CodexUsageBar";
 import { AgentCharacter } from "../components/AgentCharacter";
 import { defaultAppearance } from "../agent-appearance";
 
@@ -64,7 +65,7 @@ const regions = [
   {
     id: "feedback",
     label: "Feedback",
-    text: "Local status, errors, warnings and deletion",
+    text: "Local status, usage bars, errors, warnings and deletion",
   },
   {
     id: "canvas",
@@ -202,6 +203,11 @@ function ThemePreview({
                     Example: the change could not be saved.
                   </p>
                   <p className={styles.warningSample}>Unsaved changes</p>
+                  <div className={styles.usageSamples}>
+                    <span><CodexUsageBar remaining={80} />80% remaining</span>
+                    <span><CodexUsageBar remaining={35} />35% remaining</span>
+                    <span><CodexUsageBar remaining={10} />10% remaining</span>
+                  </div>
                   <button
                     type="button"
                     className="button danger"

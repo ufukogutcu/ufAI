@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createCodexUsageStore } from "../src/codex-usage-store.js";
 import { createConnectionStore } from "../src/connection-store.js";
 import { startUsagePolling } from "../src/codex-usage-polling.js";
-import { durationLabel, remainingPercent, resetCountdown, usageTooltip } from "../src/codex-usage-format.js";
+import { durationLabel, remainingPercent, resetCountdown, usageLevel, usageTooltip } from "../src/codex-usage-format.js";
 import type { CodexUsageSnapshot } from "../src/api.js";
 const snapshot: CodexUsageSnapshot = { planType: "pro", defaultLimit: null, limits: [], resetCredits: { availableCount: 1, credits: null }, ordinaryUsageAllowed: null, fetchedAt: "2026-11-12T12:00:00Z" };
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -113,6 +113,18 @@ test("usage tooltips show remaining allowance, including exhausted and over-limi
     const tooltip = usageTooltip("Codex", current, "", 0);
     assert.ok(tooltip.includes(`5h: ${remaining}% remaining · Reset time unknown`));
     assert.doesNotMatch(tooltip, /% used/);
+  }
+});
+
+test("usage bar levels follow remaining allowance at both color boundaries", () => {
+  for (const [used, remaining, level] of [
+    [0, 100, "healthy"], [49, 51, "healthy"],
+    [50, 50, "warning"], [79, 21, "warning"],
+    [80, 20, "critical"], [99, 1, "critical"],
+    [100, 0, "critical"], [120, 0, "critical"],
+  ] as const) {
+    assert.equal(remainingPercent(used), remaining);
+    assert.equal(usageLevel(remainingPercent(used)), level);
   }
 });
 

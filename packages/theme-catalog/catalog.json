@@ -22,6 +22,46 @@
     }
   ],
   "tokens": {
+    "usage-track": {
+      "cssVariable": "--usage-track",
+      "label": "Usage bar track",
+      "description": "Unfilled portion of Codex allowance bars.",
+      "components": ["Codex usage dock", "Usage bar preview"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#dedede",
+      "dark": "#383838"
+    },
+    "usage-healthy": {
+      "cssVariable": "--usage-healthy",
+      "label": "Usage bar: high allowance",
+      "description": "Green fill when more than 50% of Codex allowance remains.",
+      "components": ["Codex usage dock", "Usage bar preview"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#287842",
+      "dark": "#79c891"
+    },
+    "usage-warning": {
+      "cssVariable": "--usage-warning",
+      "label": "Usage bar: low allowance",
+      "description": "Yellow fill when more than 20% and at most 50% of Codex allowance remains.",
+      "components": ["Codex usage dock", "Usage bar preview"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#916c08",
+      "dark": "#e6c34a"
+    },
+    "usage-critical": {
+      "cssVariable": "--usage-critical",
+      "label": "Usage bar: critical allowance",
+      "description": "Red fill when 20% or less of Codex allowance remains.",
+      "components": ["Codex usage dock", "Usage bar preview"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#bd3939",
+      "dark": "#f07b7b"
+    },
     "character-accent": {
       "cssVariable": "--character-accent",
       "label": "Character accessory accent",

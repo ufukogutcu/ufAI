@@ -39,6 +39,10 @@ function legacyTheme(theme: Theme): Theme {
     "glass-shade",
     "ambient-glow",
     "ambient-shade",
+    "usage-track",
+    "usage-healthy",
+    "usage-warning",
+    "usage-critical",
   ] as const) {
     delete (colors as Partial<Theme["colors"]>)[key];
   }
@@ -214,6 +218,20 @@ test("older custom palettes inherit glass scopes while preserving saved override
       resolveColors(mode, { "glass-surface": "#123456aa" })["glass-surface"],
       "#123456aa",
     );
+  }
+});
+
+test("older custom palettes inherit usage bar colors while retaining overrides", () => {
+  const keys = ["usage-track", "usage-healthy", "usage-warning", "usage-critical"] as const;
+  for (const mode of ["light", "dark"] as const) {
+    const older = legacyTheme({ ...custom, mode });
+    const resolved = resolveTheme(older);
+    assert.equal(resolved.colors.text, custom.colors.text);
+    for (const key of keys) {
+      assert.equal(older.colors[key], undefined);
+      assert.equal(resolved.colors[key], catalog.tokens[key][mode]);
+      assert.equal(resolveColors(mode, { [key]: "#123456" })[key], "#123456");
+    }
   }
 });
 
