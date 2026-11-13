@@ -9,7 +9,7 @@ import {
   type FormEvent,
   type CSSProperties,
 } from "react";
-import { ArrowLeft, Check, ChevronDown, Copy, Home, LockKeyhole, Palette, Plus, Settings, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Copy, Home, ListTodo, LockKeyhole, MoreHorizontal, Palette, Plus, Settings, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Dialog } from "../components/Dialog";
 import { Appearance, AppearanceGroup } from "../components/Appearance";
 import { Disclosure } from "../components/Disclosure";
@@ -32,6 +32,8 @@ import {
 } from "../themes";
 import styles from "./Themes.module.scss";
 import { GlassMaterial } from "../components/GlassMaterial";
+import { AgentCharacter } from "../components/AgentCharacter";
+import { defaultAppearance } from "../agent-appearance";
 
 const characterPreviewColors = [
   "var(--character-sage)", "var(--character-honey)", "var(--character-sky)",
@@ -219,7 +221,12 @@ function ThemePreview({
                     <GlassMaterial />
                     − &nbsp; 100% &nbsp; +
                   </span>
-                  <div className={styles.agentSample}>Researcher<small>Ready · 0 queued</small></div>
+                  <div className={styles.agentSample}>
+                    <AgentCharacter appearance={defaultAppearance} paused decorative className={styles.agentSampleCharacter} />
+                    <MoreHorizontal className={styles.agentSampleMenu} size={16} aria-hidden="true" />
+                    <span>Researcher</span>
+                    <small><Check size={14} aria-label="Ready" /><ListTodo size={14} aria-hidden="true" /> 0</small>
+                  </div>
                   <div className={styles.agentPanelSample}>Agent conversation</div>
                   <div className={styles.clusterSample}>
                     <strong>Research Cluster</strong>

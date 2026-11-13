@@ -98,7 +98,7 @@ export class AgentExecution {
   }
   requiredAgent(id: string, allowDeleting = false): Agent {
     const row = this.db.prepare("SELECT * FROM agents WHERE id = ?").get(id) as
-      | (Omit<Agent, "appearance" | "state" | "queuedCount"> & { appearance: string })
+      | (Omit<Agent, "appearance" | "state" | "queuedCount" | "runningTaskCount"> & { appearance: string })
       | undefined;
     if (!row) throw new ConnectionError("Agent not found.", 404);
     if (!allowDeleting)
@@ -112,9 +112,9 @@ export class AgentExecution {
       .get(id) as { queued: number };
     const running = this.db
       .prepare(
-        `SELECT id FROM agent_turns WHERE agentId = ? AND taskId IS NOT NULL AND status = 'running' LIMIT 1`,
+        `SELECT count(DISTINCT taskId) AS count FROM agent_turns WHERE agentId = ? AND taskId IS NOT NULL AND status = 'running'`,
       )
-      .get(id);
+      .get(id) as { count: number };
     const waiting = this.db
       .prepare(
         "SELECT id FROM agent_turns WHERE agentId=? AND status='waiting' LIMIT 1",
@@ -129,7 +129,8 @@ export class AgentExecution {
       ...row,
       appearance: JSON.parse(row.appearance),
       queuedCount: counts.queued,
-      state: running
+      runningTaskCount: running.count,
+      state: running.count
         ? "running"
         : counts.queued
           ? "queued"

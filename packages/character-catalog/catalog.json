@@ -64,11 +64,14 @@
     }
   },
   "node": {
-    "width": 208,
+    "width": 144,
     "height": 192,
-    "characterSize": 96,
+    "characterSize": 128,
     "gap": 8,
-    "cardHeight": 88,
+    "labelWidth": 128,
+    "cardHeight": 28,
+    "indicatorGap": 8,
+    "indicatorHeight": 20,
     "clusterHeader": 48,
     "legacyWidth": 224,
     "legacyHeight": 104

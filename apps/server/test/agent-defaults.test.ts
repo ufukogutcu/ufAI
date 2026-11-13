@@ -94,7 +94,7 @@ test("v14 upgrade preserves presets, agents and settings, seeds no default and r
   db.close();
   db = openDatabase(path);
   try {
-    assert.equal(db.pragma("user_version", { simple: true }), 16);
+    assert.equal(db.pragma("user_version", { simple: true }), 17);
     assert.deepEqual(db.prepare("SELECT * FROM model_presets").get(), { ...preset, isDefault: 0 });
     assertCharacterUpgrade(db.prepare("SELECT * FROM agents").get(), agent);
     assert.deepEqual(db.prepare("SELECT * FROM app_settings").get(), settings);

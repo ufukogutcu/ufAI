@@ -79,10 +79,10 @@ export function removeExecutionTables(database: Database.Database) {
   `);
 }
 
-// Migration 16 changes only appearance and the top-left position needed to retain the canvas center.
+// Migrations 16 and 17 add appearance and preserve centers through both node-size changes.
 export function assertCharacterUpgrade(actual: any, previous: any) {
   if (Object.hasOwn(actual, "appearance")) assert.deepEqual(validateAppearance(JSON.parse(actual.appearance)), JSON.parse(actual.appearance));
   const { appearance: _actual, ...after } = actual;
   const { appearance: _previous, ...before } = previous;
-  assert.deepEqual(after, { ...before, x: before.x + 8, y: before.y - 44 });
+  assert.deepEqual(after, { ...before, x: before.x + 40, y: before.y - 44 });
 }

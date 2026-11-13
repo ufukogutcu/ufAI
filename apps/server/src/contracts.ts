@@ -254,6 +254,7 @@ export interface Agent {
   updatedAt: string;
   state: TaskStatus | "idle";
   queuedCount: number;
+  runningTaskCount: number;
 }
 export interface AgentTask {
   source?: "user" | "agent";

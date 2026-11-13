@@ -41,30 +41,6 @@
   border-radius: 50%;
   background: var(--cluster-color);
 }
-.member {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  min-width: 0;
-  font-size: 11px;
-  color: var(--muted);
-  > span:last-child {
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-}
-.nodeMenu {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-}
-.agentName {
-  padding-right: 32px !important;
-}
-@media (any-pointer: coarse) {
-  .agentName { padding-right: 48px !important; }
-}
 .folder {
   min-width: 0;
   display: grid;
@@ -132,11 +108,5 @@
   }
   .groupHeader > button {
     min-height: 44px;
-  }
-}
-
-@media (any-pointer: coarse) {
-  .agentName {
-    padding-right: 44px !important;
   }
 }

@@ -77,8 +77,9 @@ export function migrateCharacters(db: Database.Database) {
         const appearance = generateAppearance(counts);
         const found = counts.find(item => appearanceKey(item.appearance) === appearanceKey(appearance));
         if (found) found.count++; else counts.push({ appearance, count: 1 });
-        const x = agent.x + (catalog.node.legacyWidth - catalog.node.width) / 2;
-        const y = agent.y + (catalog.node.legacyHeight - catalog.node.height) / 2;
+        // Migration 16 must retain its original geometry, independent of later catalog changes.
+        const x = agent.x + (224 - 208) / 2;
+        const y = agent.y + (104 - 192) / 2;
         update.run(JSON.stringify(appearance), Math.max(-1e6, Math.min(1e6, x)), Math.max(-1e6, Math.min(1e6, y)), agent.id);
       }
       offset += batch.length;

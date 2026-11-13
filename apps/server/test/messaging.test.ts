@@ -646,7 +646,7 @@ test("v13 upgrade preserves populated records and stable paths while backfilling
     if (table === "agents") rows.forEach((row, index) => assertCharacterUpgrade(row, retained[table]![index]));
     else assert.deepEqual(rows, retained[table], table);
   }
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 16);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 17);
   assert.deepEqual(
     (upgraded.prepare("SELECT content FROM agent_messages").all() as any[]).map(
       (r) => r.content,

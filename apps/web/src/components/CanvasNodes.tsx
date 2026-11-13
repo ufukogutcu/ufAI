@@ -1,6 +1,7 @@
 import { LiveAgentCharacter } from "./LiveAgentCharacter";
 import {
   memo,
+  useContext,
   useState,
   useRef,
   type CSSProperties,
@@ -9,7 +10,7 @@ import {
 import { CommunicationMenuAction } from "./Messaging";
 import messagingStyles from "./Messaging.module.scss";
 import { Handle, Position, NodeResizeControl, type NodeProps } from "@xyflow/react";
-import { MoreHorizontal, Pencil } from "lucide-react";
+import { Ban, Check, CircleAlert, Clock, Hourglass, Layers, ListTodo, LoaderCircle, MessageCircle, MoreHorizontal, Pencil, TriangleAlert } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useAgents, useAgentStore } from "../agent-store";
 import {
@@ -23,6 +24,22 @@ import { clusterColors } from "../cluster-colors";
 import { Dialog } from "./Dialog";
 import styles from "./Clusters.module.scss";
 import agentStyles from "./AgentPanel.module.scss";
+import type { Agent } from "../../../server/src/contracts";
+import { useSettings } from "../settings-store";
+import { CharacterVisibilityContext } from "./CharacterMotion";
+import { Tooltip } from "./Tooltip";
+
+const agentStates = {
+  idle: { label: "Ready", icon: Check },
+  running: { label: "Working", icon: LoaderCircle },
+  queued: { label: "Queued", icon: Clock },
+  waiting: { label: "Waiting", icon: Hourglass },
+  awaiting_user: { label: "Awaiting input", icon: MessageCircle },
+  completed: { label: "Completed", icon: Check },
+  blocked: { label: "Blocked", icon: CircleAlert },
+  failed: { label: "Failed", icon: TriangleAlert },
+  cancelled: { label: "Cancelled", icon: Ban },
+} satisfies Record<Agent["state"], { label: string; icon: typeof Check }>;
 
 export function clusterColor(slot: number): CSSProperties {
   return {
@@ -197,7 +214,20 @@ export const AgentNode = memo(function AgentNode({
     agent?.clusterId ? s.clusters[agent.clusterId] : undefined,
   );
   const [menu, setMenu] = useState(false);
+  const paused = useSettings(s => s.snapshot.settings.characterAnimationsPaused);
+  const hidden = useContext(CharacterVisibilityContext);
   if (!agent) return null;
+  const state = agentStates[agent.state];
+  const StateIcon = state.icon;
+  const taskLabel = `${agent.runningTaskCount} running tasks · ${agent.queuedCount} queued`;
+  function selectAgent(event: React.MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    guard(() => store.getState().select(agent!.workspaceId, agent!.id));
+  }
+  function openMenu(event: React.MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    setMenu(true);
+  }
   function keyboard(event: React.KeyboardEvent) {
     const direction: Record<string, [number, number]> = {
       ArrowLeft: [-16, 0],
@@ -231,46 +261,47 @@ export const AgentNode = memo(function AgentNode({
       style={cluster ? clusterColor(cluster.colorSlot) : undefined}
     >
       <div className={agentStyles.canvasCharacter}><LiveAgentCharacter agent={agent} /></div>
+      <Handle id="in" type="target" position={Position.Left} className={messagingStyles.handle} aria-label="Receive communication permission" />
+      <Handle id="out" type="source" position={Position.Right} className={messagingStyles.handle} aria-label="Grant outgoing communication permission" />
       <div className={agentStyles.nodeCard}>
-      <Handle id="in" type="target" position={Position.Left} className={messagingStyles.handle} aria-label="Receive communication permission"/>
-      <Handle id="out" type="source" position={Position.Right} className={messagingStyles.handle} aria-label="Grant outgoing communication permission"/>
-      <button
-        className={`nodrag ${styles.agentName}`}
-        data-move="true"
-        title={agent.name}
-        onClick={(event) => {
-          event.stopPropagation();
-          guard(() => store.getState().select(agent.workspaceId, agent.id));
-        }}
-      >
-        {agent.name}
-      </button>
-      <button
-        className={`iconButton nodrag ${styles.nodeMenu}`}
-        aria-label={`Canvas controls for ${agent.name}`}
-        onClick={(event) => {
-          event.stopPropagation();
-          setMenu(true);
-        }}
-      >
-        <MoreHorizontal size={18} />
-      </button>
-      <p>
-        {agent.state === "running"
-          ? "Working"
-          : agent.state === "queued"
-            ? "Queued"
-            : agent.state === "idle"
-              ? "Ready"
-              : agent.state.replaceAll("_", " ")}{" "}
-        · {agent.queuedCount} queued
-      </p>
-      {cluster && (
-        <div className={styles.member} title={`Cluster: ${cluster.name}`}>
-          <span className={styles.dot} aria-hidden="true" />
-          <span>Cluster: {cluster.name}</span>
-        </div>
-      )}
+        <Tooltip content={agent.name}>
+          <button
+            className={`nodrag ${agentStyles.nodeName}`}
+            data-move="true"
+            onClick={selectAgent}
+          >
+            {agent.name}
+          </button>
+        </Tooltip>
+      </div>
+      <Tooltip content="Canvas controls">
+        <button
+          className={`iconButton nodrag ${agentStyles.nodeMenu}`}
+          aria-label={`Canvas controls for ${agent.name}`}
+          onClick={openMenu}
+        >
+          <MoreHorizontal size={16} aria-hidden="true" />
+        </button>
+      </Tooltip>
+      <div className={agentStyles.nodeIndicators}>
+        <Tooltip content={state.label} live>
+          <span className={`nodrag ${agentStyles.nodeIndicator}`} tabIndex={0} role="img" aria-label={state.label}>
+            <StateIcon size={14} aria-hidden="true" className={agent.state === "running" ? agentStyles.nodeSpinner : undefined} data-paused={paused || hidden} />
+          </span>
+        </Tooltip>
+        <Tooltip content={taskLabel} live>
+          <span className={`nodrag ${agentStyles.nodeIndicator}`} tabIndex={0} role="img" aria-label={taskLabel}>
+            <ListTodo size={14} aria-hidden="true" />
+            <span aria-hidden="true">{agent.runningTaskCount}</span>
+          </span>
+        </Tooltip>
+        {cluster && (
+          <Tooltip content={`Cluster: ${cluster.name}`}>
+            <span className={`nodrag ${agentStyles.nodeIndicator} ${agentStyles.nodeCluster}`} tabIndex={0} role="img" aria-label={`Cluster: ${cluster.name}`}>
+              <Layers size={14} aria-hidden="true" />
+            </span>
+          </Tooltip>
+        )}
       </div>
       {menu && (
         <NodeActions agentId={agent.id} onClose={() => setMenu(false)} />

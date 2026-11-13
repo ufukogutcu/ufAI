@@ -75,6 +75,36 @@ async function until(check: () => boolean) {
   assert.fail("Timed out waiting for execution.");
 }
 
+test("running-task counts are distinct, agent-scoped and exclude queued, waiting and status turns", async t => {
+  const f = setup(async () => result("Unused"), false);
+  t.after(() => f.close());
+  const addConversation = f.db.prepare("INSERT INTO conversations(id,agentId,kind,createdAt) VALUES (?,?,'task','now')");
+  const addTask = f.db.prepare("INSERT INTO agent_tasks(id,agentId,conversationId,title,status,createdAt,updatedAt) VALUES (?,?,?,?,'queued','now','now')");
+  const addTurn = f.db.prepare("INSERT INTO agent_turns(id,taskId,conversationId,agentId,inputMessageId,attempt,status,createdAt,updatedAt) VALUES (?,?,?,?,?,1,?,'now','now')");
+  assert.equal(f.engine.requiredAgent("a").runningTaskCount, 0);
+  for (const [id, status, agentId] of [["one", "running", "a"], ["two", "running", "a"], ["queued", "queued", "a"], ["waiting", "waiting", "a"], ["other", "running", "b"]]) {
+    addConversation.run(id, agentId);
+    addTask.run(id, agentId, id, id);
+    addTurn.run(id, id, id, agentId, `input-${id}`, status);
+  }
+  addTurn.run("duplicate", "one", "one", "a", "input-duplicate", "running");
+  f.db.exec("INSERT INTO conversations(id,agentId,kind,createdAt) VALUES ('status','a','status','now')");
+  addTurn.run("status", null, "status", "a", "input-status", "running");
+  const agent = f.engine.requiredAgent("a");
+  assert.equal(agent.runningTaskCount, 2);
+  assert.equal(agent.queuedCount, 1);
+  assert.equal(agent.state, "running");
+  assert.equal(f.engine.requiredAgent("b").runningTaskCount, 1);
+  f.db.exec("UPDATE agent_turns SET status='completed' WHERE taskId='one'");
+  assert.equal(f.engine.requiredAgent("a").runningTaskCount, 1);
+  f.db.exec("UPDATE agent_turns SET status='failed' WHERE taskId='two'");
+  assert.equal(f.engine.requiredAgent("a").runningTaskCount, 0);
+  f.db.exec("UPDATE agent_turns SET status='running' WHERE taskId='waiting'");
+  assert.equal(f.engine.requiredAgent("a").runningTaskCount, 1);
+  f.db.exec("UPDATE agent_turns SET status='waiting' WHERE taskId='waiting'");
+  assert.equal(f.engine.requiredAgent("a").runningTaskCount, 0);
+});
+
 test("submissions are durable, deduplicated, and task contexts include prior replies even when follow-ups were queued early", async (t) => {
   let release!: () => void;
   const gate = new Promise<void>((r) => {

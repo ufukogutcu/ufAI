@@ -207,28 +207,75 @@
 }
 .node {
   position: relative;
-  width: 208px;
+  width: 144px;
   height: 192px;
   color: var(--text);
 }
-.canvasCharacter { width: 96px; height: 96px; margin: 0 auto 8px; pointer-events: none; }
+.canvasCharacter {
+  width: 128px; height: 128px; margin: 0 auto 8px; pointer-events: none;
+  filter: drop-shadow(0 2px 3px var(--agent-node-shadow));
+}
 .nodeCard {
   position: relative;
-  width: 208px;
-  height: 88px;
+  width: 128px;
+  height: 28px;
+  margin: 0 auto 8px;
   background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-control);
-  padding: 4px 10px 8px;
-  box-shadow: 0 4px 14px var(--agent-node-shadow);
-  > button:first-of-type {
-    display: block; background: transparent; border: 0; text-align: left;
-    color: var(--text); font-size: 14px; font-weight: 500;
-    width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-    padding: 0; min-height: 32px;
-  }
-  p { margin: 2px 0 4px; color: var(--muted); font-size: 12px; line-height: 16px; }
+  border: 1px solid var(--border);
+  border-radius: var(--radius-compact);
+  &:hover { background: var(--hover); }
 }
+.nodeName {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  width: 100%;
+  height: 44px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 8px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-compact);
+  text-align: center;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.nodeMenu { position: absolute; top: 0; right: 0; }
+.nodeIndicators {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 128px;
+  height: 20px;
+  margin: 0 auto;
+  gap: 12px;
+  color: var(--muted);
+}
+.nodeIndicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 20px;
+  height: 20px;
+  border-radius: var(--radius-compact);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  &:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+}
+.nodeCluster { color: var(--cluster-color); }
+.nodeSpinner {
+  animation: nodeSpin 1s linear infinite;
+  &[data-paused="true"] { animation-play-state: paused; }
+}
+@keyframes nodeSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .nodeSpinner { animation: none; } }
 .creationCharacter { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .creationCharacterPreview { width: 128px; height: 128px; display: grid; place-items: center; font-size: 12px; color: var(--muted); text-align: center; }
 .panelCharacter { width: 64px; flex: 0 0 64px; position: relative;
@@ -237,7 +284,6 @@
 .agentIdentity { min-width: 0; flex: 1;
   h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; max-height: 4.5em; }
 }
-@media (any-pointer: coarse) { .nodeCard > button:first-of-type { min-height: 44px; } .nodeCard { padding-top: 0; padding-bottom: 4px; } .nodeCard p { margin-top: 0; } }
 @media (max-width: 767px) {
   .panel {
     top: 140px;
@@ -337,13 +383,4 @@
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
-}
-
-@media (any-pointer: coarse) {
-  .node {
-    padding: 8px;
-  }
-  .node p {
-    margin: 3px 0;
-  }
 }

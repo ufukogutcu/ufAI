@@ -19,6 +19,7 @@ const a: Agent = {
   updatedAt: "now",
   state: "idle",
   queuedCount: 0,
+  runningTaskCount: 0,
 };
 
 test("unchanged workspace snapshots retain node and agent references; status updates do not rebuild canvas nodes", async (t) => {
@@ -40,11 +41,16 @@ test("unchanged workspace snapshots retain node and agent references; status upd
   await s.getState().loadWorkspace("workspace");
   assert.equal(s.getState().nodes.workspace, nodes);
   assert.equal(s.getState().agents.agent, record);
-  agent = { ...a, state: "running", queuedCount: 2 };
+  agent = { ...a, state: "running", queuedCount: 2, runningTaskCount: 1 };
   await s.getState().loadWorkspace("workspace");
   assert.equal(s.getState().nodes.workspace, nodes);
   assert.notEqual(s.getState().agents.agent, record);
   const running = s.getState().agents.agent;
+  agent = { ...agent, runningTaskCount: 2 };
+  await s.getState().loadWorkspace("workspace");
+  assert.equal(s.getState().nodes.workspace, nodes);
+  assert.notEqual(s.getState().agents.agent, running);
+  assert.equal(s.getState().agents.agent!.runningTaskCount, 2);
   agent = { ...agent, appearance: { kind: "droplet", color: "coral", accessories: ["glasses"] } };
   await s.getState().loadWorkspace("workspace");
   assert.equal(s.getState().nodes.workspace, nodes);
@@ -56,11 +62,13 @@ test("only running agents work and Cluster membership uses the character node ce
   assert.equal(agentActivity("running"), "working");
   for (const state of ["idle", "queued", "waiting", "awaiting_user", "completed", "blocked", "failed", "cancelled"] as const)
     assert.equal(agentActivity(state), "idle");
-  assert.equal(AGENT_WIDTH, 208); assert.equal(AGENT_HEIGHT, 192);
+  assert.equal(AGENT_WIDTH, 144); assert.equal(AGENT_HEIGHT, 192);
   const cluster = { id: "cluster", workspaceId: "workspace", name: "Group", description: "", x: 0, y: 0, width: 320, height: 200, colorSlot: 0, createdAt: "now", updatedAt: "now" };
-  assert.equal(dropCluster([cluster], -104, -48), "cluster");
-  assert.equal(dropCluster([cluster], -104, -49), null);
-  assert.equal(dropCluster([cluster], 217, 0), null);
+  assert.equal(dropCluster([cluster], -72, -48), "cluster");
+  assert.equal(dropCluster([cluster], -73, -48), null);
+  assert.equal(dropCluster([cluster], -72, -49), null);
+  assert.equal(dropCluster([cluster], 249, 0), null);
+  assert.equal(dropCluster([cluster], 248, 0), "cluster");
 });
 test("composer drafts and request identities survive selection changes without sharing between tasks", () => {
   const original = globalThis.crypto;
