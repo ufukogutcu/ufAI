@@ -1,3 +1,4 @@
+import catalog from "@ufai/character-catalog" with { type: "json" };
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
@@ -142,17 +143,17 @@ export function registerLocations(
     const v = validate(req.body, old),
       dx = v.x - old.x,
       dy = v.y - old.y;
-    // Existing members keep their relative location when the group moves. Origin (top-left) must remain inside its content area.
+    // Existing members keep their relative location; their node centers stay in the content area.
     const members = db
       .prepare("SELECT id,x,y FROM agents WHERE clusterId=?")
       .all(old.id) as { id: string; x: number; y: number }[];
     if (
       members.some(
         (a) =>
-          a.x + dx + 112 < v.x ||
-          a.y + dy + 52 < v.y + 48 ||
-          a.x + dx + 112 > v.x + v.width ||
-          a.y + dy + 52 > v.y + v.height,
+          a.x + dx + catalog.node.width / 2 < v.x ||
+          a.y + dy + catalog.node.height / 2 < v.y + catalog.node.clusterHeader ||
+          a.x + dx + catalog.node.width / 2 > v.x + v.width ||
+          a.y + dy + catalog.node.height / 2 > v.y + v.height,
       )
     )
       throw new InputError({

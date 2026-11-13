@@ -62,6 +62,7 @@ test("one settings record, resolved selections beyond pagination, and independen
     activeThemeId: themeId,
     activeWorkspaceId: workspaceId,
     sidebarExpanded: true,
+    characterAnimationsPaused: false,
   });
   assert.equal(settings.activeTheme.id, themeId);
   assert.equal(settings.activeWorkspace?.id, workspaceId);
@@ -302,7 +303,7 @@ test("version 2 migration preserves data; all settings survive reopening by inde
   await deleteOwner(otherClient, `/api/workspaces/${workspace.id}`);
   await server.close();
   const storage = new Database(databasePath);
-  assert.equal(storage.pragma("user_version", { simple: true }), 15);
+  assert.equal(storage.pragma("user_version", { simple: true }), 16);
   assert.equal(
     (
       storage

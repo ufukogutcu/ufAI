@@ -1,0 +1,76 @@
+{
+  "characters": {
+    "pebble": "Pebble",
+    "sprout": "Sprout",
+    "bot": "Tiny bot",
+    "droplet": "Droplet"
+  },
+  "colors": {
+    "sage": {
+      "name": "Sage",
+      "variable": "var(--character-sage)"
+    },
+    "honey": {
+      "name": "Honey",
+      "variable": "var(--character-honey)"
+    },
+    "sky": {
+      "name": "Sky",
+      "variable": "var(--character-sky)"
+    },
+    "coral": {
+      "name": "Coral",
+      "variable": "var(--character-coral)"
+    },
+    "lilac": {
+      "name": "Lilac",
+      "variable": "var(--character-lilac)"
+    },
+    "teal": {
+      "name": "Teal",
+      "variable": "var(--character-teal)"
+    }
+  },
+  "accessories": {
+    "glasses": "Glasses",
+    "headphones": "Headphones",
+    "cap": "Cap",
+    "badge": "Star badge"
+  },
+  "activities": {
+    "idle": {
+      "name": "Idle",
+      "description": "A little breath. A little blink. Ready when you are."
+    },
+    "working": {
+      "name": "Working",
+      "description": "Tiny hands, big plans. Getting things done."
+    },
+    "dreaming": {
+      "name": "Dreaming",
+      "description": "Eyes closed. Somewhere among the stars."
+    },
+    "studying": {
+      "name": "Studying",
+      "description": "One page at a time. Taking it all in."
+    },
+    "studying-hard": {
+      "name": "Studying much harder",
+      "description": "Books open. Pencil out. Fully focused."
+    },
+    "thinking": {
+      "name": "Thinking",
+      "description": "A thoughtful tilt. An idea is taking shape."
+    }
+  },
+  "node": {
+    "width": 208,
+    "height": 192,
+    "characterSize": 96,
+    "gap": 8,
+    "cardHeight": 88,
+    "clusterHeader": 48,
+    "legacyWidth": 224,
+    "legacyHeight": 104
+  }
+}

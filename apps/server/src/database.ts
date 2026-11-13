@@ -1,3 +1,4 @@
+import { migrateCharacters } from "./agent-appearance.js";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,7 +24,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 15)
+    if (version > 16)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -218,6 +219,11 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
           CREATE UNIQUE INDEX model_presets_default ON model_presets(isDefault) WHERE isDefault = 1;
         `);
         database.pragma("user_version = 15");
+      })();
+    if (version < 16)
+      database.transaction(() => {
+        migrateCharacters(database);
+        database.pragma("user_version = 16");
       })();
   } catch (error) {
     database.close();

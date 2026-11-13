@@ -657,7 +657,7 @@ test("migration 7 removes provider defaults and preserves configuration, catalog
   for (let attempt = 0; attempt < 2; attempt++) {
     db = openDatabase(path);
     try {
-      assert.equal(db.pragma("user_version", { simple: true }), 15);
+      assert.equal(db.pragma("user_version", { simple: true }), 16);
       assert.deepEqual(db.pragma("foreign_key_check"), []);
       assert.equal(
         db
@@ -715,7 +715,7 @@ test("migration 5 removes notes and preserves legacy records, settings and times
   const inspection = new Database(databasePath);
   assert.deepEqual(
     inspection.prepare("SELECT * FROM app_settings").get(),
-    settings,
+    { ...settings as object, characterAnimationsPaused: 0 },
   );
   assert.equal(
     (

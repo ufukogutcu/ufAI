@@ -33,6 +33,11 @@ import {
 import styles from "./Themes.module.scss";
 import { GlassMaterial } from "../components/GlassMaterial";
 
+const characterPreviewColors = [
+  "var(--character-sage)", "var(--character-honey)", "var(--character-sky)",
+  "var(--character-coral)", "var(--character-lilac)", "var(--character-teal)",
+];
+
 const regions = [
   {
     id: "dashboard",
@@ -224,6 +229,16 @@ function ThemePreview({
                   <pre className={styles.terminalSample}>$ build report{'\n'}Report saved · exit 0</pre>
                   <svg width="100" height="24" aria-label="Communication permission preview"><path d="M4 12 H82 L74 6 M82 12 L74 18" fill="none" stroke="var(--communication-edge)" strokeWidth="2"/><path d="M4 22 H82" stroke="var(--communication-edge-selected)" strokeWidth="2"/></svg>
                   <small>Workspace canvas</small>
+                  <svg width="220" height="58" viewBox="0 0 220 58" role="img" aria-label="Character prototype colors and props">
+                    {characterPreviewColors.map((color, index) => <g key={color} transform={`translate(${index * 32 + 3} 0)`}>
+                      <ellipse cx="14" cy="51" rx="14" ry="3" fill="var(--character-shadow)" />
+                      <rect x="1" y="9" width="26" height="36" rx="12" fill={color} stroke="var(--character-ink)" strokeWidth="2" />
+                      <path d="M4 10Q5 1 14 1Q23 1 24 10Z" fill="var(--character-accent)" stroke="var(--character-ink)" />
+                      <rect x="5" y="20" width="18" height="13" rx="5" fill="var(--character-paper)" />
+                      <path d="M10 26h1M17 26h1" stroke="var(--character-ink)" strokeWidth="2" strokeLinecap="round" />
+                      <path d="M7 37h14v9H7z" fill="var(--character-prop)" stroke="var(--character-ink)" />
+                    </g>)}
+                  </svg>
                 </div>
               )}
               {region.id === "dialog" && (

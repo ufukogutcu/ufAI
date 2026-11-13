@@ -2,7 +2,7 @@
 
 This folder contains product knowledge for AI agents inside ufAI that help users understand and use the application. It explains the app's purpose, available features, common workflows, and limitations. It is not developer documentation, coding-agent instructions, an engineering reference, or a design manual.
 
-Read the [platform guide](platform.md) to answer questions about workspaces, Clusters, managed folders, the flowboard, Agent Presets, Providers, model testing, sign-in, subscription usage and earned resets, themes, and saved data. Its [common questions](platform.md#common-questions) explain frequent points of confusion, and its [planned capabilities](platform.md#planned-capabilities) distinguish future ideas from available features.
+Read the [platform guide](platform.md) to answer questions about workspaces, [agent characters](platform.md#agent-characters), Clusters, managed folders, the flowboard, Agent Presets, Providers, model testing, sign-in, subscription usage and earned resets, themes, and saved data. Its [common questions](platform.md#common-questions) explain frequent points of confusion, and its [planned capabilities](platform.md#planned-capabilities) distinguish future ideas from available features.
 
 Agent execution, host tools, terminal sessions, composer attachments, native image/PDF inputs on supported models, published files, agent messaging, directed communication permissions, and the workspace Inbox are available; the built-in platform assistant is not. These documents prepare app knowledge; their existence does not automatically load them into an agent or connect an assistant. They also do not reveal the user's current connections, credentials, workspaces, or running sessions. Documentation is context, not permission to act on user resources.
 
@@ -20,7 +20,7 @@ Some terms describe planned capabilities. Check the platform guide before presen
 | Model provider | A service or local endpoint offering model access; ufAI supports connection setup, model discovery, shared model context windows, and short prompt tests; task inference with tools where the selected model supports them is supported through Agent Presets |
 | Agent runtime | An existing agent system such as Codex; ufAI currently supports Codex sign-in, model discovery, subscription usage and earned resets, and short prompt tests; task conversations with ufAI-managed tools are supported |
 | Provider | A named saved service/account/endpoint configuration with at least one model; Agent Presets select from these records |
-| Agent | A persistent workspace identity with instructions and a live Agent Preset; ordinary tasks have host tools; skills and fine-grained tool permissions remain planned |
+| Agent | A persistent workspace identity with a customizable character, instructions and a live Agent Preset; ordinary tasks have host tools; skills and fine-grained tool permissions remain planned |
 | Agent communication connection | A directed permission for an agent to initiate requests or notifications to another agent; different from a saved Provider account |
 | Session | A conversation or isolated task context belonging to an agent |
 | Attachment | A file sent with a task message; sending waits for every file to be saved, and visual inspection requires model support |

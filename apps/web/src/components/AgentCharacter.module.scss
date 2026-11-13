@@ -1,0 +1,78 @@
+.character {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  color: var(--character-ink);
+  fill: var(--character-body);
+  stroke: currentColor;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  g { transform-box: fill-box; transform-origin: center; }
+}
+.shadow { fill: var(--character-shadow); stroke: none; }
+.character .actor { animation: breathe 3.8s ease-in-out infinite; transform-origin: center bottom; }
+.eyes { fill: var(--character-ink); stroke: none; animation: blink 5.2s infinite; }
+.facePanel, .paper, .dreamCloud { fill: var(--character-paper); }
+.closedEyes, .brows, .glasses, .screenLines, .bookLines, .focusMarks { fill: none; }
+.headphones { fill: var(--character-prop); }
+.headphones > path { fill: none; stroke-width: 6; }
+.cap, .badge, .pencil, .dreamStar { fill: var(--character-accent); }
+.laptop, .book, .bookStack { fill: var(--character-prop); }
+.screenLines { stroke-width: 2.5; }
+.bookLines { stroke-width: 1.6; opacity: .65; }
+.character .page { fill: var(--character-paper); stroke-width: 1; opacity: .75; transform-origin: left center; animation: page-turn 6s ease-in-out infinite; }
+.dream { fill: var(--character-paper); animation: dream-drift 4s ease-in-out infinite; }
+.dreamStar { stroke-width: 2; }
+.thoughts { fill: var(--character-prop); }
+.thoughts circle { animation: thought 2.4s ease-in-out infinite; }
+.thoughts circle:nth-child(2) { animation-delay: .3s; }
+.thoughts circle:nth-child(3) { animation-delay: .6s; }
+
+.character[data-activity="working"] {
+  .actor { animation: work 1.2s ease-in-out infinite; }
+  .leftHand, .rightHand { animation: typing .32s ease-in-out infinite alternate; }
+  .rightHand { animation-delay: -.16s; }
+  .screenLines { animation: code 1.8s steps(2) infinite; }
+}
+.character[data-activity="dreaming"] {
+  .actor { animation: sleeping 4s ease-in-out infinite; }
+  .rightHand, .leftHand { transform: translateY(6px); }
+}
+.character[data-activity="studying"] {
+  .actor { animation: reading 4.8s ease-in-out infinite; }
+  .eyes { animation: blink 6s infinite, scan 3s ease-in-out infinite; }
+}
+.character[data-activity="studying-hard"] {
+  .actor { animation: focus 1s ease-in-out infinite; }
+  .pencil, .rightHand { animation: scribble .22s ease-in-out infinite alternate; }
+  .page { animation-duration: 2.8s; }
+  .focusMarks { animation: thought 1.5s ease-in-out infinite; }
+}
+.character[data-activity="thinking"] {
+  .actor { animation: pondering 5s ease-in-out infinite; }
+  .eyes { transform: translate(2px, -3px); }
+  .rightHand { animation: chin-tap 2.2s ease-in-out infinite; }
+}
+.character[data-paused="true"], .character[data-paused="true"] * { animation-play-state: paused !important; }
+
+@keyframes breathe { 0%,100% { transform: translateY(0) scaleY(1); } 50% { transform: translateY(-2px) scaleY(1.025); } }
+@keyframes blink { 0%,42%,46%,100% { scale: 1 1; } 44% { scale: 1 .1; } }
+@keyframes work { 0%,100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(1px) rotate(1deg); } }
+@keyframes typing { from { transform: translateY(-5px); } to { transform: translateY(3px); } }
+@keyframes code { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+@keyframes sleeping { 0%,100% { transform: translateY(3px) rotate(-4deg) scaleY(.96); } 50% { transform: translateY(-2px) rotate(1deg) scaleY(1); } }
+@keyframes dream-drift { 0%,100% { transform: translateY(0); opacity: .7; } 50% { transform: translateY(-7px); opacity: 1; } }
+@keyframes reading { 0%,100% { transform: rotate(-2deg); } 50% { transform: translateY(2px) rotate(1deg); } }
+@keyframes scan { 0%,100% { translate: -2px 1px; } 65% { translate: 3px 1px; } }
+@keyframes page-turn { 0%,75%,100% { transform: scaleX(1); opacity: .75; } 88% { transform: scaleX(.04); opacity: .3; } }
+@keyframes focus { 0%,100% { transform: translateY(2px) rotate(2deg); } 50% { transform: translateY(3px) rotate(3deg); } }
+@keyframes scribble { from { transform: translate(0, -2px) rotate(-4deg); } to { transform: translate(-4px, 2px) rotate(4deg); } }
+@keyframes thought { 0%,100% { opacity: .25; } 50% { opacity: 1; } }
+@keyframes pondering { 0%,100% { transform: rotate(-5deg); } 45%,65% { transform: rotate(4deg) translateY(-2px); } }
+@keyframes chin-tap { 0%,75%,100% { transform: translateY(0); } 85% { transform: translateY(-4px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .character, .character * { animation: none !important; }
+}

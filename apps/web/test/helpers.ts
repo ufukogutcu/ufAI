@@ -10,6 +10,7 @@ export function initialSettings(): SettingsResponse {
       activeThemeId: "light-mode",
       activeWorkspaceId: null,
       sidebarExpanded: false,
+      characterAnimationsPaused: false,
     },
     activeTheme: defaultThemes[0]!,
     activeWorkspace: null,

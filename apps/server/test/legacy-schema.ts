@@ -1,3 +1,5 @@
+import assert from "node:assert/strict";
+import { validateAppearance } from "../src/agent-appearance.js";
 import type Database from "better-sqlite3";
 
 // Reconstruct columns removed in v9 when an upgrade fixture starts from today's schema.
@@ -10,7 +12,15 @@ export function restoreOutputColumns(database: Database.Database) {
   `);
 }
 
+export function removeCharacters(database: Database.Database) {
+  if ((database.pragma("table_info(agents)") as { name: string }[]).some(column => column.name === "appearance"))
+    database.exec("ALTER TABLE agents DROP COLUMN appearance");
+  if ((database.pragma("table_info(app_settings)") as { name: string }[]).some(column => column.name === "characterAnimationsPaused"))
+    database.exec("ALTER TABLE app_settings DROP COLUMN characterAnimationsPaused");
+}
+
 export function removePresetDefault(database: Database.Database) {
+  removeCharacters(database);
   if ((database.pragma("table_info(model_presets)") as { name: string }[]).some((column) => column.name === "isDefault")) {
     database.exec("DROP INDEX model_presets_default; ALTER TABLE model_presets DROP COLUMN isDefault");
   }
@@ -67,4 +77,12 @@ export function removeExecutionTables(database: Database.Database) {
     DROP TABLE execution_events;
     DROP TABLE agents;
   `);
+}
+
+// Migration 16 changes only appearance and the top-left position needed to retain the canvas center.
+export function assertCharacterUpgrade(actual: any, previous: any) {
+  if (Object.hasOwn(actual, "appearance")) assert.deepEqual(validateAppearance(JSON.parse(actual.appearance)), JSON.parse(actual.appearance));
+  const { appearance: _actual, ...after } = actual;
+  const { appearance: _previous, ...before } = previous;
+  assert.deepEqual(after, { ...before, x: before.x + 8, y: before.y - 44 });
 }

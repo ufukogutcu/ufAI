@@ -1,11 +1,12 @@
+import characterCatalog from "@ufai/character-catalog";
 import type { Node } from "@xyflow/react";
 import type { Agent, Cluster } from "../../server/src/contracts";
 export type AgentFlowNode = Node<{ agentId: string }, "agent">;
 export type ClusterFlowNode = Node<{ clusterId: string }, "cluster">;
 export type WorkspaceFlowNode = AgentFlowNode | ClusterFlowNode;
-export const AGENT_WIDTH = 224,
-  AGENT_HEIGHT = 104,
-  CLUSTER_HEADER = 48;
+export const AGENT_WIDTH = characterCatalog.node.width,
+  AGENT_HEIGHT = characterCatalog.node.height,
+  CLUSTER_HEADER = characterCatalog.node.clusterHeader;
 export function dropCluster(clusters: Cluster[], x: number, y: number) {
   const cx = x + AGENT_WIDTH / 2,
     cy = y + AGENT_HEIGHT / 2;

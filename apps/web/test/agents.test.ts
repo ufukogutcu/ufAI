@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createAgentStore } from "../src/agent-store";
 import type { Agent } from "../../server/src/contracts";
+import { agentActivity } from "../src/agent-appearance";
+import { AGENT_WIDTH, AGENT_HEIGHT, dropCluster } from "../src/canvas-layout";
 const a: Agent = {
+  appearance: { kind: "pebble", color: "sage", accessories: [] },
   id: "agent",
   workspaceId: "workspace",
   name: "Researcher",
@@ -41,6 +44,23 @@ test("unchanged workspace snapshots retain node and agent references; status upd
   await s.getState().loadWorkspace("workspace");
   assert.equal(s.getState().nodes.workspace, nodes);
   assert.notEqual(s.getState().agents.agent, record);
+  const running = s.getState().agents.agent;
+  agent = { ...agent, appearance: { kind: "droplet", color: "coral", accessories: ["glasses"] } };
+  await s.getState().loadWorkspace("workspace");
+  assert.equal(s.getState().nodes.workspace, nodes);
+  assert.notEqual(s.getState().agents.agent, running);
+  assert.deepEqual(s.getState().agents.agent!.appearance, agent.appearance);
+});
+
+test("only running agents work and Cluster membership uses the character node center", () => {
+  assert.equal(agentActivity("running"), "working");
+  for (const state of ["idle", "queued", "waiting", "awaiting_user", "completed", "blocked", "failed", "cancelled"] as const)
+    assert.equal(agentActivity(state), "idle");
+  assert.equal(AGENT_WIDTH, 208); assert.equal(AGENT_HEIGHT, 192);
+  const cluster = { id: "cluster", workspaceId: "workspace", name: "Group", description: "", x: 0, y: 0, width: 320, height: 200, colorSlot: 0, createdAt: "now", updatedAt: "now" };
+  assert.equal(dropCluster([cluster], -104, -48), "cluster");
+  assert.equal(dropCluster([cluster], -104, -49), null);
+  assert.equal(dropCluster([cluster], 217, 0), null);
 });
 test("composer drafts and request identities survive selection changes without sharing between tasks", () => {
   const original = globalThis.crypto;

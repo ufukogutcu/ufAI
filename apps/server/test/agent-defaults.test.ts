@@ -1,3 +1,4 @@
+import { assertCharacterUpgrade } from "./legacy-schema.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -93,9 +94,9 @@ test("v14 upgrade preserves presets, agents and settings, seeds no default and r
   db.close();
   db = openDatabase(path);
   try {
-    assert.equal(db.pragma("user_version", { simple: true }), 15);
+    assert.equal(db.pragma("user_version", { simple: true }), 16);
     assert.deepEqual(db.prepare("SELECT * FROM model_presets").get(), { ...preset, isDefault: 0 });
-    assert.deepEqual(db.prepare("SELECT * FROM agents").get(), agent);
+    assertCharacterUpgrade(db.prepare("SELECT * FROM agents").get(), agent);
     assert.deepEqual(db.prepare("SELECT * FROM app_settings").get(), settings);
     db.exec("UPDATE model_presets SET isDefault=1 WHERE id='p'");
     assert.throws(() => db.exec("INSERT INTO model_presets(id,name,isDefault,createdAt,updatedAt) VALUES ('other','Other',1,'now','now')"), /UNIQUE/);

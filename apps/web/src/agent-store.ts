@@ -16,6 +16,7 @@ import { deleteManaged } from "./managed-files";
 import { request, errorMessage, RequestError } from "./api";
 import type {
   Agent,
+  AgentAppearance,
   ArtifactVersion,
   OwnedProcess,
   ExecutionItem,
@@ -128,6 +129,7 @@ interface AgentState {
     workspaceId: string,
     input: {
       name: string;
+      appearance?: AgentAppearance;
       presetId?: string | null;
       x?: number;
       y?: number;

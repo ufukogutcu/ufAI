@@ -10,11 +10,15 @@ export function Dialog({
   children,
   onClose,
   busy = false,
+  contentClassName = "",
+  initialFocusSelector = "input",
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   busy?: boolean;
+  contentClassName?: string;
+  initialFocusSelector?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -22,13 +26,13 @@ export function Dialog({
     const dialog = ref.current!;
     const previous = document.activeElement;
     dialog.showModal();
-    dialog.querySelector<HTMLInputElement>("input")?.focus();
+    dialog.querySelector<HTMLElement>(initialFocusSelector)?.focus();
     return () => {
       dialog.close();
       if (previous instanceof HTMLElement && previous.isConnected)
         previous.focus();
     };
-  }, []);
+  }, [initialFocusSelector]);
   return (
     <Appearance kind="dialog">
       <dialog
@@ -50,7 +54,7 @@ export function Dialog({
         }}
       >
         <GlassMaterial appearance="regular" />
-        <div className={styles.content}>
+        <div className={`${styles.content} ${contentClassName}`}>
           <div className={styles.heading}>
             <h2 id={titleId}>{title}</h2>
             <Tooltip content="Close dialog">

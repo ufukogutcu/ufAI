@@ -1,3 +1,4 @@
+import { assertCharacterUpgrade } from "./legacy-schema.js";
 import { removeMessagingTables } from "./legacy-schema.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -348,17 +349,16 @@ test("v12 upgrade retains existing messages, references and paths; interrupted i
   );
   db.close();
   db = openDatabase(path);
-  for (const table of preserved)
-    assert.deepEqual(
-      db.prepare(`SELECT ${Object.keys((before[table] as any[])[0] ?? {}).join(",") || "*"} FROM ${table} ORDER BY rowid`).all(),
-      before[table],
-      table,
-    );
+  for (const table of preserved) {
+    const rows = db.prepare(`SELECT ${Object.keys((before[table] as any[])[0] ?? {}).join(",") || "*"} FROM ${table} ORDER BY rowid`).all();
+    if (table === "agents") rows.forEach((row, index) => assertCharacterUpgrade(row, before[table]![index]));
+    else assert.deepEqual(rows, before[table], table);
+  }
   assert.equal(
     (db.prepare("SELECT mode FROM artifact_references").get() as any).mode,
     "file",
   );
-  assert.equal(db.pragma("user_version", { simple: true }), 15);
+  assert.equal(db.pragma("user_version", { simple: true }), 16);
   const files = new ManagedFiles(db, join(root, "files"));
   await files.start();
   const artifacts = new ArtifactService(db, files, () => {});

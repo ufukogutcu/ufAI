@@ -1,3 +1,4 @@
+import type characterCatalog from "@ufai/character-catalog";
 import type catalog from "@ufai/theme-catalog";
 
 // Browser imports from this module must remain type-only.
@@ -162,6 +163,7 @@ export interface AppSettings {
   activeThemeId: string;
   activeWorkspaceId: string | null;
   sidebarExpanded: boolean;
+  characterAnimationsPaused: boolean;
 }
 export interface SettingsResponse {
   settings: AppSettings;
@@ -228,7 +230,17 @@ export type TaskStatus =
   | "blocked"
   | "failed"
   | "cancelled";
+export type CharacterKind = keyof typeof characterCatalog.characters;
+export type CharacterColor = keyof typeof characterCatalog.colors;
+export type CharacterAccessory = keyof typeof characterCatalog.accessories;
+export type CharacterActivity = keyof typeof characterCatalog.activities;
+export interface AgentAppearance {
+  kind: CharacterKind;
+  color: CharacterColor;
+  accessories: CharacterAccessory[];
+}
 export interface Agent {
+  appearance: AgentAppearance;
   id: string;
   workspaceId: string;
   name: string;

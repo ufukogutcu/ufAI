@@ -1,3 +1,4 @@
+import { CharacterMotionProvider } from "./CharacterMotion";
 import { useEffect, useState, type ReactNode } from "react";
 import { AgentContext, createAgentStore } from "../agent-store";
 import { refreshOnFocus } from "../focus-refresh";
@@ -30,7 +31,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   );
   return (
     <DashboardContext.Provider value={store}>
-      <AgentContext.Provider value={agents}>{children}</AgentContext.Provider>
+      <AgentContext.Provider value={agents}><CharacterMotionProvider>{children}</CharacterMotionProvider></AgentContext.Provider>
     </DashboardContext.Provider>
   );
 }

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import characterCatalog from "@ufai/character-catalog";
 import { readFile, readdir } from "node:fs/promises";
 import { test } from "node:test";
 import {
@@ -221,6 +222,10 @@ test("application color literals and CSS variables must come from the theme cata
   const variables = new Set(
     colorKeys.map((key) => catalog.tokens[key].cssVariable),
   );
+  for (const color of Object.values(characterCatalog.colors)) {
+    assert.match(color.variable, /^var\(--character-[a-z]+\)$/);
+    assert.ok(variables.has(color.variable.slice(4, -1)), color.name);
+  }
   async function inspect(directory: URL): Promise<void> {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const url = new URL(entry.name, directory);
@@ -240,9 +245,9 @@ test("application color literals and CSS variables must come from the theme cata
         if (match[1] && match[1] in catalog.tokens) used.add(catalog.tokens[match[1] as keyof typeof catalog.tokens].cssVariable);
       }
       for (const match of source.matchAll(/var\((--[\w-]+)/g)) {
-        // Layout variables are structural, not editable palette scopes.
+        // Local color aliases resolve to catalog scopes; other exceptions describe layout.
         if ([
-          "--swatch", "--cluster-color", "--radius-floating", "--radius-panel",
+          "--swatch", "--cluster-color", "--character-body", "--radius-floating", "--radius-panel",
           "--radius-control", "--radius-compact",
           "--control-height", "--icon-control-size", "--nav-target-size",
           "--nav-gap", "--nav-index", "--dock-padding", "--dock-padding-block", "--dock-left",

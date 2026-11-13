@@ -1,3 +1,4 @@
+import { assertCharacterUpgrade } from "./legacy-schema.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { randomUUID, createHash } from "node:crypto";
@@ -640,13 +641,12 @@ test("v13 upgrade preserves populated records and stable paths while backfilling
   removeMessagingTables(s.db);
   s.db.pragma("user_version=13");
   const upgraded = openDatabase(s.path);
-  for (const table of tables)
-    assert.deepEqual(
-      upgraded.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),
-      retained[table],
-      table,
-    );
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 15);
+  for (const table of tables) {
+    const rows = upgraded.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all();
+    if (table === "agents") rows.forEach((row, index) => assertCharacterUpgrade(row, retained[table]![index]));
+    else assert.deepEqual(rows, retained[table], table);
+  }
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 16);
   assert.deepEqual(
     (upgraded.prepare("SELECT content FROM agent_messages").all() as any[]).map(
       (r) => r.content,

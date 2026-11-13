@@ -9,8 +9,9 @@ import type {
 import { readTheme } from "./themes.js";
 import { InputError, objectBody } from "./validation.js";
 
-type SettingsRow = Omit<AppSettings, "sidebarExpanded"> & {
+type SettingsRow = Omit<AppSettings, "sidebarExpanded" | "characterAnimationsPaused"> & {
   sidebarExpanded: number;
+  characterAnimationsPaused: number;
 };
 
 export function registerSettings(
@@ -18,7 +19,7 @@ export function registerSettings(
   database: Database.Database,
 ) {
   const getSettings = database.prepare(
-    "SELECT activeThemeId, activeWorkspaceId, sidebarExpanded FROM app_settings WHERE id = 1",
+    "SELECT activeThemeId, activeWorkspaceId, sidebarExpanded, characterAnimationsPaused FROM app_settings WHERE id = 1",
   );
   const getWorkspace = database.prepare(
     "SELECT * FROM workspaces WHERE id = ?",
@@ -26,7 +27,7 @@ export function registerSettings(
   function read(): SettingsResponse {
     const row = getSettings.get() as SettingsRow;
     return {
-      settings: { ...row, sidebarExpanded: Boolean(row.sidebarExpanded) },
+      settings: { ...row, sidebarExpanded: Boolean(row.sidebarExpanded), characterAnimationsPaused: Boolean(row.characterAnimationsPaused) },
       activeTheme: readTheme(database, row.activeThemeId)!,
       activeWorkspace: row.activeWorkspaceId
         ? (getWorkspace.get(row.activeWorkspaceId) as Workspace)
@@ -39,7 +40,7 @@ export function registerSettings(
     const fields: Record<string, string> = {};
     for (const key of Object.keys(patch))
       if (
-        !["activeThemeId", "activeWorkspaceId", "sidebarExpanded"].includes(key)
+        !["activeThemeId", "activeWorkspaceId", "sidebarExpanded", "characterAnimationsPaused"].includes(key)
       )
         fields[key] = "Unknown field.";
     if (
@@ -60,14 +61,16 @@ export function registerSettings(
       typeof patch.sidebarExpanded !== "boolean"
     )
       fields.sidebarExpanded = "Provide true or false.";
+    if (Object.hasOwn(patch, "characterAnimationsPaused") && typeof patch.characterAnimationsPaused !== "boolean")
+      fields.characterAnimationsPaused = "Provide true or false.";
     if (Object.keys(fields).length) throw new InputError(fields);
     const settings = { ...read().settings, ...patch } as AppSettings;
     database
       .prepare(
         `UPDATE app_settings SET activeThemeId = @activeThemeId,
-      activeWorkspaceId = @activeWorkspaceId, sidebarExpanded = @sidebarExpanded WHERE id = 1`,
+      activeWorkspaceId = @activeWorkspaceId, sidebarExpanded = @sidebarExpanded, characterAnimationsPaused = @characterAnimationsPaused WHERE id = 1`,
       )
-      .run({ ...settings, sidebarExpanded: Number(settings.sidebarExpanded) });
+      .run({ ...settings, sidebarExpanded: Number(settings.sidebarExpanded), characterAnimationsPaused: Number(settings.characterAnimationsPaused) });
     return read();
   });
 

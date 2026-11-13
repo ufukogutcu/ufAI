@@ -22,6 +22,161 @@
     }
   ],
   "tokens": {
+    "character-accent": {
+      "cssVariable": "--character-accent",
+      "label": "Character accessory accent",
+      "description": "Warm accent on caps, badges, pencils and dream stars.",
+      "components": [
+        "Agent characters",
+        "Agent characters",
+        "Character playground",
+        "Character palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#ebc36d",
+      "dark": "#ebc36d"
+    },
+    "character-sage": {
+      "cssVariable": "--character-sage",
+      "label": "Sage body",
+      "description": "A soft green character body.",
+      "components": [
+        "Agent characters",
+        "Character playground",
+        "Character palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#aec7a4",
+      "dark": "#aec7a4"
+    },
+    "character-honey": {
+      "cssVariable": "--character-honey",
+      "label": "Honey body",
+      "description": "A warm yellow character body.",
+      "components": [
+        "Agent characters",
+        "Character playground",
+        "Character palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#ebc36d",
+      "dark": "#ebc36d"
+    },
+    "character-sky": {
+      "cssVariable": "--character-sky",
+      "label": "Sky body",
+      "description": "A soft blue character body.",
+      "components": [
+        "Agent characters",
+        "Character playground",
+        "Character palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#9dbcd2",
+      "dark": "#9dbcd2"
+    },
+    "character-coral": {
+      "cssVariable": "--character-coral",
+      "label": "Coral body",
+      "description": "A warm coral character body.",
+      "components": [
+        "Agent characters",
+        "Character playground",
+        "Character palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#eaa08d",
+      "dark": "#eaa08d"
+    },
+    "character-lilac": {
+      "cssVariable": "--character-lilac",
+      "label": "Lilac body",
+      "description": "A soft purple character body.",
+      "components": [
+        "Agent characters",
+        "Character playground",
+        "Character palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#c4b2d9",
+      "dark": "#c4b2d9"
+    },
+    "character-teal": {
+      "cssVariable": "--character-teal",
+      "label": "Teal body",
+      "description": "A muted teal character body.",
+      "components": [
+        "Agent characters",
+        "Character playground",
+        "Character palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#8dbdb5",
+      "dark": "#8dbdb5"
+    },
+    "character-ink": {
+      "cssVariable": "--character-ink",
+      "label": "Character outlines and eyes",
+      "description": "Dark outlines, facial details and selection marks on colored characters and their palette.",
+      "components": [
+        "Agent characters",
+        "Character playground",
+        "Character palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#2c3532",
+      "dark": "#2c3532"
+    },
+    "character-paper": {
+      "cssVariable": "--character-paper",
+      "label": "Character face and paper",
+      "description": "Light robot face panels, book pages and dream clouds.",
+      "components": [
+        "Agent characters",
+        "Character playground",
+        "Character palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#fff7e6",
+      "dark": "#fff7e6"
+    },
+    "character-prop": {
+      "cssVariable": "--character-prop",
+      "label": "Character props",
+      "description": "Books, laptops and headphone shells.",
+      "components": [
+        "Agent characters",
+        "Character playground",
+        "Character palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#b0b9b0",
+      "dark": "#b0b9b0"
+    },
+    "character-shadow": {
+      "cssVariable": "--character-shadow",
+      "label": "Character ground shadow",
+      "description": "A subtle shadow beneath a character.",
+      "components": [
+        "Agent characters",
+        "Character playground",
+        "Character palette preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#2c35321a",
+      "dark": "#00000040"
+    },
     "background": {
       "cssVariable": "--background",
       "label": "App background",

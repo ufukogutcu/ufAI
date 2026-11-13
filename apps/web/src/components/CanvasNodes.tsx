@@ -1,3 +1,4 @@
+import { LiveAgentCharacter } from "./LiveAgentCharacter";
 import {
   memo,
   useState,
@@ -229,6 +230,8 @@ export const AgentNode = memo(function AgentNode({
       onKeyDown={keyboard}
       style={cluster ? clusterColor(cluster.colorSlot) : undefined}
     >
+      <div className={agentStyles.canvasCharacter}><LiveAgentCharacter agent={agent} /></div>
+      <div className={agentStyles.nodeCard}>
       <Handle id="in" type="target" position={Position.Left} className={messagingStyles.handle} aria-label="Receive communication permission"/>
       <Handle id="out" type="source" position={Position.Right} className={messagingStyles.handle} aria-label="Grant outgoing communication permission"/>
       <button
@@ -268,6 +271,7 @@ export const AgentNode = memo(function AgentNode({
           <span>Cluster: {cluster.name}</span>
         </div>
       )}
+      </div>
       {menu && (
         <NodeActions agentId={agent.id} onClose={() => setMenu(false)} />
       )}

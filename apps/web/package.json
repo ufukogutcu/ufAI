@@ -19,7 +19,8 @@
     "lucide-react": "^1.72.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "zustand": "^5.1.0"
+    "zustand": "^5.1.0",
+    "@ufai/character-catalog": "0.1.0"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",

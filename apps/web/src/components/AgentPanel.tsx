@@ -1,3 +1,9 @@
+import type { AgentAppearance } from "../../../server/src/contracts";
+import { defaultAppearance } from "../agent-appearance";
+import { AgentCharacter } from "./AgentCharacter";
+import { LiveAgentCharacter } from "./LiveAgentCharacter";
+import { CharacterEditor } from "./CharacterEditor";
+import { useSettings } from "../settings-store";
 import { TaskCommunications } from "./Messaging";
 import { TaskComposer as Composer } from "./TaskComposer";
 import { MessageAttachments } from "./MessageAttachments";
@@ -10,6 +16,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  Pencil,
   ArrowLeft,
   Plus,
   Send,
@@ -37,14 +44,34 @@ import styles from "./AgentPanel.module.scss";
 
 export function AgentForm({
   agent,
+  workspaceId,
+  onBusyChange,
   onSave,
 }: {
   agent?: Agent;
+  workspaceId?: string;
+  onBusyChange?: (busy: boolean) => void;
   onSave: (values: {
     name: string;
     presetId: string | null;
+    appearance?: AgentAppearance;
   }) => Promise<void>;
 }) {
+  const [appearance, setAppearance] = useState<AgentAppearance | null>(null);
+  const [appearanceError, setAppearanceError] = useState("");
+  const [appearanceAttempt, setAppearanceAttempt] = useState(0);
+  const [editingCharacter, setEditingCharacter] = useState(false);
+  const appearanceTouched = useRef(false);
+  const paused = useSettings(s => s.snapshot.settings.characterAnimationsPaused);
+  useEffect(() => {
+    if (agent || !workspaceId || appearanceTouched.current) return;
+    let alive = true;
+    setAppearanceError("");
+    void request<{ appearance: AgentAppearance }>(`/workspaces/${workspaceId}/agents/appearance-suggestion`)
+      .then(result => { if (alive && !appearanceTouched.current) setAppearance(result.appearance); })
+      .catch(failure => { if (alive && !appearanceTouched.current) setAppearanceError(errorMessage(failure)); });
+    return () => { alive = false; };
+  }, [agent, workspaceId, appearanceAttempt]);
   const presets = useDashboard((s) => s.presets),
     load = useDashboard((s) => s.loadPresets),
     presetTotal = useDashboard((s) => s.presetTotal),
@@ -62,7 +89,8 @@ export function AgentForm({
     [baseline, setBaseline] = useState(initial),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const dirty = JSON.stringify(draft) !== JSON.stringify(baseline);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(baseline) || (!agent && appearanceTouched.current);
+  useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
   useUnsavedChanges(dirty);
   useEffect(() => {
     void load().catch(() => {});
@@ -104,11 +132,11 @@ export function AgentForm({
   }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!defaultReady) return;
+    if (busy || !defaultReady || (!agent && !appearance)) return;
     setBusy(true);
     setError("");
     try {
-      await onSave(draft);
+      await onSave({ ...draft, ...(!agent && appearance ? { appearance } : {}) });
       setBaseline(draft);
     } catch (err) {
       setError(errorMessage(err));
@@ -118,10 +146,18 @@ export function AgentForm({
   }
   return (
     <form onSubmit={submit} className={styles.form}>
+      {!agent && <div className={styles.creationCharacter}>
+        <div className={styles.creationCharacterPreview}>{appearance ? <AgentCharacter appearance={appearance} paused={paused} /> : <span role="status">{appearanceError ? "Choose a character" : "Choosing character…"}</span>}</div>
+        <button type="button" className="button secondary" disabled={busy} onClick={() => setEditingCharacter(true)}><Pencil size={14} aria-hidden /> Edit character</button>
+        {appearanceError && <p role="alert" className="errorBanner">{appearanceError}<button type="button" className="textButton" disabled={busy} onClick={() => setAppearanceAttempt(value => value + 1)}>Retry character</button></p>}
+      </div>}
+      {editingCharacter && <CharacterEditor initial={appearance ?? defaultAppearance} creating onClose={() => setEditingCharacter(false)} onSave={async value => { appearanceTouched.current = true; setAppearance(value); setAppearanceError(""); }} />}
+
       <Field label="Agent name">
         {(p) => (
           <input
             {...p}
+            disabled={busy}
             name="agentName"
             autoComplete="off"
             maxLength={120}
@@ -138,6 +174,7 @@ export function AgentForm({
         {(p) => (
           <select
             {...p}
+            disabled={busy}
             name="presetId"
             value={draft.presetId ?? ""}
             onChange={(e) => {
@@ -192,7 +229,7 @@ export function AgentForm({
         </p>
       )}
       <div className={styles.actions}>
-        <button className="button primary" disabled={busy || !defaultReady}>
+        <button className="button primary" disabled={busy || !defaultReady || (!agent && !appearance)}>
           {busy ? "Saving…" : agent ? "Save Agent" : "Create Agent"}
         </button>
       </div>
@@ -449,6 +486,7 @@ export function AgentPanel({
 }) {
   const store = useAgentStore(),
     guard = useNavigationGuard();
+  const [editingCharacter, setEditingCharacter] = useState(false);
   const [tab, setTab] = useState("Overview"),
     [taskId, setTaskId] = useState<string | null>(null),
     [newTask, setNewTask] = useState(false),
@@ -528,8 +566,12 @@ export function AgentPanel({
       }}
     >
       <header className={styles.header}>
-        <div>
-          <h2 ref={heading} tabIndex={-1} id="agent-panel-heading">
+        <div className={styles.panelCharacter}>
+          <LiveAgentCharacter agent={agent} />
+          <button className="iconButton" aria-label="Edit character" title="Edit character" onClick={() => setEditingCharacter(true)}><Pencil size={14} aria-hidden /></button>
+        </div>
+        <div className={styles.agentIdentity}>
+          <h2 ref={heading} tabIndex={-1} id="agent-panel-heading" title={agent.name}>
             {agent.name}
           </h2>
           <p>
@@ -790,6 +832,7 @@ export function AgentPanel({
           </button>
         </div>
       )}
+      {editingCharacter && <CharacterEditor initial={agent.appearance} onClose={() => setEditingCharacter(false)} onSave={async appearance => { await store.getState().update(agent.id, { appearance }); }} />}
       {deleting && (
         <Dialog
           title="Delete agent?"

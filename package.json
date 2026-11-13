@@ -13,6 +13,9 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "dev:characters": "vite --config prototypes/characters/vite.config.ts",
+    "check:characters": "tsc --project prototypes/characters/tsconfig.json --noEmit",
+    "build:characters": "npm run check:characters && vite build --config prototypes/characters/vite.config.ts",
     "dev": "concurrently --kill-others --names server,web \"npm run dev --workspace @ufai/server\" \"npm run dev --workspace @ufai/web\"",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",

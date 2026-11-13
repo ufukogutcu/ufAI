@@ -1,3 +1,5 @@
+import catalog from "@ufai/character-catalog" with { type: "json" };
+import { generateAppearance, validateAppearance, workspaceAppearanceCounts } from "./agent-appearance.js";
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
@@ -64,6 +66,7 @@ export function registerAgents(
       "x",
       "y",
       "clusterId",
+      "appearance",
     ]);
     const v = {
       name: "",
@@ -94,6 +97,7 @@ export function registerAgents(
           key,
           "Use a finite coordinate between -1,000,000 and 1,000,000.",
         );
+    if (Object.hasOwn(p, "appearance")) v.appearance = validateAppearance(p.appearance);
     return v;
   };
   app.get<{ Params: { id: string } }>(
@@ -116,6 +120,11 @@ export function registerAgents(
       };
     },
   );
+  app.get<{ Params: { id: string } }>("/api/workspaces/:id/agents/appearance-suggestion", async (req, reply) => {
+    workspace(req.params.id);
+    reply.header("Cache-Control", "no-store");
+    return { appearance: generateAppearance(workspaceAppearanceCounts(db, req.params.id)) };
+  });
   app.post<{ Params: { id: string } }>(
     "/api/workspaces/:id/agents",
     async (req, reply) => {
@@ -145,10 +154,10 @@ export function registerAgents(
           invalid("clusterId", "Choose a Cluster in this workspace.");
         if (
           c &&
-          (v.x + 112 < c.x ||
-            v.x + 112 > c.x + c.width ||
-            v.y + 52 < c.y + 48 ||
-            v.y + 52 > c.y + c.height)
+          (v.x + catalog.node.width / 2 < c.x ||
+            v.x + catalog.node.width / 2 > c.x + c.width ||
+            v.y + catalog.node.height / 2 < c.y + catalog.node.clusterHeader ||
+            v.y + catalog.node.height / 2 > c.y + c.height)
         )
           invalid(
             "clusterId",
@@ -156,10 +165,11 @@ export function registerAgents(
           );
         files.assertAvailable(req.params.id, undefined, v.clusterId);
       }
+      v.appearance ??= generateAppearance(workspaceAppearanceCounts(db, req.params.id));
       const id = randomUUID(),
         ts = time();
       db.prepare(
-        "INSERT INTO agents(id,workspaceId,name,instructions,presetId,x,y,clusterId,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO agents(id,workspaceId,name,instructions,presetId,x,y,clusterId,appearance,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
       ).run(
         id,
         req.params.id,
@@ -169,6 +179,7 @@ export function registerAgents(
         v.x,
         v.y,
         v.clusterId,
+        JSON.stringify(v.appearance),
         ts,
         ts,
       );
@@ -201,17 +212,17 @@ export function registerAgents(
         invalid("clusterId", "Choose a Cluster in this workspace.");
       if (
         c &&
-        (v.x + 112 < c.x ||
-          v.x + 112 > c.x + c.width ||
-          v.y + 52 < c.y + 48 ||
-          v.y + 52 > c.y + c.height)
+        (v.x + catalog.node.width / 2 < c.x ||
+          v.x + catalog.node.width / 2 > c.x + c.width ||
+          v.y + catalog.node.height / 2 < c.y + catalog.node.clusterHeader ||
+          v.y + catalog.node.height / 2 > c.y + c.height)
       )
         invalid("clusterId", "Drop the agent inside the Cluster content area.");
     }
     files.assertAvailable(old.workspaceId, old.id, old.clusterId);
     files.assertAvailable(old.workspaceId, old.id, v.clusterId);
     db.prepare(
-      "UPDATE agents SET name=?,instructions=?,presetId=?,x=?,y=?,clusterId=?,revision=revision+?,updatedAt=? WHERE id=?",
+      "UPDATE agents SET name=?,instructions=?,presetId=?,x=?,y=?,clusterId=?,appearance=?,revision=revision+?,updatedAt=? WHERE id=?",
     ).run(
       v.name,
       v.instructions,
@@ -219,6 +230,7 @@ export function registerAgents(
       v.x,
       v.y,
       v.clusterId,
+      JSON.stringify(v.appearance),
       Number(
         v.name !== old.name ||
           v.instructions !== old.instructions ||

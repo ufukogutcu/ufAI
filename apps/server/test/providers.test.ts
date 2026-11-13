@@ -589,7 +589,7 @@ test("migration 6 preserves linked models, conflicting historical limits, and un
   const inspection = openDatabase(path);
   assert.deepEqual(
     inspection.prepare("SELECT * FROM app_settings").get(),
-    settings,
+    { ...settings as object, characterAnimationsPaused: 0 },
   );
   inspection.close();
 });

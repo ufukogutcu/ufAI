@@ -1,7 +1,7 @@
 import { useShallow } from "zustand/react/shallow";
 import { PermissionEditor } from "./Messaging";
 import messagingStyles from "./Messaging.module.scss";
-import { useCallback, useEffect, useRef, useMemo } from "react";
+import { useCallback, useEffect, useRef, useMemo, useState } from "react";
 import {
   MarkerType,
   type Connection,
@@ -16,7 +16,7 @@ import {
   useNodesState,
   type Viewport,
 } from "@xyflow/react";
-import { Minus, Plus, Scan, Workflow } from "lucide-react";
+import { Minus, Plus, Scan, Workflow, Pause, Play } from "lucide-react";
 import {
   useAgents,
   useAgentStore,
@@ -45,6 +45,9 @@ const defaultViewport: Viewport = { x: 0, y: 0, zoom: 1 };
 function ViewControls() {
   const { zoomIn, zoomOut, setViewport } = useReactFlow();
   const { zoom } = useViewport();
+  const paused = useSettings(s => s.snapshot.settings.characterAnimationsPaused);
+  const updateSettings = useSettings(s => s.update);
+  function toggleMotion() { void updateSettings({ characterAnimationsPaused: !paused }); }
   function handleZoomIn() {
     void zoomIn();
   }
@@ -88,6 +91,10 @@ function ViewControls() {
           <Scan size={16} />
         </button>
       </Tooltip>
+      <div className={styles.divider} />
+      <Tooltip content={paused ? "Resume character animations" : "Pause character animations"}>
+        <button className="iconButton" aria-label={paused ? "Resume character animations" : "Pause character animations"} aria-pressed={paused} onClick={toggleMotion}>{paused ? <Play size={16} aria-hidden /> : <Pause size={16} aria-hidden />}</button>
+      </Tooltip>
     </Panel>
   );
 }
@@ -106,6 +113,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
   const selected = useAgents((s) =>
     selectedId ? s.agents[selectedId] : undefined,
   );
+  const [creationBusy, setCreationBusy] = useState(false);
   const createOpen = useAgents((s) => s.createIn === workspaceId);
   const [nodes, setNodes, onNodesChange] =
     useNodesState<WorkspaceFlowNode>(savedNodes);
@@ -345,9 +353,12 @@ function Board({ workspaceId }: { workspaceId: string }) {
       {createOpen && (
         <Dialog
           title="New agent"
+          busy={creationBusy}
           onClose={() => guard(() => agentStore.setState({ createIn: null }))}
         >
           <AgentForm
+            workspaceId={workspaceId}
+            onBusyChange={setCreationBusy}
             onSave={async (values) => {
               const bounds = root.current!.getBoundingClientRect();
               const position = screenToFlowPosition({

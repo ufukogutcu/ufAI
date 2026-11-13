@@ -62,6 +62,9 @@
 .agentName {
   padding-right: 32px !important;
 }
+@media (any-pointer: coarse) {
+  .agentName { padding-right: 48px !important; }
+}
 .folder {
   min-width: 0;
   display: grid;

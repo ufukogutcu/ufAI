@@ -4,7 +4,7 @@
 
 ufAI is a local-first application for one user to organize AI agents and related work across multiple workspaces in a browser. Its intended experience includes configurable agents, communication permissions, reusable skills, instructions, and triggers.
 
-**Current availability: agents, asynchronous collaboration, host tools, terminals, attachments, and native media inputs.** Users can manage workspaces, create agents on their flowboards, run separate task conversations, ask for live workload updates, and inspect learned memory. Agent Presets, saved Providers, model discovery/tests, Codex sign-in and usage, Ollama setup, themes, and automatic task-context compaction are available. Ordinary tasks can read/write host files, run commands and interactive terminals, and publish downloadable files. Task messages accept attached files. Supported models can inspect images and open PDFs through their native input capabilities. Agents can contact permitted collaborators and send deliberate messages to your workspace Inbox. Audio/video perception and scheduled/event work remain unavailable. Interfaces, Triggers, skills, and the built-in assistant remain planned. Settings currently contains a heading only.
+**Current availability: agents, asynchronous collaboration, host tools, terminals, attachments, and native media inputs.** Users can manage workspaces, create agents with saved characters on their flowboards, run separate task conversations, ask for live workload updates, and inspect learned memory. Agent Presets, saved Providers, model discovery/tests, Codex sign-in and usage, Ollama setup, themes, and automatic task-context compaction are available. Ordinary tasks can read/write host files, run commands and interactive terminals, and publish downloadable files. Task messages accept attached files. Supported models can inspect images and open PDFs through their native input capabilities. Agents can contact permitted collaborators and send deliberate messages to your workspace Inbox. Audio/video perception and scheduled/event work remain unavailable. Interfaces, Triggers, skills, and the built-in assistant remain planned. Settings currently contains a heading only.
 
 One local installation holds one shared setup across browser sessions. There are no ufAI application accounts or separate profiles for each browser. Sign-in connects an external provider/runtime account; it does not create a ufAI account. See the [terminology and feature-status guide](README.md) when explaining these distinctions.
 
@@ -63,6 +63,15 @@ One local installation holds one shared setup across browser sessions. There are
 - **Purpose:** Provide a visual board for each workspace.
 - **Steps:** Drag to pan, scroll to zoom, or use the zoom and reset-view buttons. Each workspace remembers its own completed view changes across reloads and restarts.
 - **Limitations:** Choose Add Agent at the upper-right of the workspace area, beside its title, then open its node to configure it or chat. Drag nodes to arrange them, or focus their name button and use arrow keys. Positions are saved after movement. Directed agent communication links are available through handles and canvas controls. Failed position saves offer Retry saves; unsaved positions are not durable until saved.
+
+### agent-characters
+
+- **Status:** implemented
+- **Purpose:** Give each agent a recognizable character, body color and accessories.
+- **Steps:** New agent shows a suggested character above the name field. Use Edit character to choose Pebble, Sprout, Tiny bot or Droplet, one of six body colors, and any combination of glasses, headphones, cap and star badge. Use character keeps the choice in your draft; Create Agent saves it. For an existing agent, open its panel and choose Edit character beside the header character, then Save character.
+- **Behavior:** Suggestions avoid exact appearances already used in the workspace while unused combinations remain, and prefer variety in character types, colors and accessories. There are 384 combinations. Once all are used, suggestions reuse the least-used combinations. Manual choices may match another agent exactly. Cancel discards character editor changes; failed saves keep the draft available to retry.
+- **Animation:** Characters appear above canvas cards and in agent panel headers. They work while the agent is running a task and idle while queued, waiting or otherwise inactive. Text labels continue to show the actual task state. Use Pause character animations in the bottom canvas controls to pause motion throughout the app; the choice is saved. Reduced-motion preferences also stop character animation.
+- **Limitations:** Dreaming, studying, studying much harder and thinking are reserved for future agent behaviors and cannot be selected in ufAI yet. Character appearance does not change an agent’s permissions, preset or behavior.
 
 ### agent-clusters
 
