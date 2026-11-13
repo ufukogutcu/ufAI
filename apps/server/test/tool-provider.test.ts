@@ -1,3 +1,4 @@
+import { taskTools } from "../src/agent-tools.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ToolProvider } from "../src/tool-provider.js";
@@ -19,7 +20,7 @@ const base: TaskRequest = {
   outputTokens: 1024,
   contextWindow: 32000,
   signal: new AbortController().signal,
-  tools: [tool],
+  tools: [tool,...taskTools.filter(t=>t.name!==tool.name)],
   onTool: async () => ({ ok: true }),
 };
 function streaming(events: any[], ndjson = false) {
@@ -327,6 +328,8 @@ for (const provider of [
       assert.match(replay, /opaque/);
     if (provider === "google") assert.match(replay, /opaque-signature/);
     assert.equal(bodies[0].tools.length > 0, true);
+    assert.match(JSON.stringify(bodies[0]), /agent_send/);
+    assert.match(JSON.stringify(bodies[0]), /agent_wait/);
   });
 }
 test("malformed tool arguments and unsupported models fail without fallback", async () => {

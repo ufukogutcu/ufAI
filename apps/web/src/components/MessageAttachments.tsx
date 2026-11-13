@@ -89,7 +89,7 @@ function Attachment({
   return (
     <li className={styles.card}>
       <div>
-        <strong>{part.name}</strong>
+        <strong>{version?.name ?? part.name}</strong>
         <span className={styles.meta}>
           {version
             ? `${version.mediaType} · ${new Intl.NumberFormat().format(version.size)} bytes · ${version.state}`

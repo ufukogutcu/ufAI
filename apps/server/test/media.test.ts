@@ -1,3 +1,4 @@
+import { removeMessagingTables } from "./legacy-schema.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
@@ -324,6 +325,7 @@ test("v12 upgrade retains existing messages, references and paths; interrupted i
   await oldArtifacts.close();
   await oldConnections.close();
   await oldFiles.close();
+  removeMessagingTables(db);
   db.exec(
     "DROP TABLE provider_media_files;DROP TABLE model_media_capabilities;DROP TABLE media_open_references;DROP TABLE submission_ingests;ALTER TABLE artifact_versions DROP COLUMN origin;DROP INDEX artifact_versions_ingest;ALTER TABLE artifact_versions DROP COLUMN ingestId;ALTER TABLE artifact_references DROP COLUMN mode;ALTER TABLE agent_submissions DROP COLUMN attachmentFingerprint;PRAGMA user_version=12",
   );
@@ -348,7 +350,7 @@ test("v12 upgrade retains existing messages, references and paths; interrupted i
   db = openDatabase(path);
   for (const table of preserved)
     assert.deepEqual(
-      db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),
+      db.prepare(`SELECT ${Object.keys((before[table] as any[])[0] ?? {}).join(",") || "*"} FROM ${table} ORDER BY rowid`).all(),
       before[table],
       table,
     );
@@ -356,7 +358,7 @@ test("v12 upgrade retains existing messages, references and paths; interrupted i
     (db.prepare("SELECT mode FROM artifact_references").get() as any).mode,
     "file",
   );
-  assert.equal(db.pragma("user_version", { simple: true }), 13);
+  assert.equal(db.pragma("user_version", { simple: true }), 14);
   const files = new ManagedFiles(db, join(root, "files"));
   await files.start();
   const artifacts = new ArtifactService(db, files, () => {});

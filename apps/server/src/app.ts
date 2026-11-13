@@ -1,3 +1,4 @@
+import { MessagingService, registerMessaging } from "./messaging.js";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -155,6 +156,8 @@ export function createApp(
     files,
     tools,
   );
+  const messaging = new MessagingService(database,execution,connections,options.execution?.messaging);
+  execution.messaging=messaging; tools.messaging=messaging;
   const media = new MediaService(artifacts);
   tools.media = media;
   tools.mediaCapabilities = (owner) => {
@@ -195,6 +198,7 @@ export function createApp(
     options.uploads,
   );
   execution.incoming = incoming;
+  registerMessaging(app,messaging,incoming);
   files.bind(execution);
   registerAgents(app, database, execution, files, incoming);
   registerLocations(app, database, execution, files);
@@ -206,12 +210,14 @@ export function createApp(
   app.addHook("onReady", async () => {
     await files.start();
     await artifacts.start();
+    messaging.start();
     tools.ready = true;
     execution.wake();
   });
   app.addHook("onClose", async () => files.close());
   app.addHook("onClose", async () => artifacts.close());
   app.addHook("onClose", async () => processes.close());
+  app.addHook("onClose", async () => messaging.close());
   app.addHook("onClose", async () => execution.close());
 
   const workspaceList = database.prepare(

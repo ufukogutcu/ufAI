@@ -1,3 +1,4 @@
+import { WorkspaceInboxButton } from "../components/Messaging";
 import { PublishedFiles } from "../components/TaskTools";
 import { FolderLocation } from "../components/FolderLocation";
 import { DeletionProgress } from "../components/DeletionProgress";
@@ -330,6 +331,7 @@ export default function Home() {
           </Tooltip>
           {active && (
             <div className={styles.workspaceActions}>
+              <WorkspaceInboxButton key={active.id} workspaceId={active.id}/>
               <Tooltip content="Published Files"><button className="iconButton" aria-label="Published Files" onClick={()=>setPublishedIn(active.id)}><FolderOpen size={14}/></button></Tooltip>
               <Tooltip content="Edit workspace">
                 <button

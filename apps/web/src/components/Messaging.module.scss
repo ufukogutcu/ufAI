@@ -1,0 +1,102 @@
+.panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.item {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.meta {
+  color: var(--muted);
+  font-size: 12px;
+  display: block;
+  margin: 4px 0;
+}
+.content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.form {
+  display: grid;
+  gap: 12px;
+  label {
+    display: grid;
+    gap: 6px;
+  }
+  textarea {
+    width: 100%;
+    min-height: 90px;
+    resize: vertical;
+  }
+}
+.section {
+  margin-block: 12px;
+  min-width: 0;
+  summary {
+    cursor: pointer;
+    padding-block: 8px;
+  }
+}
+.handle {
+  background: var(--communication-edge) !important;
+  border-color: var(--panel) !important;
+  width: 12px !important;
+  height: 12px !important;
+}
+.edge :global(.react-flow__edge-path) {
+  stroke: var(--communication-edge);
+  stroke-width: 1.5;
+}
+.selected :global(.react-flow__edge-path) {
+  stroke: var(--communication-edge-selected);
+  stroke-width: 2.5;
+}
+.badge {
+  font-variant-numeric: tabular-nums;
+}
+@media (any-pointer: coarse) {
+  .handle {
+    width: 44px !important;
+    height: 44px !important;
+    background: transparent !important;
+    border: none !important;
+    &::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--panel);
+      border-radius: 50%;
+      background: var(--communication-edge);
+    }
+  }
+}
+
+.panel > p {
+  margin: 0;
+}
+.actions > button {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

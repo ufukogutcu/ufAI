@@ -28,9 +28,33 @@ import type {
   AgentWorkload,
   TaskDetail,
   Page,
+  CommunicationLink,
+  InboxEntry,
 } from "../../server/src/contracts";
 
 interface AgentState {
+  communication: Record<
+    string,
+    {
+      links: CommunicationLink[];
+      inbox: InboxEntry[];
+      unread: number;
+      total: number;
+      error: string;
+    }
+  >;
+  requestedTask: { agentId: string; taskId: string } | null;
+  communicationEditor: {
+    workspaceId: string;
+    sourceAgentId?: string;
+    linkId?: string;
+  } | null;
+  loadCommunication: (workspaceId: string) => Promise<void>;
+  createCommunicationLink: (
+    workspaceId: string,
+    sourceAgentId: string,
+    targetAgentId: string,
+  ) => Promise<void>;
   toolData: Record<
     string,
     {
@@ -141,6 +165,7 @@ function merge<T extends { id: string }>(before: T[], after: T[]) {
 }
 export function createAgentStore() {
   const toolRefresh = new Set<string>();
+  const communicationRefresh = new Set<string>();
   const loads = new Map<string, Promise<void>>(),
     positionWrites = new Map<string, Promise<void>>();
   const pendingPositions = new Map<
@@ -258,12 +283,14 @@ export function createAgentStore() {
             try {
               await writeCluster(id, patch);
             } catch (e) {
-              if (!(
-                e instanceof RequestError &&
-                e.status &&
-                e.status >= 400 &&
-                e.status < 500
-              ))
+              if (
+                !(
+                  e instanceof RequestError &&
+                  e.status &&
+                  e.status >= 400 &&
+                  e.status < 500
+                )
+              )
                 pendingClusterLayouts.set(id, {
                   ...patch,
                   ...pendingClusterLayouts.get(id),
@@ -396,6 +423,87 @@ export function createAgentStore() {
             more = false;
           } while (toolRefresh.has(taskId));
         });
+      },
+      communication: {},
+      requestedTask: null,
+      communicationEditor: null,
+      async loadCommunication(id) {
+        const key = `communication:${id}`;
+        const running = loads.get(key);
+        if (running) {
+          communicationRefresh.add(id);
+          return running;
+        }
+        return single(key, async () => {
+          do {
+            communicationRefresh.delete(id);
+            try {
+              const links: CommunicationLink[] = [];
+              let offset = 0,
+                total = 1;
+              while (offset < total) {
+                const p = await request<Page<CommunicationLink>>(
+                  `/workspaces/${id}/communication-links?limit=100&offset=${offset}`,
+                );
+                links.push(...p.items);
+                total = p.total;
+                offset += p.items.length;
+                if (!p.items.length) break;
+              }
+              const inbox = await request<
+                Page<InboxEntry> & { unread: number }
+              >(`/workspaces/${id}/inbox?limit=50`);
+              set((s) => {
+                const old = s.communication[id];
+                if (
+                  old &&
+                  !old.error &&
+                  old.unread === inbox.unread &&
+                  old.total === inbox.total &&
+                  equal(old.links, links) &&
+                  equal(old.inbox, inbox.items)
+                )
+                  return s;
+                return {
+                  communication: {
+                    ...s.communication,
+                    [id]: {
+                      links: equal(old?.links, links) ? old!.links : links,
+                      inbox: equal(old?.inbox, inbox.items)
+                        ? old!.inbox
+                        : inbox.items,
+                      unread: inbox.unread,
+                      total: inbox.total,
+                      error: "",
+                    },
+                  },
+                };
+              });
+            } catch (e) {
+              set((s) => ({
+                communication: {
+                  ...s.communication,
+                  [id]: {
+                    links: [],
+                    inbox: [],
+                    unread: 0,
+                    total: 0,
+                    ...s.communication[id],
+                    error: errorMessage(e),
+                  },
+                },
+              }));
+            }
+          } while (communicationRefresh.has(id));
+        });
+      },
+      async createCommunicationLink(workspaceId, sourceAgentId, targetAgentId) {
+        await request(
+          `/workspaces/${workspaceId}/communication-links`,
+          "POST",
+          { sourceAgentId, targetAgentId },
+        );
+        await get().loadCommunication(workspaceId);
       },
       nodes: {},
       tasks: {},

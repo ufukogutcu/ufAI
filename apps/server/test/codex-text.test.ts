@@ -1,3 +1,4 @@
+import { taskTools } from "../src/agent-tools.js";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -132,6 +133,7 @@ test("Codex dynamic tools use ufAI callbacks, isolate commentary, and preserve c
     ],
     resolveMedia: async (refs) => refs.map((ref) => ({ ...ref, data: "AQID" })),
     tools: [
+      ...taskTools.filter(t=>t.name!=="files_read"),
       {
         name: "files_read",
         description: "Read file",
@@ -159,8 +161,8 @@ test("Codex dynamic tools use ufAI callbacks, isolate commentary, and preserve c
     onCommentary: (text) => comments.push(text),
   });
   assert.equal(result.text, "Final answer.");
-  assert.equal(calls[0].name, "files_read");
-  assert.deepEqual(calls[0].arguments, { path: "a.txt" });
+  assert.equal(calls[0].name, "agent_send");
+  assert.deepEqual(calls[0].arguments, {agentId:"helper",content:"Help"});
   assert.deepEqual(comments, ["Reading the file.", "Checking the result."]);
   assert.equal(result.usage?.inputTokens, 20);
   const controller = new AbortController();

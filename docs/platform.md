@@ -4,7 +4,7 @@
 
 ufAI is a local-first application for one user to organize AI agents and related work across multiple workspaces in a browser. Its intended experience includes configurable agents, communication permissions, reusable skills, instructions, and triggers.
 
-**Current availability: agents, host tools, terminals, attachments, and native media inputs.** Users can manage workspaces, create agents on their flowboards, run separate task conversations, ask for live workload updates, and inspect learned memory. Agent Presets, saved Providers, model discovery/tests, Codex sign-in and usage, Ollama setup, themes, and automatic task-context compaction are available. Ordinary tasks can read/write host files, run commands and interactive terminals, and publish downloadable files. Task messages accept attached files. Supported models can inspect images and open PDFs through their native input capabilities. Agents cannot yet contact other agents, perceive audio/video, or run scheduled/event work. Interfaces, Triggers, skills, and the built-in assistant remain planned. Settings currently contains a heading only.
+**Current availability: agents, asynchronous collaboration, host tools, terminals, attachments, and native media inputs.** Users can manage workspaces, create agents on their flowboards, run separate task conversations, ask for live workload updates, and inspect learned memory. Agent Presets, saved Providers, model discovery/tests, Codex sign-in and usage, Ollama setup, themes, and automatic task-context compaction are available. Ordinary tasks can read/write host files, run commands and interactive terminals, and publish downloadable files. Task messages accept attached files. Supported models can inspect images and open PDFs through their native input capabilities. Agents can contact permitted collaborators and send deliberate messages to your workspace Inbox. Audio/video perception and scheduled/event work remain unavailable. Interfaces, Triggers, skills, and the built-in assistant remain planned. Settings currently contains a heading only.
 
 One local installation holds one shared setup across browser sessions. There are no ufAI application accounts or separate profiles for each browser. Sign-in connects an external provider/runtime account; it does not create a ufAI account. See the [terminology and feature-status guide](README.md) when explaining these distinctions.
 
@@ -55,14 +55,14 @@ One local installation holds one shared setup across browser sessions. There are
 - **Steps:** On Home, use the plus button to create a workspace and its tab to select it. Create and Edit workspace accept a required name and an optional description of up to 4,000 characters. The selected workspace's description appears beneath its name when provided. Edit and delete controls apply to the active workspace.
 - **Saving and switching:** Save stores both fields; Cancel discards edits, and failed saves retain entered values for retry. Creating a workspace selects it. Arrow keys, Home, and End navigate tabs. Additional workspaces load through the load-more control.
 - **Deletion:** Confirmation is required. Deleting the selected workspace selects the next neighboring workspace, then the previous one if needed. Deleting every workspace leaves an empty state; restarting ufAI does not recreate the deleted workspace.
-- **Limitations:** Workspaces contain agents and their [flowboards](#agent-canvas). Managed shared folders and Clusters are available. Communication permissions and automatic workflows remain planned. Deleting a workspace cancels its work and permanently removes its agents, transcripts, memories, and managed files after confirmation. File cleanup may continue after the page closes; failed cleanup offers Retry deletion.
+- **Limitations:** Workspaces contain agents and their [flowboards](#agent-canvas). Managed shared folders and Clusters are available. Directed communication permissions are available; scheduled and event workflows remain planned. Deleting a workspace cancels its work and permanently removes its agents, transcripts, memories, and managed files after confirmation. File cleanup may continue after the page closes; failed cleanup offers Retry deletion.
 
 ### agent-canvas
 
 - **Status:** partial
 - **Purpose:** Provide a visual board for each workspace.
 - **Steps:** Drag to pan, scroll to zoom, or use the zoom and reset-view buttons. Each workspace remembers its own completed view changes across reloads and restarts.
-- **Limitations:** Choose Add Agent at the upper-right of the workspace area, beside its title, then open its node to configure it or chat. Drag nodes to arrange them, or focus their name button and use arrow keys. Positions are saved after movement. Agent-to-agent connection lines are not available. Failed position saves offer Retry saves; unsaved positions are not durable until saved.
+- **Limitations:** Choose Add Agent at the upper-right of the workspace area, beside its title, then open its node to configure it or chat. Drag nodes to arrange them, or focus their name button and use arrow keys. Positions are saved after movement. Directed agent communication links are available through handles and canvas controls. Failed position saves offer Retry saves; unsaved positions are not durable until saved.
 
 ### agent-clusters
 
@@ -71,7 +71,7 @@ One local installation holds one shared setup across browser sessions. There are
 - **Steps:** Choose Add Cluster beside Add Agent. Give it a name and optional description. Drag an agent into its area to join, or outside all Clusters to leave. Each agent belongs to at most one Cluster. Use the canvas-control menu for membership and movement without dragging.
 - **Behavior:** Move a Cluster by its header to move its members together. Select its area to expose its bottom-right resize handle, or use its canvas menu to enter a size. Resizing cannot exclude existing members. Moving or resizing a Cluster over other agents does not add them automatically. Color dots and labels identify members; colors are reused when many Clusters exist.
 - **Editing and deletion:** Header controls edit the Cluster or show canvas controls. Deleting requires confirmation and permanently deletes its shared files. Active member work and processes stop before cleanup. Member agents, their folders, tasks, histories, and positions are preserved outside the Cluster.
-- **Limitations:** Clusters do not yet grant agent messaging or tool permissions. They are organizational groups, not security sandboxes.
+- **Limitations:** Cluster membership grants no additional messaging or tool permission. They are organizational groups, not security sandboxes.
 
 ### agent-working-directories
 
@@ -79,7 +79,7 @@ One local installation holds one shared setup across browser sessions. There are
 - **Purpose:** Give workspaces and Clusters shared folders, and agents persistent files with separate working folders for tasks.
 - **Steps:** Find a shared-folder path in Edit workspace or Edit Cluster; find agent files in Configuration and a task working folder in its task details. Use Copy path or select the path. Folder setup errors offer a retry.
 - **Behavior:** Names and Cluster reassignment do not change these paths. Task follow-ups and retries reuse their task folder; new tasks have separate folders. Confirmed owner deletion permanently removes its managed files. If cleanup fails, retry it from the workspace's deletion progress. Restart continues previously confirmed cleanup.
-- **Limitations:** ufAI currently shows paths, not a file browser. Existing computer folders cannot be registered yet. Agents can use these locations through file and command tools and publish downloadable snapshots. Agent-to-agent file exchange is not available yet. Folders organize files and do not isolate processes.
+- **Limitations:** ufAI currently shows paths, not a file browser. Existing computer folders cannot be registered yet. Agents can use these locations through file and command tools and publish downloadable snapshots. Permitted agents can exchange immutable versions through messages. Folders organize files and do not isolate processes.
 
 ### agent-configuration
 
@@ -93,9 +93,9 @@ One local installation holds one shared setup across browser sessions. There are
 - **Status:** implemented
 - **Purpose:** Run work with host tools in separate task conversations.
 - **Steps:** Open an agent, choose Tasks, then New Task. Follow-ups stay in that task. A follow-up to a completed task reopens it. The agent decides whether it has finished or needs another response.
-- **Behavior:** One ordinary turn per agent actively runs at a time; a task waiting for a process releases its slot so another task can run. Different agents can run concurrently, subject to Provider capacity. Closing the panel or browser does not stop work while the local server and machine remain running. Stop cancels active and queued turns for that task. Retry restarts a failed or blocked attempt using the current preset. Original transcripts remain available after context summaries are made.
-- **Recovery:** Queued requests survive a server restart. Interrupted generation requires explicit Retry and can leave an incomplete reply. An already-saved answer is retained if its later memory update fails.
-- **Limitations:** Tool support depends on the selected model; small context windows may not fit the tool definitions and task context. Images and PDFs require compatible models and adapters; other-agent messages remain unavailable. Host tools use the backend’s OS permissions and are not isolated by agent folders. Replies and summaries can be wrong. Provider errors, output limits, and context limits can interrupt work. Recall, compaction, memory maintenance, and status replies can make extra requests to the selected Provider and consume its usage. Actual work cannot continue while the local backend is stopped or the machine is asleep.
+- **Behavior:** One ordinary turn per agent actively runs at a time; a task waiting for a process or agent reply releases its slot so another task can run. Different agents can run concurrently, subject to Provider capacity. Closing the panel or browser does not stop work while the local server and machine remain running. Stop cancels active and queued turns for that task. Retry restarts a failed or blocked attempt using the current preset. Original transcripts remain available after context summaries are made.
+- **Recovery:** Queued requests survive a server restart. Interrupted generation requires explicit Retry and can leave an incomplete reply. Deliberately parked messaging waits can resume automatically. An already-saved answer is retained if its later memory update fails.
+- **Limitations:** Tool support depends on the selected model; small context windows may not fit the tool definitions and task context. Images and PDFs require compatible models and adapters; agent contact requires a directed communication permission. Host tools use the backend’s OS permissions and are not isolated by agent folders. Replies and summaries can be wrong. Provider errors, output limits, and context limits can interrupt work. Recall, compaction, memory maintenance, and status replies can make extra requests to the selected Provider and consume its usage. Actual work cannot continue while the local backend is stopped or the machine is asleep.
 
 ### agent-multimodal-execution
 
@@ -106,7 +106,7 @@ One local installation holds one shared setup across browser sessions. There are
 - **PDFs and local files:** Attached PDFs are initially listed as files. Agents can open them on demand when their selected model and integration support native PDF input. Agents can also open supported images/PDFs from host paths; ufAI snapshots those bytes before delivery. Codex currently supports native image input but not PDF input. ufAI does not bundle PDF conversion, OCR, text extraction or page rendering, or automatically install missing host tools.
 - **Capabilities:** In Providers, edit a model and set Image input and Native PDF input to Auto, Supported or Unsupported. Auto follows discovered metadata; unknown support stays unavailable. An override cannot enable a format absent from the integration protocol. The ordinary Provider test remains a short text test and does not verify vision.
 - **Retention and limits:** Submitted originals remain available until workspace deletion, even after their receiving agent is deleted. Selected but unsent files are not uploaded and are lost when the page is reloaded. Defaults permit ten attachments and 256 MiB combined per message, sharing the installation's artifact quota. Native input permits ten items, 20 MiB each and 32 MiB combined, with tighter provider/context limits. Errors do not silently remove attachments, convert them or substitute another model.
-- **Limitations:** Existing workspace outputs cannot yet be selected in the composer. Native PDF opening supplies the whole document; page selection is not provided. Sending bytes does not prove correct understanding. Audio/video perception, dedicated AI image generation/editing, agent messaging, Interfaces and Triggers remain unavailable.
+- **Limitations:** Existing workspace outputs cannot yet be selected in the composer. Native PDF opening supplies the whole document; page selection is not provided. Sending bytes does not prove correct understanding. Audio/video perception, dedicated AI image generation/editing, Interfaces and Triggers remain unavailable.
 
 ### agent-tool-execution
 
@@ -202,13 +202,33 @@ One local installation holds one shared setup across browser sessions. There are
 - **What should I do after a save fails?** Keep the draft open and use Retry or save again when the local installation is reachable. Do not treat a failed save as confirmed or delete saved data to resolve it.
 - **Can I export or automatically back up my setup?** No built-in export or backup tool is provided. Preserve all saved installation data and connection credentials together when making a manual backup.
 
+## Agent collaboration
+
+### agent-messaging
+
+- **Status:** implemented
+- **Purpose:** Delegate work asynchronously, exchange questions and files, and return results to the correct requester.
+- **Setup:** Allow communication from an agent’s canvas controls, or connect its outgoing handle to another agent’s incoming handle. The arrow allows its source to initiate contact with its destination. Cluster membership grants no communication permission. Accepted requests allow scoped replies in both directions.
+- **Behavior:** Each request creates a separate helper task. Multiple requests queue independently; one ordinary task runs per agent at a time. Sending returns immediately. An agent can continue independent work or wait for one or several helpers. Waiting releases execution capacity, allowing other work to run. User work gets preference, with helper work admitted regularly to prevent starvation.
+- **Replies:** A helper’s final answer returns to its requesting agent automatically. Questions can wake the requester; progress updates remain in history. The original user task keeps its user conversation. Task details show the communication history, request state, helper execution errors, and controls for opening the participating tasks.
+- **Files:** Messages can carry ordered immutable file versions. Published Files remains shared within a workspace. Uploaded files and private inspection snapshots are available through ufAI tools only to their owning task and explicit recipients. A recipient can materialize a working copy or open supported native media. Receiving a file does not mean the model inspected it. Shared bytes remain available after their producer is deleted, until workspace deletion.
+- **Cancellation and recovery:** Cancelling a parent task leaves helpers running; their results remain recorded and do not restart the cancelled parent. Cancelling a helper returns a cancellation outcome. Deliberate messaging waits survive restart; generation interrupted outside a saved wait still requires explicit Retry. Known or uncertain host actions are not automatically repeated.
+- **Removing permission:** Review and confirm the affected requests and processes before removing a link. ufAI stops affected helper work and its delegated descendants, retaining messages, working files, and published outputs. Unrelated work continues. Failed removal is visible from the link editor and can be retried. Finish or retry an unfinished link removal before deleting either endpoint agent. Recreating a link does not reopen revoked requests. You can explicitly continue a retained task yourself after removal finishes; that does not restore the revoked agent conversation.
+- **Limits:** Communication stays within one workspace. Delegation has bounded depth, fan-out, queues, and deadlines. Requests default to a one-hour deadline and may use up to 24 hours. Long forwarded answers may arrive as clearly marked excerpts; their full answers remain in the source task. Full-host commands still use the installation’s OS permissions: these folders and application permissions are not a filesystem sandbox.
+
+### workspace-inbox
+
+- **Status:** implemented
+- **Purpose:** Receive deliberate agent notifications without mixing them with normal task answers.
+- **Behavior:** Open the workspace Inbox beside Published Files. Messages show their source, files, time, and saved read/unread state. Open the source task or reply with text and files through the ordinary single-Send composer. Replies go to that task, and its answer returns to the Inbox. This does not change the return route of a separate pending agent request.
+- **Limitations:** Ordinary helper results do not create Inbox notifications automatically. If the source task or agent was deleted, its retained message remains readable but cannot receive a reply. External notifications through Telegram, Discord, or other Interfaces remain planned.
+
 ## Planned capabilities
 
 These capabilities are not available yet. This is product direction, not a release schedule.
 
 | Capability ID | Status | Intended purpose | Current limitation |
 | --- | --- | --- | --- |
-| `agent-messaging` | planned | Let permitted agents communicate | Messaging and communication permissions are unavailable |
 | `agent-triggers` | planned | Start work on a schedule or from events | Manual task conversations exist; schedules and event Triggers are unavailable |
 | `agent-interfaces` | planned | Contact agents through services such as Telegram or Discord | Only ufAI conversations are available |
 | `platform-assistant` | planned | Help users understand ufAI and configure their workspaces | No built-in assistant or automatic use of these documents is connected yet |

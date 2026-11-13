@@ -242,6 +242,9 @@ export interface Agent {
   queuedCount: number;
 }
 export interface AgentTask {
+  source?: "user" | "agent";
+  rootWorkflowId?: string;
+  parentRequestId?: string | null;
   id: string;
   agentId: string;
   conversationId: string;
@@ -253,6 +256,9 @@ export interface AgentTask {
   updatedAt: string;
 }
 export interface AgentMessage {
+  authorType?: "user" | "agent" | "system";
+  authorId?: string | null;
+  authorName?: string | null;
   parts?: ContentPart[];
   id: string;
   conversationId: string;
@@ -409,4 +415,33 @@ export interface ArtifactVersion {
   state: "staging" | "ready" | "failed" | "unavailable";
   error: string | null;
   createdAt: string;
+}
+
+export interface CommunicationLink {
+  id: string; workspaceId: string; sourceAgentId: string; targetAgentId: string;
+  state: "active" | "revoking"; createdAt: string;
+}
+export interface AgentRequest {
+  id: string; workspaceId: string; sourceAgentId: string | null; targetAgentId: string | null;
+  sourceName: string; targetName: string; sourceTaskId: string | null; targetTaskId: string | null;
+  executionState?: TaskStatus|null; executionError?: string|null;
+  rootWorkflowId: string; parentRequestId: string | null; kind: "request" | "notification";
+  state: string; error: string | null; deadline: string; createdAt: string; updatedAt: string;
+}
+export interface CommunicationMessage {
+  id: string; sequence: number; requestId: string; senderAgentId: string; senderName: string;
+  senderTaskId: string | null; recipientTaskId: string | null; kind: string;
+  content: string; attachments: string[]; replyToId: string | null; createdAt: string;
+}
+export interface InboxEntry {
+  id: string; workspaceId: string; agentId: string | null; agentName: string;
+  taskId: string | null; content: string; attachments: string[]; readAt: string | null; createdAt: string;
+}
+export interface RevocationImpact {
+  link: CommunicationLink; requests: AgentRequest[]; tasks: string[];
+  processes: Pick<OwnedProcess,"id"|"taskId"|"command"|"state">[]; revision: string; retains: string[];
+}
+export interface MessagingOperation {
+  id: string; workspaceId: string; linkId: string; state: "pending" | "running" | "completed" | "failed";
+  error: string | null;
 }

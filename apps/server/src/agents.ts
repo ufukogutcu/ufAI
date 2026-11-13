@@ -304,6 +304,7 @@ export function registerAgents(
         .reverse()
         .map((m: any) => ({
           ...m,
+          authorName: m.authorType==='agent' ? ((db.prepare("SELECT name FROM agents WHERE id=?").get(m.authorId) as any)?.name ?? (db.prepare("SELECT m.senderName FROM communication_messages m JOIN communication_deliveries d ON d.messageId=m.id WHERE d.inputMessageId=? LIMIT 1").get(m.id) as any)?.senderName ?? "Deleted agent") : null,
           parts: [
             { type: "text", text: m.content },
             ...(

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Paperclip, Send, X } from "lucide-react";
 import { useAgents, useAgentStore, emptyList } from "../agent-store";
 import { request, errorMessage } from "../api";
+import { sendTaskFiles } from "../task-attachments";
 import type { DraftAttachment } from "../task-attachments";
 import type { MediaCapabilities } from "../../../server/src/contracts";
 import styles from "./AgentPanel.module.scss";
@@ -58,13 +59,17 @@ export function TaskComposer({
   agentId,
   taskId,
   onCreated,
+  submissionPath,
+  draftKey,
 }: {
   agentId: string;
   taskId: string | null | "new";
   onCreated: (id: string) => void;
+  submissionPath?: string;
+  draftKey?: string;
 }) {
   const store = useAgentStore(),
-    key = taskId === "new" ? `new:${agentId}` : (taskId ?? `status:${agentId}`);
+    key = draftKey ?? (taskId === "new" ? `new:${agentId}` : (taskId ?? `status:${agentId}`));
   const value = useAgents((s) => s.drafts[key] ?? ""),
     files = useAgents((s) => s.fileDrafts[key] ?? emptyList);
   const [busy, setBusy] = useState(false),
@@ -163,7 +168,9 @@ export function TaskComposer({
     setError("");
     setProgress(0);
     try {
-      const id = await store.getState().submit(
+      const fileOptions={attachments:files,signal:c.signal,onProgress:(p:number)=>{if(scope.current===key)setProgress(p);}};
+      const override=submissionPath ? (files.length ? await sendTaskFiles<{taskId:string}>(submissionPath,value,requestId,fileOptions) : await request<{taskId:string}>(submissionPath,"POST",{content:value,requestId},c.signal)) : null;
+      const id = submissionPath ? override!.taskId : await store.getState().submit(
         agentId,
         typeof taskId === "string" && taskId !== "new" ? taskId : null,
         value,
@@ -183,7 +190,7 @@ export function TaskComposer({
         store.getState().setDraft(key, "");
       if (store.getState().fileDrafts[key] === sentFiles)
         store.getState().setFileDraft(key, []);
-      if (scope.current === key && taskId === "new" && id) onCreated(id);
+      if (scope.current === key && (taskId === "new" || submissionPath) && id) onCreated(id);
     } catch (err) {
       if (scope.current === key) setError(errorMessage(err));
     } finally {

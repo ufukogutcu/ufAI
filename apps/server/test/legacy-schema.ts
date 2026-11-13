@@ -10,7 +10,20 @@ export function restoreOutputColumns(database: Database.Database) {
   `);
 }
 
+export function removeMessagingTables(database: Database.Database) {
+  database.exec(`DROP TRIGGER IF EXISTS communication_workspace;
+    DROP TABLE IF EXISTS agent_schedule_state; DROP TABLE IF EXISTS messaging_idempotency;
+    DROP TABLE IF EXISTS messaging_operations; DROP TABLE IF EXISTS workspace_inbox;
+    DROP TABLE IF EXISTS task_output_selections; DROP TABLE IF EXISTS messaging_waits;
+    DROP TABLE IF EXISTS artifact_grants; DROP TABLE IF EXISTS communication_deliveries;
+    DROP TABLE IF EXISTS communication_messages; DROP TABLE IF EXISTS agent_requests; DROP TABLE IF EXISTS communication_links;`);
+  for (const [table,columns] of [["agent_messages",["authorType","authorId"]],["agent_turns",["envelope"]],["agent_tasks",["source","rootWorkflowId","parentRequestId"]]] as const) {
+    const existing=(database.pragma(`table_info(${table})`) as {name:string}[]).map(c=>c.name);
+    for(const column of columns) if(existing.includes(column)) database.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+  }
+}
 export function removeToolTables(database: Database.Database) {
+  removeMessagingTables(database);
   if (
     (
       database.pragma("table_info(agent_submissions)") as { name: string }[]

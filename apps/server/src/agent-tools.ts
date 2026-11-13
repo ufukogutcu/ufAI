@@ -35,7 +35,83 @@ const spec = (
     additionalProperties: false,
   },
 });
+const versionIds = {
+  type: "array",
+  maxItems: 10,
+  items: str("Immutable artifact version ID", 100),
+};
 export const taskTools: ToolSpec[] = [
+  spec(
+    "agents_find",
+    "Find agents this agent is permitted to contact. Capabilities are reported facts, not guarantees.",
+    {
+      query: { type: "string", maxLength: 120 },
+      offset: number(0, 1000000),
+      limit: number(1, 100),
+    },
+  ),
+  spec(
+    "agent_send",
+    "Send a request or notification asynchronously. Returns immediately. A helper final answer returns automatically to this task. Attach immutable versions, not host paths.",
+    {
+      agentId: str("Recipient agent ID", 100),
+      kind: { type: "string", enum: ["request", "notification"] },
+      content: { type: "string", maxLength: 12000 },
+      versionIds,
+      timeoutMs: number(1, 86400000),
+    },
+    ["agentId", "content"],
+  ),
+  spec(
+    "agent_message",
+    "Send a question, progress update, or answer within an accepted request. Questions wake the other task; progress does not. An answer requires its question message ID.",
+    {
+      requestId: str("Request ID", 100),
+      kind: { type: "string", enum: ["question", "progress", "answer"] },
+      content: { type: "string", maxLength: 12000 },
+      versionIds,
+      replyToId: str("Question message ID", 100),
+    },
+    ["requestId", "kind", "content"],
+  ),
+  spec(
+    "agent_request_status",
+    "Read request state and a bounded page of its communication history.",
+    {
+      requestId: str("Request ID", 100),
+      offset: number(0, 1000000),
+      limit: number(1, 100),
+    },
+    ["requestId"],
+  ),
+  spec(
+    "agent_wait",
+    "Suspend until any/all requested helpers finish, a question arrives, or the wait deadline expires. Other tasks may run; durable messaging waits survive restart. Sending itself never blocks.",
+    {
+      requestIds: {
+        type: "array",
+        minItems: 1,
+        maxItems: 16,
+        uniqueItems: true,
+        items: str("Request ID", 100),
+      },
+      mode: { type: "string", enum: ["any", "all"] },
+      timeoutMs: number(1, 86400000),
+    },
+    ["requestIds"],
+  ),
+  spec(
+    "task_set_outputs",
+    "Select ordered immutable versions for this turn's final answer. Otherwise files published during this turn are attached automatically.",
+    { versionIds },
+    ["versionIds"],
+  ),
+  spec(
+    "user_notify",
+    "Deliberately send a message to the user's workspace Inbox. Normal final answers go to the immediate requester and do not use this Inbox.",
+    { content: { type: "string", maxLength: 12000 }, versionIds },
+    ["content"],
+  ),
   spec(
     "media_open",
     "Open an image or PDF as native content for the current model. Supply exactly one immutable versionId or file path. Unsupported model/format and size limits return an error. A path is snapshotted before delivery.",
@@ -179,6 +255,20 @@ function validate(value: any, schema: any) {
     !(types.includes("integer") && Number.isSafeInteger(value))
   )
     throw new ConnectionError("Invalid tool argument type.", 400);
+  if (schema.enum && !schema.enum.includes(value))
+    throw new ConnectionError("Invalid tool choice.", 400);
+  if (Array.isArray(value)) {
+    if (
+      value.length < (schema.minItems ?? 0) ||
+      value.length > (schema.maxItems ?? 100) ||
+      (schema.uniqueItems && new Set(value).size !== value.length)
+    )
+      throw new ConnectionError(
+        "Invalid tool array length or duplicate items.",
+        400,
+      );
+    for (const item of value) validate(item, schema.items);
+  }
   if (
     typeof value === "string" &&
     (value.length > (schema.maxLength ?? Infinity) ||
@@ -213,6 +303,7 @@ function validate(value: any, schema: any) {
   }
 }
 export class AgentTools {
+  messaging?: import("./messaging.js").MessagingService;
   media?: import("./media-service.js").MediaService;
   mediaCapabilities?: (
     owner: ToolOwner,
@@ -230,7 +321,7 @@ export class AgentTools {
     private maxCalls = 128,
   ) {
     db.prepare(
-      "UPDATE tool_invocations SET state='interrupted',result=? WHERE state='running'",
+      "UPDATE tool_invocations SET state='interrupted',result=? WHERE state='running' AND NOT EXISTS (SELECT 1 FROM messaging_waits w WHERE w.turnId=tool_invocations.turnId AND w.state='waiting' AND tool_invocations.name='agent_wait')",
     ).run(
       JSON.stringify({
         ok: false,
@@ -261,8 +352,22 @@ export class AgentTools {
     call: ToolCall,
     signal: AbortSignal,
     wait: (id: string) => Promise<unknown>,
+    waitAgent?: (args: Record<string, any>) => Promise<unknown>,
   ): Promise<ToolResult> {
     signal.throwIfAborted();
+    if (
+      call.name !== "agent_wait" &&
+      this.db
+        .prepare(
+          "SELECT 1 FROM messaging_waits WHERE turnId=? AND state='waiting'",
+        )
+        .get(owner.turnId)
+    )
+      return {
+        ok: false,
+        error:
+          "This turn is waiting for an agent response. Resume it before starting another tool.",
+      };
     this.files.assertAvailable(
       owner.workspaceId,
       owner.agentId,
@@ -294,7 +399,12 @@ export class AgentTools {
             error: "Tool outcome is uncertain. It was not replayed.",
           };
     }
-    const count = (this.counts.get(owner.turnId) ?? 0) + 1;
+    const count =
+      (
+        this.db
+          .prepare("SELECT count(*) n FROM tool_invocations WHERE turnId=?")
+          .get(owner.turnId) as { n: number }
+      ).n + 1;
     if (count > this.maxCalls)
       throw new ConnectionError("Tool call limit reached.", 409);
     this.counts.set(owner.turnId, count);
@@ -325,7 +435,15 @@ export class AgentTools {
         validateTool(call.name, args);
         result = {
           ok: true,
-          ...(await this.execute(owner, call.name, args, signal, wait)),
+          ...(await this.execute(
+            owner,
+            call.name,
+            args,
+            signal,
+            wait,
+            waitAgent,
+            call.id,
+          )),
         };
         if (Buffer.byteLength(JSON.stringify(result)) > 65536)
           result = {
@@ -379,7 +497,7 @@ export class AgentTools {
     this.counts.delete(turnId);
     this.db
       .prepare(
-        "UPDATE tool_invocations SET state='interrupted',result=? WHERE turnId=? AND state='running'",
+        "UPDATE tool_invocations SET state='interrupted',result=? WHERE turnId=? AND state='running' AND NOT EXISTS (SELECT 1 FROM messaging_waits w WHERE w.turnId=tool_invocations.turnId AND w.state='waiting' AND tool_invocations.name='agent_wait')",
       )
       .run(
         JSON.stringify({
@@ -426,7 +544,32 @@ export class AgentTools {
     a: Record<string, any>,
     signal: AbortSignal,
     wait: (id: string) => Promise<unknown>,
+    waitAgent?: (args: Record<string, any>) => Promise<unknown>,
+    callId?: string,
   ): Promise<Record<string, unknown>> {
+    this.messaging?.assertOwner(owner);
+    const messaging = this.messaging;
+    const key = `tool_${owner.turnId}_${callId}`;
+    if (messaging) {
+      if (name === "agents_find") return messaging.find(owner, a);
+      if (name === "agent_send") return messaging.send(owner, a, key);
+      if (name === "agent_message") return messaging.message(owner, a, key);
+      if (name === "agent_request_status")
+        return messaging.status(owner, a.requestId, a.offset, a.limit);
+      if (name === "task_set_outputs")
+        return messaging.outputs(owner, a.versionIds);
+      if (name === "user_notify") return messaging.notify(owner, a, key);
+      if (name === "agent_wait") {
+        if (!waitAgent)
+          throw new ConnectionError("Messaging wait unavailable.", 503);
+        return { wait: await waitAgent({ ...a, callId }) };
+      }
+    }
+    if (
+      ["artifact_inspect", "artifact_materialize"].includes(name) ||
+      (name === "media_open" && a.versionId)
+    )
+      messaging?.assertVersion(owner, a.versionId);
     const path = () =>
       resolve(this.files.location("task", owner.taskId).path, a.path);
     if (name === "files_list") {
@@ -654,10 +797,12 @@ export class AgentTools {
       return {
         items: this.db
           .prepare(
-            "SELECT * FROM artifact_versions WHERE workspaceId=? AND ingestId IS NULL AND (?=0 OR producerTaskId=?) ORDER BY createdAt DESC,id LIMIT ? OFFSET ?",
+            "SELECT * FROM artifact_versions WHERE workspaceId=? AND ingestId IS NULL AND (origin='published' OR producerTaskId=? OR EXISTS(SELECT 1 FROM artifact_grants g WHERE g.versionId=artifact_versions.id AND g.taskId=?)) AND (?=0 OR producerTaskId=?) ORDER BY createdAt DESC,id LIMIT ? OFFSET ?",
           )
           .all(
             owner.workspaceId,
+            owner.taskId,
+            owner.taskId,
             Number(!!a.taskOnly),
             owner.taskId,
             a.limit ?? 50,

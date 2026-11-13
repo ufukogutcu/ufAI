@@ -477,6 +477,14 @@ test("compaction preserves full transcripts and covers complete exchanges before
       "INSERT INTO artifact_references(versionId,messageId,ordinal) VALUES ('retained-version',?,0)",
     )
     .run(output.id);
+  f.db
+    .prepare(
+      "INSERT INTO artifact_versions(id,artifactId,workspaceId,provenance,name,mediaType,size,state,createdAt,origin) SELECT 'delegated-version',artifactId,workspaceId,'{}','received.bin','application/octet-stream',1,'ready',createdAt,'inspection' FROM artifact_versions WHERE id='retained-version'",
+    )
+    .run();
+  f.db
+    .prepare("INSERT INTO artifact_grants VALUES (?,'delegated-version',NULL)")
+    .run(x.taskId);
   for (let i = 0; i < 4; i++) {
     f.engine.submit(
       "a",
@@ -497,6 +505,16 @@ test("compaction preserves full transcripts and covers complete exchanges before
         .get() as { content: string }
     ).content,
     /retained-version/,
+  );
+  assert.match(
+    (
+      f.db
+        .prepare(
+          "SELECT content FROM agent_context_summaries ORDER BY version DESC LIMIT 1",
+        )
+        .get() as any
+    ).content,
+    /delegated-version/,
   );
   assert.equal(
     (f.db.prepare("SELECT count(*) AS n FROM agent_messages").get() as any).n,

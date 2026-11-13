@@ -1317,6 +1317,32 @@
       "region": "canvas",
       "light": "#ffffff",
       "dark": "#ffffff"
+    },
+    "communication-edge": {
+      "cssVariable": "--communication-edge",
+      "label": "Communication links",
+      "description": "Directed agent communication permission lines and arrowheads.",
+      "components": [
+        "Agent communication edges",
+        "Canvas theme preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#74777e",
+      "dark": "#92969f"
+    },
+    "communication-edge-selected": {
+      "cssVariable": "--communication-edge-selected",
+      "label": "Selected communication link",
+      "description": "Focused and selected communication permission lines.",
+      "components": [
+        "Agent communication edges",
+        "Canvas theme preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#252932",
+      "dark": "#e2e5ec"
     }
   }
 }

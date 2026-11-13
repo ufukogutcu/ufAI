@@ -1,3 +1,4 @@
+import { TaskCommunications } from "./Messaging";
 import { TaskComposer as Composer } from "./TaskComposer";
 import { MessageAttachments } from "./MessageAttachments";
 import {
@@ -235,7 +236,7 @@ function Transcript({
       {messages.map((m) => (
         <article key={m.id} className={styles.message} data-role={m.role}>
           <div className={styles.messageLabel}>
-            {m.role === "user" ? "You" : "Agent"}{" "}
+            {m.role === "user" ? (m.authorType === "agent" ? (m.authorName ?? "Collaborator") : m.authorType === "system" ? "System" : "You") : "Agent"}{" "}
             <span>
               {m.state === "incomplete"
                 ? "· Incomplete reply"
@@ -253,6 +254,7 @@ function Transcript({
           {error}
         </p>
       )}
+      {taskId && <TaskCommunications key={`communication:${taskId}`} taskId={taskId} />}
       {taskId && <TaskTools key={`tools:${taskId}`} taskId={taskId} />}
       <div ref={end} />
     </div>
@@ -421,6 +423,8 @@ export function AgentPanel({
       message: AgentMessage;
       taskId: string;
     } | null>(null);
+  const requestedTask=useAgents(s=>s.requestedTask?.agentId===agent.id?s.requestedTask:null);
+  useEffect(()=>{if(requestedTask){setTab("Tasks");setTaskId(requestedTask.taskId);setNewTask(false);store.setState({requestedTask:null});}},[requestedTask,store]);
   const hasProcesses = useAgents((s) =>
     taskId
       ? (s.toolData[taskId]?.processes.some((p) =>

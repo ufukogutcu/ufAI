@@ -5,7 +5,9 @@ import {
   type CSSProperties,
   type FormEvent,
 } from "react";
-import { NodeResizeControl, type NodeProps } from "@xyflow/react";
+import { CommunicationMenuAction } from "./Messaging";
+import messagingStyles from "./Messaging.module.scss";
+import { Handle, Position, NodeResizeControl, type NodeProps } from "@xyflow/react";
 import { MoreHorizontal, Pencil } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useAgents, useAgentStore } from "../agent-store";
@@ -119,6 +121,7 @@ function NodeActions({
       </div>
       {agent ? (
         <div className={styles.menuFields}>
+          <CommunicationMenuAction workspaceId={workspaceId} sourceAgentId={agent.id} onDone={onClose}/>
           <label>
             Move to Cluster
             <select
@@ -226,6 +229,8 @@ export const AgentNode = memo(function AgentNode({
       onKeyDown={keyboard}
       style={cluster ? clusterColor(cluster.colorSlot) : undefined}
     >
+      <Handle id="in" type="target" position={Position.Left} className={messagingStyles.handle} aria-label="Receive communication permission"/>
+      <Handle id="out" type="source" position={Position.Right} className={messagingStyles.handle} aria-label="Grant outgoing communication permission"/>
       <button
         className={`nodrag ${styles.agentName}`}
         data-move="true"

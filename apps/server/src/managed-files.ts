@@ -289,6 +289,7 @@ export class ManagedFiles {
       this.runDeletion(old.id);
       return this.deletion(old.id);
     }
+    if(kind==="agent")this.execution?.messaging?.assertAgentDeletionAvailable(ownerId);
     const location = this.location(kind, ownerId);
     if (
       kind === "workspace" &&
@@ -410,6 +411,7 @@ export class ManagedFiles {
                   .prepare("SELECT id FROM agents WHERE clusterId=?")
                   .all(op.ownerId) as { id: string }[]
               ).map((a) => a.id);
+      if(op.kind!=="cluster") await this.execution?.messaging?.deletingAgents(ids);
       await this.execution?.settleAgents(ids);
       if (op.kind === "workspace")
         await this.execution?.settleWorkspaceFiles(op.ownerId);

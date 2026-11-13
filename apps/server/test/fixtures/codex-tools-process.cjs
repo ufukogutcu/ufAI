@@ -1,17 +1,17 @@
 const readline=require('node:readline');
-const send=v=>process.stdout.write(JSON.stringify(v)+'\n');let thread=0;const pending=new Map();
+const send=v=>process.stdout.write(JSON.stringify(v)+'\n');let thread=0;const pending=new Map(),toolKinds=new Map();
 readline.createInterface({input:process.stdin}).on('line',line=>{
  const r=JSON.parse(line),reply=value=>send({id:r.id,result:value});
  if(r.method==='initialize'){if(r.params.capabilities?.experimentalApi!==true)throw Error('missing experimental handshake');return reply({});}
  if(r.method==='initialized')return;
  if(r.method==='account/read')return reply({account:{type:'chatgpt'}});
- if(r.method==='thread/start'){if(!r.params.dynamicTools?.length||r.params.config.features.shell_tool!==false||r.params.sandbox!=='read-only')throw Error('invalid tool config');return reply({thread:{id:'thread-'+ ++thread}});}
+ if(r.method==='thread/start'){if(!r.params.dynamicTools?.length||r.params.config.features.shell_tool!==false||r.params.sandbox!=='read-only')throw Error('invalid tool config');const id='thread-'+ ++thread;toolKinds.set(id,r.params.dynamicTools.some(t=>t.name==='agent_send'));return reply({thread:{id}});}
  if(r.method==='turn/start'){
   if(r.params.input[0].text.includes('Inspect') && !r.params.input.some(i=>i.type==='image'&&i.url==='data:image/png;base64,AQID'))throw Error('missing native image');
   const threadId=r.params.threadId,turnId='turn-'+threadId,id=100+thread;reply({turn:{id:turnId}});pending.set(id,{threadId,turnId});
   send({method:'item/agentMessage/delta',params:{threadId,turnId,itemId:'comment',delta:'Reading the file.'}});
   send({method:'item/started',params:{threadId,turnId,item:{id:'tool',type:'dynamicToolCall'}}});
-  send({id,method:'item/tool/call',params:{threadId,turnId,callId:'call-'+thread,namespace:null,tool:'files_read',arguments:{path:'a.txt'}}});return;
+  send({id,method:'item/tool/call',params:{threadId,turnId,callId:'call-'+thread,namespace:null,tool:toolKinds.get(threadId)?'agent_send':'files_read',arguments:toolKinds.get(threadId)?{agentId:'helper',content:'Help'}:{path:'a.txt'}}});return;
  }
  if(r.method==='turn/interrupt'){send({method:'item/agentMessage/delta',params:{threadId:r.params.threadId,delta:'late output'}});reply({});return send({method:'turn/completed',params:{threadId:r.params.threadId,turn:{id:r.params.turnId,status:'interrupted'}}});}
  if(r.method==='thread/unsubscribe'||r.method==='thread/archive')return reply({});

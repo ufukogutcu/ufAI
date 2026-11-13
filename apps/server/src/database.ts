@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { migrateLocations } from "./locations-schema.js";
 import { migrateExecution } from "./execution-schema.js";
+import { migrateMessaging } from "./messaging-schema.js";
 import { migrateMedia } from "./media-schema.js";
 import { migrateTools } from "./tools-schema.js";
 
@@ -22,7 +23,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 13)
+    if (version > 14)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -204,6 +205,11 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
       database.transaction(() => {
         migrateMedia(database);
         database.pragma("user_version = 13");
+      })();
+    if (version < 14)
+      database.transaction(() => {
+        migrateMessaging(database);
+        database.pragma("user_version = 14");
       })();
   } catch (error) {
     database.close();

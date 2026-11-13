@@ -48,7 +48,7 @@ export class SubmissionMedia {
     )
       throw new Error("Invalid upload limits.");
   }
-  async receive(req: FastifyRequest, agentId: string, target: string) {
+  async receive(req: FastifyRequest, agentId: string, target: string, envelope: import("./messaging.js").MessageEnvelope = {}) {
     if (this.stopped) throw new ConnectionError("ufAI is shutting down.", 503);
     if (this.active.size >= this.media.artifacts.maxIngests)
       throw new ConnectionError("File transfer is busy. Retry shortly.", 429);
@@ -300,6 +300,7 @@ export class SubmissionMedia {
           requestId,
           attachments,
           fingerprint,
+          envelope,
         );
         if (!reused) {
           this.db
