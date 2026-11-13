@@ -24,7 +24,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 18)
+    if (version > 19)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -242,6 +242,23 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
             AND conversationId IN (SELECT id FROM conversations WHERE kind='status');
         `);
         database.pragma("user_version = 18");
+      })();
+    if (version < 19)
+      database.transaction(() => {
+        database.exec(`
+          DROP INDEX requests_deadline;
+          ALTER TABLE agent_requests DROP COLUMN deadline;
+          ALTER TABLE messaging_waits DROP COLUMN deadline;
+          ALTER TABLE owned_processes DROP COLUMN deadline;
+          CREATE TABLE provider_output_metadata (
+            connectionId TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+            modelId TEXT NOT NULL, revision TEXT NOT NULL,
+            maxOutputTokens INTEGER NOT NULL CHECK(maxOutputTokens>0),
+            PRIMARY KEY(connectionId,modelId),
+            FOREIGN KEY(connectionId,modelId) REFERENCES provider_models(connectionId,id) ON DELETE CASCADE
+          );
+        `);
+        database.pragma("user_version = 19");
       })();
   } catch (error) {
     database.close();

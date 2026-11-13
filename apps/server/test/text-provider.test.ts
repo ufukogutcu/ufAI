@@ -7,7 +7,7 @@ const base: TextRequest = {
   modelId: "model",
   instructions: "Instructions",
   messages: [{ role: "user", content: "Hello" }],
-  outputTokens: 4096,
+
   contextWindow: 32000,
   signal: new AbortController().signal,
 };
@@ -72,11 +72,13 @@ const cases: {
   })),
 ];
 for (const c of cases)
-  test(`${c.provider} streams bounded text with correct protocol and cancellation signal`, async () => {
+  test(`${c.provider} streams text without a local output budget and retains cancellation`, async () => {
     let body: any,
       url = "";
     const deltas: string[] = [];
     const fetcher: typeof fetch = async (input, init) => {
+      if (String(input).endsWith("/models/model")) return Response.json({ max_tokens: 16000 });
+      if (String(input).endsWith("/count_tokens")) return Response.json({ input_tokens: 100 });
       url = String(input);
       body = JSON.parse(init!.body as string);
       assert.equal(init!.signal, base.signal);
@@ -93,6 +95,12 @@ for (const c of cases)
     assert.equal(deltas.join(""), "Héllo");
     assert.equal(url, "https://provider.example" + c.path);
     assert.equal(JSON.stringify(body).includes("Instructions"), true);
+    if (c.provider !== "anthropic") {
+      assert.equal(body.max_tokens, undefined);
+      assert.equal(body.max_output_tokens, undefined);
+      assert.equal(body.generationConfig?.maxOutputTokens, undefined);
+    }
+    if (c.provider === "ollama") assert.equal(body.options.num_predict, -1);
     assert.equal(JSON.stringify(answer).includes("private"), false);
   });
 test("compatible JSON replies work without a second generation request", async () => {
@@ -199,4 +207,29 @@ test("OpenAI counts the exact Responses input and instructions before generation
     },
   );
   assert.equal(await p.countTokens(base), 19);
+});
+
+test("large valid responses exceed the former cumulative stream and text ceilings", async () => {
+  const text = "x".repeat(300000);
+  const events = [
+    ...Array.from({ length: 40 }, () => 'data: ' + JSON.stringify({ choices: [{ delta: { reasoning_content: "r".repeat(65536) } }] }) + '\n\n'),
+    'data: ' + JSON.stringify({ choices: [{ delta: { content: text }, finish_reason: "stop" }] }) + '\n\n',
+  ];
+  const provider = new TextProvider("openai-compatible", "https://local.example", null, async () => new Response(events.join(""), { headers: { "content-type": "text/event-stream" } }));
+  assert.equal((await provider.generate(base)).text, text);
+});
+
+test("Anthropic uses advertised capacity bounded only by available context and errors on missing metadata", async () => {
+  const sent: any[] = [];
+  const fetcher: typeof fetch = async (url, init) => {
+    if (String(url).endsWith("/models/model")) return Response.json({ max_tokens: 64000 });
+    if (String(url).endsWith("/count_tokens")) return Response.json({ input_tokens: 1000 });
+    sent.push(JSON.parse(String(init!.body)));
+    return stream(cases.find(c => c.provider === "anthropic")!.text);
+  };
+  const provider = new TextProvider("anthropic", "https://api.example", "key", fetcher);
+  assert.equal((await provider.generate(base)).text, "Héllo");
+  assert.equal(sent[0].max_tokens, 31000);
+  const unavailable = new TextProvider("anthropic", "https://api.example", "key", async () => Response.json({ id: "model" }));
+  await assert.rejects(unavailable.generate(base), /output capacity/);
 });

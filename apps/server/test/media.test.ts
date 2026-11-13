@@ -358,7 +358,7 @@ test("v12 upgrade retains existing messages, references and paths; interrupted i
     (db.prepare("SELECT mode FROM artifact_references").get() as any).mode,
     "file",
   );
-  assert.equal(db.pragma("user_version", { simple: true }), 18);
+  assert.equal(db.pragma("user_version", { simple: true }), 19);
   const files = new ManagedFiles(db, join(root, "files"));
   await files.start();
   const artifacts = new ArtifactService(db, files, () => {});
@@ -475,7 +475,7 @@ test("native PDF bytes use each supported wire format and OpenRouter never enabl
     instructions: "",
     messages: [{ role: "user", content: "Open", media: [ref] }],
     tools: [],
-    outputTokens: 100,
+
     contextWindow: 100000,
     signal: new AbortController().signal,
     onTool: async () => ({ ok: true }),
@@ -496,6 +496,8 @@ test("native PDF bytes use each supported wire format and OpenRouter never enabl
       "http://127.0.0.1",
       null,
       async (_url, init) => {
+        if (String(_url).endsWith("/models/m") || String(_url).endsWith("/models/model")) return Response.json({max_tokens:16000});
+        if (String(_url).endsWith("/count_tokens")) return Response.json({input_tokens:100});
         body = JSON.parse(String(init?.body));
         return new Response("", { status: 400 });
       },
@@ -717,7 +719,7 @@ test("xAI PDF file IDs are connection/version cached, expire and invalidate on c
     instructions: "",
     messages: [{ role: "user", content: "Open", media: [ref] }],
     tools: [],
-    outputTokens: 100,
+
     contextWindow: 200000,
     signal: new AbortController().signal,
     onTool: async () => ({ ok: true }),
@@ -762,7 +764,7 @@ test("native token counting sends media rather than reference text, and safely f
     instructions: "",
     messages: [{ role: "user", content: "See", media: [ref] }],
     tools: [],
-    outputTokens: 100,
+
     contextWindow: 100000,
     signal: new AbortController().signal,
     onTool: async () => ({ ok: true }),

@@ -12,7 +12,20 @@ export function restoreOutputColumns(database: Database.Database) {
   `);
 }
 
+// Reconstruct v18 state before any older-schema fixture is assembled.
+export function restoreWorkDeadlines(database: Database.Database) {
+  database.exec("DROP TABLE IF EXISTS provider_output_metadata");
+  for (const table of ["agent_requests", "messaging_waits", "owned_processes"]) {
+    const columns = database.pragma(`table_info(${table})`) as { name: string }[];
+    if (columns.length && !columns.some(c => c.name === "deadline"))
+      database.exec(`ALTER TABLE ${table} ADD COLUMN deadline TEXT${table === "owned_processes" ? "" : " NOT NULL DEFAULT '2999-01-01T00:00:00.000Z'"}`);
+  }
+  if ((database.pragma("table_info(agent_requests)") as unknown[]).length)
+    database.exec("CREATE INDEX IF NOT EXISTS requests_deadline ON agent_requests(state,deadline)");
+}
+
 export function removeChat(database: Database.Database) {
+  restoreWorkDeadlines(database);
   if ((database.pragma("table_info(agent_tasks)") as { name: string }[]).some(column => column.name === "kind"))
     database.exec("DROP INDEX agent_tasks_chat; ALTER TABLE agent_tasks DROP COLUMN kind");
 }

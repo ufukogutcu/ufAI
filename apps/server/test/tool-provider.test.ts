@@ -17,7 +17,7 @@ const base: TaskRequest = {
   modelId: "model",
   instructions: "Use tools",
   messages: [{ role: "user", content: "Read a file" }],
-  outputTokens: 1024,
+
   contextWindow: 32000,
   signal: new AbortController().signal,
   tools: [tool,...taskTools.filter(t=>t.name!==tool.name)],
@@ -61,6 +61,8 @@ for (const provider of [
   test(`${provider} completes native tool exchanges and retains required continuation`, async () => {
     const bodies: any[] = [];
     const fetcher = async (_input: any, init: any) => {
+      if (String(_input).endsWith("/models/model")) return Response.json({ max_tokens: 16000 });
+      if (String(_input).endsWith("/count_tokens")) return Response.json({ input_tokens: 100 });
       bodies.push(JSON.parse(init.body));
       const final = bodies.length === 2;
       if (provider === "openai" || provider === "xai")
@@ -313,6 +315,15 @@ for (const provider of [
     });
     assert.equal(second.text, "Done");
     assert.equal(second.calls.length, 0);
+    for (const body of bodies) {
+      if (provider === "anthropic") assert.equal(body.max_tokens, 16000);
+      else {
+        assert.equal(body.max_tokens, undefined);
+        assert.equal(body.max_output_tokens, undefined);
+        assert.equal(body.generationConfig?.maxOutputTokens, undefined);
+      }
+      if (provider === "ollama") assert.equal(body.options.num_predict, -1);
+    }
     const replay = JSON.stringify(bodies[1]);
     assert.match(replay, /contents/);
     assert.ok(
@@ -518,4 +529,18 @@ test("older text-only assistant history is labeled data for reasoning-compatible
   );
   assert.match(body.messages[2].content, /historical data/);
   assert.match(body.messages[2].content, /Earlier reply/);
+});
+
+
+test("tool generation accepts valid text and cumulative streams beyond former byte ceilings", async () => {
+  const text = "x".repeat(300000);
+  const events = [
+    ...Array.from({ length: 40 }, () => 'data: ' + JSON.stringify({ choices: [{ delta: { reasoning_content: "r".repeat(65536) } }] }) + '\n\n'),
+    'data: ' + JSON.stringify({ choices: [{ delta: { content: text }, finish_reason: "stop" }] }) + '\n\n',
+  ];
+  const provider = new ToolProvider("openai-compatible", "https://local.example", null,
+    async () => new Response(events.join(""), { headers: { "content-type": "text/event-stream" } }));
+  const result = await provider.round(base);
+  assert.equal(result.text, text);
+  assert.deepEqual(result.calls, []);
 });

@@ -16,8 +16,6 @@ export interface ToolOwner {
   turnId: string;
 }
 export interface ProcessOptions {
-  maxProcesses?: number;
-  maxAgentProcesses?: number;
   logBytes?: number;
 }
 type Live = {
@@ -27,7 +25,6 @@ type Live = {
   done: Promise<void>;
   settle: () => void;
   serial: Promise<void>;
-  timer?: NodeJS.Timeout;
   state?: OwnedProcess["state"];
   checkpoint: number;
   finishing?: boolean;
@@ -78,53 +75,18 @@ export class ProcessService {
     this.files.assertAvailable(owner.workspaceId, owner.agentId);
     if (this.stopped)
       throw new ConnectionError("Process service is shutting down.", 503);
-    const count = this.db
-      .prepare(
-        "SELECT count(*) AS n FROM owned_processes WHERE state IN ('starting','running')",
-      )
-      .get() as { n: number };
-    const own = this.db
-      .prepare(
-        "SELECT count(*) AS n FROM owned_processes WHERE agentId=? AND state IN ('starting','running')",
-      )
-      .get(owner.agentId) as { n: number };
-    if (
-      count.n >= (this.options.maxProcesses ?? 8) ||
-      own.n >= (this.options.maxAgentProcesses ?? 2)
-    )
-      throw new ConnectionError(
-        "Running process limit reached. Stop a process first.",
-        429,
-      );
     const task = await this.files.repair("task", owner.taskId);
     if (task.state !== "ready")
       throw new ConnectionError("Task folder is unavailable.", 409);
     const id = randomUUID(),
       launchId = randomUUID(),
       created = time();
-    const timeout =
-      args.timeoutMs === undefined
-        ? args.background
-          ? null
-          : 600000
-        : args.timeoutMs;
     const cwd = args.cwd ?? task.path;
     this.files.assertAvailable(owner.workspaceId, owner.agentId);
     signal.throwIfAborted();
-    // Reserve before asynchronous open/spawn so concurrent starts cannot oversubscribe.
-    const current = this.db
-      .prepare(
-        "SELECT count(*) AS n, coalesce(sum(agentId=?),0) AS own FROM owned_processes WHERE state IN ('starting','running')",
-      )
-      .get(owner.agentId) as { n: number; own: number };
-    if (
-      current.n >= (this.options.maxProcesses ?? 8) ||
-      current.own >= (this.options.maxAgentProcesses ?? 2)
-    )
-      throw new ConnectionError("Running process limit reached.", 429);
     this.db
       .prepare(
-        "INSERT INTO owned_processes(id,workspaceId,agentId,taskId,turnId,command,cwd,pty,launchId,state,deadline,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,'starting',?,?,?)",
+        "INSERT INTO owned_processes(id,workspaceId,agentId,taskId,turnId,command,cwd,pty,launchId,state,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,'starting',?,?)",
       )
       .run(
         id,
@@ -136,7 +98,6 @@ export class ProcessService {
         cwd,
         args.pty ? 1 : 0,
         launchId,
-        timeout === null ? null : new Date(Date.now() + timeout).toISOString(),
         created,
         created,
       );
@@ -177,7 +138,6 @@ export class ProcessService {
       ) => {
         if (!this.live.has(id) || live.finishing) return;
         live.finishing = true;
-        clearTimeout(live.timer);
         // Wait for the guardian's final tree cleanup before resolving Stop/deletion.
         if (child.connected)
           await new Promise<void>((resolve) => {
@@ -267,10 +227,6 @@ export class ProcessService {
         cols: args.cols ?? 100,
         rows: args.rows ?? 30,
       });
-      if (timeout !== null)
-        live.timer = setTimeout(() => {
-          void this.stop(id, "timed_out");
-        }, timeout);
       await new Promise<void>((r) =>
         setTimeout(r, Math.min(args.yieldMs ?? 100, 1000)),
       );

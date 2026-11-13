@@ -98,7 +98,7 @@ test("Codex malformed messages, process failures and RPC timeouts settle pending
     await runtime.close();
   }
 });
-test("idle cleanup releases processes and the simultaneous runtime limit is enforced", async (t) => {
+test("idle cleanup releases processes while more than three connections can remain active", async (t) => {
   const { runtime, homes } = await setup(t, "success", 1000, 40);
   await runtime.status("one");
   await delay(80);
@@ -111,7 +111,7 @@ test("idle cleanup releases processes and the simultaneous runtime limit is enfo
     pending.runtime.login("two", true),
     pending.runtime.login("three", true),
   ]);
-  await assert.rejects(pending.runtime.status("four"), /busy/);
+  assert.equal((await pending.runtime.status("four")).status, "disconnected");
 });
 
 test("Codex test uses an ephemeral restricted turn and handles same-chunk completion with process cleanup", async (t) => {
@@ -229,14 +229,14 @@ test("Codex usage normalizes plan, windows, credits and detailed reset inventory
   assert.equal(refreshed.resetCredits, null);
 });
 
-test("Codex idle clients can be evicted to read usage for more than three Providers", async (t) => {
+test("Codex retains clients while reading usage for more than three Providers", async (t) => {
   const { runtime, children } = await setup(t);
   for (const id of ["one", "two", "three", "four", "five"]) {
     await runtime.login(id, false);
     assert.equal((await runtime.usage(id)).planType, "pro");
-    assert.ok(children.filter((child) => child.exitCode === null && child.signalCode === null).length <= 3);
+    assert.ok(children.filter((child) => child.exitCode === null && child.signalCode === null).length <= 5);
   }
-  assert.equal((await runtime.status("one")).status, "connected", "credentials survive eviction");
+  assert.equal((await runtime.status("one")).status, "connected", "credentials survive concurrent client use");
 });
 
 test("Codex reset outcomes use idempotency keys, refresh cache, and invalidate on logout", async (t) => {
@@ -279,9 +279,17 @@ test("removal prevents an awaiting usage acquisition from recreating the deleted
   const { runtime, directory, children } = await setup(t);
   for (const id of ["one", "two", "three", "four"]) await runtime.login(id, false);
   const pending = runtime.usage("one");
-  const rejected = assert.rejects(pending, /removed|shutting/);
+  const rejected = assert.rejects(pending, /removed|shutting|stopped/);
   await runtime.remove("one");
   await rejected;
   await assert.rejects(access(join(directory, "one")));
-  assert.ok(children.filter((child) => child.exitCode === null && child.signalCode === null).length <= 3);
+  assert.ok(children.filter((child) => child.exitCode === null && child.signalCode === null).length <= 5);
+});
+
+
+test("Codex accepts more than sixteen concurrent control requests", async t => {
+  const { runtime } = await setup(t);
+  await runtime.status("shared");
+  const replies = await Promise.all(Array.from({ length: 24 }, () => runtime.status("shared")));
+  assert.equal(replies.length, 24);
 });

@@ -8,13 +8,17 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  if(r.method==='thread/start'){if(!r.params.dynamicTools?.length||r.params.config.features.shell_tool!==false||r.params.sandbox!=='read-only')throw Error('invalid tool config');const id='thread-'+ ++thread;toolKinds.set(id,r.params.dynamicTools.some(t=>t.name==='agent_send'));return reply({thread:{id}});}
  if(r.method==='turn/start'){
   if(r.params.input[0].text.includes('Inspect') && !r.params.input.some(i=>i.type==='image'&&i.url==='data:image/png;base64,AQID'))throw Error('missing native image');
-  const threadId=r.params.threadId,turnId='turn-'+threadId,id=100+thread;reply({turn:{id:turnId}});pending.set(id,{threadId,turnId});
+  const threadId=r.params.threadId,turnId='turn-'+threadId,id=100+thread;reply({turn:{id:turnId}});pending.set(id,{threadId,turnId,remaining:r.params.input[0].text.includes("many-tools")?130:1});
   send({method:'item/agentMessage/delta',params:{threadId,turnId,itemId:'comment',delta:'Reading the file.'}});
   send({method:'item/started',params:{threadId,turnId,item:{id:'tool',type:'dynamicToolCall'}}});
   send({id,method:'item/tool/call',params:{threadId,turnId,callId:'call-'+thread,namespace:null,tool:toolKinds.get(threadId)?'agent_send':'files_read',arguments:toolKinds.get(threadId)?{agentId:'helper',content:'Help'}:{path:'a.txt'}}});return;
  }
  if(r.method==='turn/interrupt'){send({method:'item/agentMessage/delta',params:{threadId:r.params.threadId,delta:'late output'}});reply({});return send({method:'turn/completed',params:{threadId:r.params.threadId,turn:{id:r.params.turnId,status:'interrupted'}}});}
  if(r.method==='thread/unsubscribe'||r.method==='thread/archive')return reply({});
- if(r.id&&r.result&&pending.has(r.id)){const p=pending.get(r.id);pending.delete(r.id);if(!r.result.contentItems?.[0]?.text)throw Error('invalid tool response');if(JSON.parse(r.result.contentItems[0].text).media && !r.result.contentItems.some(i=>i.type==='inputImage'&&i.imageUrl==='data:image/png;base64,AQID'))throw Error('missing dynamic media');send({method:'thread/tokenUsage/updated',params:{threadId:p.threadId,tokenUsage:{last:{inputTokens:10},total:{inputTokens:20}}}});send({method:'item/completed',params:{...p,item:{id:'comment-only',type:'agentMessage',phase:'commentary',text:'Checking the result.'}}});send({method:'item/agentMessage/delta',params:{...p,itemId:'final',delta:'Final answer.'}});return send({method:'turn/completed',params:{threadId:p.threadId,turn:{id:p.turnId,status:'completed'}}});}
+ if(r.id&&r.result&&pending.has(r.id)){const p=pending.get(r.id);
+ if (--p.remaining>0) {
+   send({id:r.id,method:'item/tool/call',params:{...p,callId:'repeat-'+p.remaining,tool:'files_read',arguments:{path:'a.txt'}}});return;
+ }
+ pending.delete(r.id);if(!r.result.contentItems?.[0]?.text)throw Error('invalid tool response');if(JSON.parse(r.result.contentItems[0].text).media && !r.result.contentItems.some(i=>i.type==='inputImage'&&i.imageUrl==='data:image/png;base64,AQID'))throw Error('missing dynamic media');send({method:'thread/tokenUsage/updated',params:{threadId:p.threadId,tokenUsage:{last:{inputTokens:10},total:{inputTokens:20}}}});send({method:'item/completed',params:{...p,item:{id:'comment-only',type:'agentMessage',phase:'commentary',text:'Checking the result.'}}});send({method:'item/agentMessage/delta',params:{...p,itemId:'final',delta:'Final answer.'}});return send({method:'turn/completed',params:{threadId:p.threadId,turn:{id:p.turnId,status:'completed'}}});}
  if(r.method)reply({});
 });

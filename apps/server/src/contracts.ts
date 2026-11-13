@@ -407,7 +407,6 @@ export interface OwnedProcess {
   error: string | null;
   outputStart: number;
   outputEnd: number;
-  deadline: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -447,7 +446,7 @@ export interface AgentRequest {
   sourceName: string; targetName: string; sourceTaskId: string | null; targetTaskId: string | null;
   executionState?: TaskStatus|null; executionError?: string|null;
   rootWorkflowId: string; parentRequestId: string | null; kind: "request" | "notification";
-  state: string; error: string | null; deadline: string; createdAt: string; updatedAt: string;
+  state: string; error: string | null; createdAt: string; updatedAt: string;
 }
 export interface CommunicationMessage {
   id: string; sequence: number; requestId: string; senderAgentId: string; senderName: string;

@@ -165,7 +165,7 @@ test("real PTY supports terminal detection, input and resize", async (t) => {
   assert.match(text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""), /TTY true/);
   assert.match(text, /from terminal/);
 });
-test("process logs rotate with explicit cursor gaps and deadlines terminate work", async (t) => {
+test("process logs rotate with explicit cursor gaps and commands stop explicitly", async (t) => {
   const s = await setup(t, { logBytes: 1024 });
   const p = await s.processes.start(
     s.owner,
@@ -181,11 +181,12 @@ test("process logs rotate with explicit cursor gaps and deadlines terminate work
   assert.equal(output.end, 131072);
   const timed = await s.processes.start(
     s.owner,
-    { command: "sleep 60", timeoutMs: 100 },
+    { command: "sleep 60" },
     s.signal,
   );
-  await s.processes.wait(timed.id, s.signal);
-  assert.equal(s.processes.get(timed.id).state, "timed_out");
+  await until(() => s.processes.get(timed.id).state === "running");
+  await s.processes.stop(timed.id);
+  assert.equal(s.processes.get(timed.id).state, "stopped");
 });
 test("tool calls are journaled, deduplicated, validate ownership and optimistic file writes", async (t) => {
   const s = await setup(t),
@@ -365,7 +366,7 @@ test("populated v11 upgrade retains task content and managed paths", async (t) =
   removeToolTables(s.db);
   s.db.pragma("user_version=11");
   const upgraded = openDatabase(s.path);
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 18);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 19);
   assert.equal(
     (
       upgraded
@@ -813,4 +814,33 @@ test("inspection is fresh, paginated and agent-owned; stale instruction tools ca
   const foreign = s.engine.submit("b", "new", "Private work", randomUUID());
   assert.equal((await dispatch("read-foreign", "agent_task_read", { taskId: foreign.taskId })).ok, false);
   assert.deepEqual((await dispatch("next-page", "agent_inspect", { offset: 1, limit: 1 })).tasks, []);
+});
+
+test("commands have no elapsed deadline and more than eight processes can run together", async t => {
+  const s = await setup(t);
+  const processes = [];
+  for (let i = 0; i < 9; i++) processes.push(await s.processes.start(s.owner, { command: "sleep 60", yieldMs: 0 }, s.signal));
+  await until(() => processes.every(p => s.processes.get(p.id).state === "running"));
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  try {
+    t.mock.timers.tick(7 * 86400000);
+    assert.ok(processes.every(p => s.processes.get(p.id).state === "running"));
+  } finally { t.mock.timers.reset(); }
+  await Promise.all(processes.map(p => s.processes.stop(p.id)));
+  assert.ok(processes.every(p => s.processes.get(p.id).state === "stopped"));
+});
+
+test("a turn can execute more than 32 rounds and 128 validated tools", async t => {
+  const s = await setup(t);
+  s.db.exec("UPDATE provider_models SET contextWindowOverride=2000000");
+  let calls = 0;
+  s.connections.toolRound = async () => ({
+    text: calls >= 130 ? "Done" : "",
+    calls: calls >= 130 ? [] : [{ id: `unbounded-${calls++}`, name: "files_list", arguments: { path: ".", limit: 1 } }],
+    continuation: [], usage: null,
+  });
+  s.engine.pump();
+  await until(() => s.engine.task(s.owner.taskId).status === "completed");
+  assert.equal(calls, 130);
+  assert.equal((s.db.prepare("SELECT count(*) n FROM tool_invocations WHERE turnId=?").get(s.owner.turnId) as any).n, 130);
 });

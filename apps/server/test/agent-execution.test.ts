@@ -1,3 +1,4 @@
+import { ConnectionError } from "../src/model-providers.js";
 import { deleteOwner } from "./deletion-helper.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -53,7 +54,6 @@ function setup(
     Buffer.byteLength(JSON.stringify([r.instructions, r.messages]));
   const engine = new AgentExecution(db, connections, {
     autoStart,
-    callTimeoutMs: 2000,
   });
   return {
     db,
@@ -707,12 +707,12 @@ test("Chat follow-ups remain ordered, Stop leaves work running, and Chat can res
   await f.engine.cancelTask(work.taskId!);
 });
 
-test("Chat queue limits and blocked retries use the same durable conversation", async t => {
+test("Chat accepts long queues and blocked retries use the same durable conversation", async t => {
   const f = setup(async () => result("Done"), false);
   t.after(() => f.close());
   const chat = f.engine.submit("a", "chat", "First", "chat_first_input");
-  for (let n = 0; n < 4; n++) f.engine.submit("a", "chat", `Follow-up ${n}`, `chat_followup_${n}`);
-  assert.throws(() => f.engine.submit("a", "chat", "Overflow", "chat_overflow"), /queue is full/);
+  for (let n = 0; n < 105; n++) f.engine.submit("a", "chat", `Follow-up ${n}`, `chat_followup_${n}`);
+  assert.equal(f.engine.submit("a", "chat", "More", "chat_more").taskId, chat.taskId);
   assert.throws(() => f.engine.submit("a", "status", "Old", "old_status_input"), /retired/);
   await f.engine.cancelTask(chat.taskId!);
   f.db.prepare("UPDATE agents SET presetId=NULL WHERE id='a'").run();
@@ -772,3 +772,95 @@ for (const target of ["new", "chat"] as const)
     ]);
     assert.equal(f.engine.task(submitted.taskId!).error, null);
   });
+
+for (const phase of ["generation", "maintenance"] as const)
+  test(`${phase} has no work deadline and remains cancellable`, async t => {
+    let entered = false;
+    let signal!: AbortSignal;
+    const blocked = async (request: TextRequest) => {
+      entered = true;
+      signal = request.signal;
+      await new Promise<void>((_, reject) => request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true }));
+      return result("Unused");
+    };
+    const f = setup(blocked, false);
+    t.after(() => f.close());
+    if (phase === "maintenance") f.connections.generate = async (_snapshot, request) =>
+      request.instructions.startsWith("Maintain") ? blocked(request) : result("Done");
+    const turn = f.engine.submit("a", "new", "Long work", `unbounded-${phase}`);
+    f.engine.pump();
+    await until(() => entered);
+    t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+    try {
+      t.mock.timers.tick(7 * 86400000);
+      assert.equal(signal.aborted, false);
+      assert.equal(f.engine.task(turn.taskId!).status, "running");
+    } finally { t.mock.timers.reset(); }
+    await f.engine.cancelTask(turn.taskId!);
+    assert.equal(signal.aborted, true);
+    assert.equal(f.engine.task(turn.taskId!).status, "cancelled");
+  });
+
+test("shared providers admit more than four agents and more than one Chat while each agent stays serial", async t => {
+  const requests: TextRequest[] = [];
+  const f = setup(async request => {
+    requests.push(request);
+    await new Promise<void>((_, reject) => request.signal.addEventListener("abort", () => reject(new Error("Cancelled")), { once: true }));
+    return result("Unused");
+  }, false);
+  t.after(() => f.close());
+  for (let i = 0; i < 6; i++) {
+    const id = `parallel-${i}`;
+    f.db.prepare("INSERT INTO agents(id,workspaceId,name,presetId,createdAt,updatedAt) VALUES (?,?,?,'preset','now','now')").run(id, f.workspace, id);
+    f.engine.submit(id, "new", "Ordinary", `ordinary-${i}`);
+    f.engine.submit(id, "new", "Queued", `queued-${i}`);
+    f.engine.submit(id, "chat", "Chat", `chat-${i}`);
+  }
+  f.engine.pump();
+  await until(() => requests.length === 12);
+  assert.equal((f.db.prepare("SELECT count(*) n FROM agent_turns WHERE status='running'").get() as any).n, 12);
+  assert.equal((f.db.prepare("SELECT count(*) n FROM agent_turns WHERE status='queued'").get() as any).n, 6);
+});
+
+test("provider reservations release independently and exclusive operations respect parked pins", async t => {
+  const f = setup(async () => result("Done"), false);
+  t.after(() => f.close());
+  const first = f.connections.claim("connection", "work");
+  const second = f.connections.claim("connection", "work");
+  const chat = f.connections.claim("connection", "chat");
+  first(); first();
+  assert.throws(() => f.connections.claim("connection", "exclusive"), /busy/);
+  second(); chat();
+  const unpin = f.connections.pin("connection");
+  assert.throws(() => f.connections.claim("connection", "exclusive"), /busy/);
+  unpin();
+  const exclusive = f.connections.claim("connection", "exclusive");
+  assert.throws(() => f.connections.claim("connection", "work"), /busy/);
+  exclusive();
+  assert.equal(f.connections.busy("connection"), false);
+});
+
+test("ordinary queues accept more than 100 inputs and batching rotates beyond unavailable agents", async t => {
+  const f = setup(async () => result("Done"), false);
+  t.after(() => f.close());
+  for (let i = 0; i < 105; i++) f.engine.submit("a", "new", "Queued", `unbounded-queue-${i}`);
+  assert.equal(f.engine.requiredAgent("a").queuedCount, 105);
+  // Simulate unavailable reservations without starting 500 external runtimes.
+  const claim = f.connections.claim.bind(f.connections);
+  const visited = new Set<string>();
+  f.connections.claim = (id, lane) => {
+    visited.add(id);
+    throw new ConnectionError("busy", 409);
+  };
+  for (let i = 0; i < 505; i++) {
+    const id = `batch-${i}`;
+    f.db.prepare("INSERT INTO agents(id,workspaceId,name,presetId,createdAt,updatedAt) VALUES (?,?,?,'preset','now','now')").run(id, f.workspace, id);
+    f.engine.submit(id, "new", "Batch", id);
+  }
+  const snapshot = f.connections.snapshot.bind(f.connections);
+  f.connections.snapshot = agent => ({ ...snapshot(agent), connectionId: (agent as any).id });
+  f.engine.pump();
+  f.engine.pump();
+  assert.ok(visited.has("batch-504"));
+  f.connections.claim = claim;
+});

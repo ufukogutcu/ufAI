@@ -657,7 +657,7 @@ test("migration 7 removes provider defaults and preserves configuration, catalog
   for (let attempt = 0; attempt < 2; attempt++) {
     db = openDatabase(path);
     try {
-      assert.equal(db.pragma("user_version", { simple: true }), 18);
+      assert.equal(db.pragma("user_version", { simple: true }), 19);
       assert.deepEqual(db.pragma("foreign_key_check"), []);
       assert.equal(
         db

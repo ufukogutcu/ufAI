@@ -16,7 +16,7 @@ const base: TextRequest = {
   instructions: "Only text.",
   messages: [{ role: "user", content: "Hello" }],
   contextWindow: 32000,
-  outputTokens: 4096,
+
   signal: new AbortController().signal,
 };
 async function runtime(t: any) {
@@ -196,4 +196,25 @@ test("Codex dynamic tools use ufAI callbacks, isolate commentary, and preserve c
   await started;
   controller.abort();
   await assert.rejects(() => waiting, /cancelled/i);
+});
+
+
+test("Codex completes text beyond its former reply ceiling", async t => {
+  const r = await runtime(t);
+  const reply = await r.executeText("connection", { ...base, messages: [{ role: "user", content: "large-reply" }] });
+  assert.equal(reply.text.length, 80 * 4096);
+});
+
+test("Codex executes more than 32 dynamic tool rounds", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "ufai-codex-rounds-"));
+  const r = new CodexRuntime(dir, () => spawn(process.execPath,
+    [fileURLToPath(new URL("./fixtures/codex-tools-process.cjs", import.meta.url))], { stdio: ["pipe","pipe","pipe"] }), 1000, 1000);
+  t.after(async () => { await r.close(); await rm(dir, { recursive:true, force:true }); });
+  let calls = 0;
+  const reply = await r.executeTask("connection", { ...base,
+    messages: [{ role:"user",content:"many-tools" }], tools:[taskTools.find(t => t.name === "files_read")!],
+    onTool: async () => { calls++; return {ok:true,text:"Contents"}; },
+  });
+  assert.equal(calls,130);
+  assert.equal(reply.text,"Final answer.");
 });

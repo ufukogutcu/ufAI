@@ -1,3 +1,6 @@
+import {
+  anthropicOutputMaximum, remainingOutput, type OutputMaximum,
+} from "./provider-output.js";
 import type { ConnectionProvider } from "./contracts.js";
 import type {
   ModelProviderAdapter,
@@ -11,14 +14,13 @@ const object = (v: unknown): Record<string, any> =>
   v && typeof v === "object" && !Array.isArray(v)
     ? (v as Record<string, any>)
     : {};
-const MAX_BYTES = 2 * 1024 * 1024;
-const MAX_TEXT = 256 * 1024;
 export class TextProvider implements ModelProviderAdapter {
   constructor(
     private provider: Exclude<ConnectionProvider, "codex">,
     private endpoint: string,
     private apiKey: string | null,
     private fetcher: typeof fetch = fetch,
+    private outputMaximum?: OutputMaximum,
   ) {}
   private headers() {
     const headers: Record<string, string> = {
@@ -107,7 +109,6 @@ export class TextProvider implements ModelProviderAdapter {
         model: r.modelId,
         system: r.instructions,
         messages: r.messages,
-        max_tokens: r.outputTokens,
         stream: true,
       };
     } else if (this.provider === "google") {
@@ -118,7 +119,6 @@ export class TextProvider implements ModelProviderAdapter {
           role: m.role === "assistant" ? "model" : "user",
           parts: [{ text: m.content }],
         })),
-        generationConfig: { maxOutputTokens: r.outputTokens },
       };
     } else if (this.provider === "ollama") {
       path = "/api/chat";
@@ -126,7 +126,7 @@ export class TextProvider implements ModelProviderAdapter {
         model: r.modelId,
         messages,
         stream: true,
-        options: { num_predict: r.outputTokens, num_ctx: r.contextWindow },
+        options: { num_predict: -1, num_ctx: r.contextWindow },
       };
     } else if (this.provider === "openai" || this.provider === "xai") {
       path = "/responses";
@@ -134,7 +134,6 @@ export class TextProvider implements ModelProviderAdapter {
         model: r.modelId,
         instructions: r.instructions,
         input: r.messages,
-        max_output_tokens: r.outputTokens,
         stream: true,
         store: false,
       };
@@ -143,9 +142,13 @@ export class TextProvider implements ModelProviderAdapter {
       body = {
         model: r.modelId,
         messages,
-        max_tokens: r.outputTokens,
         stream: true,
       };
+    }
+    if (this.provider === "anthropic") {
+      const maximum = await (this.outputMaximum?.(r) ??
+        anthropicOutputMaximum(this.endpoint, this.apiKey, r, this.fetcher));
+      body.max_tokens = remainingOutput(r, await this.countTokens(r), maximum);
     }
     let response: Response;
     try {
@@ -184,10 +187,6 @@ export class TextProvider implements ModelProviderAdapter {
     const append = (delta: unknown) => {
       if (typeof delta !== "string" || !delta) return;
       text += delta;
-      if (Buffer.byteLength(text) > MAX_TEXT)
-        throw new ConnectionError(
-          "Reply exceeded the text size limit. Start a smaller task.",
-        );
       r.onDelta?.(delta);
     };
     const accept = (raw: unknown, full = false) => {
@@ -299,8 +298,7 @@ export class TextProvider implements ModelProviderAdapter {
     };
     r.signal.addEventListener("abort", aborted, { once: true });
     if (r.signal.aborted) aborted();
-    let bytes = 0,
-      buffer = "";
+    let buffer = "";
     const decoder = new TextDecoder();
     const contentType = response.headers.get("content-type") ?? "";
     const json =
@@ -353,9 +351,6 @@ export class TextProvider implements ModelProviderAdapter {
         const next = await reader.read();
         r.signal.throwIfAborted();
         if (next.done) break;
-        bytes += next.value.byteLength;
-        if (bytes > MAX_BYTES)
-          throw new ConnectionError("Provider stream exceeded the size limit.");
         buffer += decoder.decode(next.value, { stream: true });
         buffer = buffer.replace(/\r\n/g, "\n");
         consume();

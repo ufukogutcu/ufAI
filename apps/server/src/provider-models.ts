@@ -308,6 +308,7 @@ export class ProviderModels {
   }
   merge(connectionId: string, models: DiscoveredModel[]) {
     this.db.transaction(() => {
+      this.db.prepare("DELETE FROM provider_output_metadata WHERE connectionId=?").run(connectionId);
       this.db
         .prepare(
           "UPDATE provider_models SET available = 0 WHERE connectionId = ?",
@@ -368,6 +369,7 @@ export class ProviderModels {
       .run(JSON.stringify(result), connectionId, id);
   }
   invalidate(connectionId: string) {
+    this.db.prepare("DELETE FROM provider_output_metadata WHERE connectionId=?").run(connectionId);
     this.db
       .prepare(
         "UPDATE provider_models SET lastTest = NULL WHERE connectionId = ?",

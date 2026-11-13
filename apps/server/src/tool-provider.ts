@@ -1,3 +1,6 @@
+import {
+  anthropicOutputMaximum, remainingOutput, type OutputMaximum,
+} from "./provider-output.js";
 import { providerJson } from "./provider-inference.js";
 import { nativeExchange } from "./native-media.js";
 import type { NativeMedia } from "./media-service.js";
@@ -22,6 +25,7 @@ export class ToolProvider {
     private key: string | null,
     private fetcher: typeof fetch = fetch,
     private uploadPdf?: (m: NativeMedia) => Promise<string>,
+    private outputMaximum?: OutputMaximum,
   ) {}
   private async build(r: TaskRequest) {
     const p = this.provider,
@@ -65,7 +69,6 @@ export class ToolProvider {
           parameters: t.parameters,
           strict: false,
         })),
-        max_output_tokens: r.outputTokens,
         stream: true,
         store: false,
         ...(p === "openai" ? { include: ["reasoning.encrypted_content"] } : {}),
@@ -98,7 +101,6 @@ export class ToolProvider {
           description: t.description,
           input_schema: t.parameters,
         })),
-        max_tokens: r.outputTokens,
         stream: true,
       };
     } else if (google) {
@@ -137,7 +139,6 @@ export class ToolProvider {
             })),
           },
         ],
-        generationConfig: { maxOutputTokens: r.outputTokens },
       };
     } else {
       path = ollama ? "/api/chat" : "/chat/completions";
@@ -178,11 +179,11 @@ export class ToolProvider {
         ...(ollama
           ? {
               options: {
-                num_predict: r.outputTokens,
+                num_predict: -1,
                 num_ctx: r.contextWindow,
               },
             }
-          : { max_tokens: r.outputTokens }),
+          : {}),
       };
     }
     return { path, headers, body };
@@ -247,6 +248,12 @@ export class ToolProvider {
       google = p === "google",
       ollama = p === "ollama";
     const { body, headers, path } = await this.build(r);
+    if (anthropic) {
+      const maximum = await (this.outputMaximum?.(r) ??
+        anthropicOutputMaximum(this.endpoint, this.key, r, this.fetcher));
+      const count = await this.countTokens(r) ?? Buffer.byteLength(JSON.stringify(body));
+      body.max_tokens = remainingOutput(r, count, maximum);
+    }
     const encoded = JSON.stringify(body);
     if (
       Buffer.byteLength(encoded) >
@@ -297,8 +304,6 @@ export class ToolProvider {
       }
       if (typeof s === "string") {
         text += s;
-        if (Buffer.byteLength(text) > 256 * 1024)
-          throw new ConnectionError("Reply exceeded the text size limit.");
         r.onDelta?.(s);
       }
     };
@@ -439,8 +444,7 @@ export class ToolProvider {
     };
     const reader = response.body?.getReader();
     if (!reader) throw new ConnectionError("Provider returned no body.");
-    let bytes = 0,
-      buffer = "";
+    let buffer = "";
     const decoder = new TextDecoder(),
       type = response.headers.get("content-type") ?? "",
       json = type.includes("application/json") && !ollama;
@@ -483,9 +487,6 @@ export class ToolProvider {
         const n = await reader.read();
         r.signal.throwIfAborted();
         if (n.done) break;
-        bytes += n.value.length;
-        if (bytes > 2 * 1024 * 1024)
-          throw new ConnectionError("Provider stream exceeded the size limit.");
         buffer += decoder.decode(n.value, { stream: true });
         buffer = buffer.replace(/\r\n/g, "\n");
         consume();

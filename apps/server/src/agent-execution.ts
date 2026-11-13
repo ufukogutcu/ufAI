@@ -18,7 +18,7 @@ import type {
 import type { ManagedFiles } from "./managed-files.js";
 import { AgentTools, taskTools } from "./agent-tools.js";
 import type { ToolOwner } from "./process-service.js";
-import type { TaskRequest, ToolResult } from "./execution-types.js";
+import type { TaskRequest, ToolResult, ToolCall } from "./execution-types.js";
 import { ConnectionService } from "./connection-service.js";
 import { ConnectionError } from "./model-providers.js";
 
@@ -26,14 +26,13 @@ const now = () => new Date().toISOString();
 const json = (text: string): any =>
   JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim());
 const estimate = (text: string) => Buffer.byteLength(text, "utf8");
+function recoveredToolCall(call: ToolCall): ToolCall {
+  if (!["agent_send", "agent_wait", "process_start"].includes(call.name)) return call;
+  const { timeoutMs: _obsolete, ...args } = call.arguments;
+  return { ...call, arguments: args };
+}
 export interface ExecutionOptions {
-  callTimeoutMs?: number;
   autoStart?: boolean;
-  maxToolRounds?: number;
-  maxToolCalls?: number;
-  maxWaitingTurns?: number;
-  maxWaitingPerAgent?: number;
-  messaging?: import("./messaging.js").MessagingOptions;
 }
 type Active = {
   controller: AbortController;
@@ -49,8 +48,6 @@ type Active = {
   waiting?: boolean;
   readyToResume?: boolean;
   resume?: () => void;
-  timer?: NodeJS.Timeout;
-  armDeadline?: () => void;
 };
 type Summary = { content: string; throughSequence: number; version: number };
 export class AgentExecution {
@@ -64,6 +61,8 @@ export class AgentExecution {
   private pumping = false;
   private timer?: NodeJS.Timeout;
   private lastPrune = 0;
+  private scheduleCursor = 0;
+  private waitCursor = "";
   constructor(
     readonly db: Database.Database,
     private connections: ConnectionService,
@@ -304,10 +303,6 @@ export class AgentExecution {
     if (!content && !attachments.length)
       throw new ConnectionError("Enter a message or attach a file.", 400);
     const isChat = target === "chat" || (target !== "new" && this.task(target).kind === "chat");
-    const pending = this.db.prepare(`SELECT count(*) AS n FROM agent_turns r JOIN agent_tasks t ON t.id=r.taskId
-      WHERE r.agentId=? AND r.status IN ('queued','running','waiting') AND t.kind=?`).get(agentId, isChat ? "chat" : "task") as { n: number };
-    if (pending.n >= (isChat ? 5 : 100))
-      throw new ConnectionError("This agent’s queue is full. Wait or cancel pending work.", 429);
     const result = this.db.transaction(() => {
       let taskId: string | null = null,
         conversationId: string;
@@ -636,41 +631,32 @@ export class AgentExecution {
     this.pumping = true;
     try {
       this.restoreMessagingWaits();
-      let ready = this.db
-        .prepare(
-          `SELECT t.*, own.kind AS executionKind FROM agent_turns t JOIN agent_tasks own ON own.id=t.taskId WHERE t.status = 'queued'
-        AND NOT EXISTS (SELECT 1 FROM agent_turns a JOIN agent_tasks activeTask ON activeTask.id=a.taskId WHERE a.agentId=t.agentId AND a.status='running' AND activeTask.kind=own.kind)
-        AND NOT EXISTS (SELECT 1 FROM agent_turns p WHERE p.taskId=t.taskId AND p.status IN ('queued','running','waiting','blocked','failed','interrupted') AND (SELECT sequence FROM agent_messages WHERE id=p.inputMessageId) < (SELECT sequence FROM agent_messages WHERE id=t.inputMessageId))
-        ORDER BY coalesce((SELECT max(updatedAt) FROM agent_turns c WHERE c.agentId=t.agentId AND c.status='completed'), ''), t.rowid LIMIT 500`,
+      // Choose one eligible input per agent/lane before batching, so a large queue
+      // cannot hide other agents. Rotate batches past temporarily unavailable work.
+      const ready = this.db.prepare(`
+        WITH eligible AS (
+          SELECT t.*, t.rowid AS queueRow, own.kind AS executionKind,
+            row_number() OVER (PARTITION BY t.agentId, own.kind ORDER BY
+              CASE WHEN own.kind='chat' THEN 0
+                WHEN coalesce((SELECT userStreak FROM agent_schedule_state WHERE agentId=t.agentId),0)>=2
+                  THEN CASE WHEN json_extract(t.envelope,'$.source')='agent' THEN 0 ELSE 1 END
+                ELSE CASE WHEN json_extract(t.envelope,'$.source')='agent' THEN 1 ELSE 0 END END,
+              t.rowid) AS laneOrder
+          FROM agent_turns t JOIN agent_tasks own ON own.id=t.taskId
+          WHERE t.status='queued'
+            AND NOT EXISTS (SELECT 1 FROM agent_turns a JOIN agent_tasks activeTask ON activeTask.id=a.taskId
+              WHERE a.agentId=t.agentId AND a.status='running' AND activeTask.kind=own.kind)
+            AND NOT EXISTS (SELECT 1 FROM agent_turns p WHERE p.taskId=t.taskId
+              AND p.status IN ('queued','running','waiting','blocked','failed','interrupted')
+              AND (SELECT sequence FROM agent_messages WHERE id=p.inputMessageId)
+                < (SELECT sequence FROM agent_messages WHERE id=t.inputMessageId))
         )
-        .all() as (AgentTurn & { generation: number; executionKind: "chat" | "task" })[];
-      // Choose each agent's next turn with a bounded user preference; retain cross-agent ordering.
-      const chosen = new Map<string, string>();
-      for (const candidate of ready) {
-        if (chosen.has(candidate.agentId) || candidate.executionKind === "chat") continue;
-        const eligible = ready.filter(
-          (t) => t.agentId === candidate.agentId && t.executionKind === "task",
-        );
-        const source = (t: AgentTurn) =>
-          JSON.parse((t as any).envelope ?? "{}").source ?? "user";
-        const users = eligible.filter((t) => source(t) === "user"),
-          helpers = eligible.filter((t) => source(t) !== "user");
-        const streak =
-          (
-            this.db
-              .prepare(
-                "SELECT userStreak FROM agent_schedule_state WHERE agentId=?",
-              )
-              .get(candidate.agentId) as any
-          )?.userStreak ?? 0;
-        chosen.set(
-          candidate.agentId,
-          (helpers.length && (!users.length || streak >= 2)
-            ? helpers[0]
-            : (users[0] ?? helpers[0]))!.id,
-        );
-      }
-      ready = ready.filter((t) => t.executionKind === "chat" || chosen.get(t.agentId) === t.id);
+        SELECT * FROM eligible WHERE laneOrder=1
+        ORDER BY (queueRow<=?), queueRow LIMIT 500
+      `).all(this.scheduleCursor) as (AgentTurn & {
+        generation: number; executionKind: "chat" | "task"; queueRow: number;
+      })[];
+      if (ready.length) this.scheduleCursor = ready.at(-1)!.queueRow;
       for (const turn of ready) {
         if (this.deleting.has(turn.agentId)) continue;
         const owner = this.db
@@ -704,12 +690,6 @@ export class AgentExecution {
               a.agentId === turn.agentId &&
               a.chatLane === chat,
           )
-        )
-          continue;
-        const ordinary = running.filter((a) => !a.chatLane).length;
-        if (
-          (!chat && ordinary >= 4) ||
-          (chat && running.length - ordinary >= 1)
         )
           continue;
         let snapshot: ExecutionSnapshot, release: () => void;
@@ -760,7 +740,6 @@ export class AgentExecution {
             )
             .run(now(), turn.id);
           if (turn.taskId) this.refreshTask(turn.taskId);
-          parked.armDeadline?.();
           parked.resume?.();
           parked.resume = undefined;
           continue;
@@ -840,7 +819,6 @@ export class AgentExecution {
     return {
       modelId: s.modelId,
       contextWindow: s.contextWindow,
-      outputTokens: Math.min(4096, Math.floor(s.contextWindow / 4)),
       instructions,
       messages,
       signal: active.controller.signal,
@@ -855,43 +833,36 @@ export class AgentExecution {
     onDelta?: (text: string) => void,
   ) {
     this.live(turn, active);
-    const timeout = setTimeout(
-      () =>
-        active.controller.abort(
-          new Error("Generation timed out. Retry explicitly."),
-        ),
-      this.options.callTimeoutMs ?? 600_000,
-    );
-    try {
-      const r = this.request(active, instructions, messages, onDelta);
-      const budget =
-        active.snapshot.contextWindow -
-        r.outputTokens -
-        Math.ceil(active.snapshot.contextWindow * 0.1);
-      if ((await this.connections.countTokens(active.snapshot, r)) > budget)
-        throw new ConnectionError(
-          "Context is too large. Reduce the task or start a New task.",
-          409,
-        );
-      const result = await this.connections.generate(active.snapshot, r);
-      this.live(turn, active);
-      if (result.usage) {
-        const old = (
-          this.db
-            .prepare("SELECT usage FROM agent_turns WHERE id=?")
-            .get(turn.id) as { usage: string | null }
-        ).usage;
-        const usage: Record<string, number> = old ? JSON.parse(old) : {};
-        for (const [key, value] of Object.entries(result.usage))
-          usage[key] = (usage[key] ?? 0) + value;
+    const r = this.request(active, instructions, messages, onDelta);
+    const budget =
+      active.snapshot.contextWindow -
+      this.outputReserve(active.snapshot.contextWindow) -
+      Math.ceil(active.snapshot.contextWindow * 0.1);
+    if ((await this.connections.countTokens(active.snapshot, r)) > budget)
+      throw new ConnectionError(
+        "Context is too large. Reduce the task or start a New task.",
+        409,
+      );
+    const result = await this.connections.generate(active.snapshot, r);
+    this.live(turn, active);
+    if (result.usage) {
+      const old = (
         this.db
-          .prepare("UPDATE agent_turns SET usage=? WHERE id=?")
-          .run(JSON.stringify(usage), turn.id);
-      }
-      return result.text;
-    } finally {
-      clearTimeout(timeout);
+          .prepare("SELECT usage FROM agent_turns WHERE id=?")
+          .get(turn.id) as { usage: string | null }
+      ).usage;
+      const usage: Record<string, number> = old ? JSON.parse(old) : {};
+      for (const [key, value] of Object.entries(result.usage))
+        usage[key] = (usage[key] ?? 0) + value;
+      this.db
+        .prepare("UPDATE agent_turns SET usage=? WHERE id=?")
+        .run(JSON.stringify(usage), turn.id);
     }
+    return result.text;
+  }
+  // A planning reserve is not a generation/output limit.
+  private outputReserve(contextWindow: number) {
+    return Math.min(4096, Math.floor(contextWindow / 4));
   }
   private owner(turn: AgentTurn): ToolOwner {
     return {
@@ -907,18 +878,6 @@ export class AgentExecution {
   }
   private async waitProcess(turn: AgentTurn, active: Active, id: string) {
     this.live(turn, active);
-    const waiting = this.db
-      .prepare("SELECT agentId FROM agent_turns WHERE status='waiting'")
-      .all() as { agentId: string }[];
-    if (
-      waiting.length >= (this.options.maxWaitingTurns ?? 16) ||
-      waiting.filter((a) => a.agentId === turn.agentId).length >=
-        (this.options.maxWaitingPerAgent ?? 4)
-    )
-      throw new ConnectionError(
-        "Waiting turn limit reached. Check process output instead.",
-        429,
-      );
     const process = this.tools!.processes.get(id);
     if (!["running", "starting"].includes(process.state)) return process;
     this.db.transaction(() => {
@@ -939,7 +898,6 @@ export class AgentExecution {
         .run(now(), turn.taskId);
     })();
     active.waiting = true;
-    clearTimeout(active.timer);
     active.release();
     this.event(turn.agentId);
     this.wake();
@@ -975,9 +933,10 @@ export class AgentExecution {
     if (!this.messaging) return;
     const waits = this.db
       .prepare(
-        "SELECT w.*,t.agentId FROM messaging_waits w JOIN agent_turns t ON t.id=w.turnId WHERE w.state='waiting' AND t.status='waiting' LIMIT 16",
+        "SELECT w.*,t.agentId FROM messaging_waits w JOIN agent_turns t ON t.id=w.turnId WHERE w.state='waiting' AND t.status='waiting' ORDER BY (w.turnId<=?),w.turnId LIMIT 16",
       )
-      .all() as any[];
+      .all(this.waitCursor) as any[];
+    if (waits.length) this.waitCursor = waits.at(-1).turnId;
     for (const w of waits) {
       if (this.active.has(w.turnId)) continue;
       const owner = this.owner(
@@ -987,13 +946,12 @@ export class AgentExecution {
       );
       const ids = JSON.parse(w.requestIds),
         ready = this.messaging.waitState(owner, ids, w.mode).ready;
-      if (!ready && w.deadline > now()) continue;
+      if (!ready) continue;
       this.db.transaction(() => {
         const result = {
           ok: true,
           wait: {
             ...this.messaging!.waitResult(owner, ids, w.mode),
-            timedOut: !ready,
           },
         };
         const cp = JSON.parse(w.checkpoint);
@@ -1043,29 +1001,16 @@ export class AgentExecution {
       );
     const initial = this.messaging.waitState(owner, ids, mode);
     if (initial.ready) return this.messaging.waitResult(owner, ids, mode);
-    const waiting = this.db
-      .prepare("SELECT agentId FROM agent_turns WHERE status='waiting'")
-      .all() as { agentId: string }[];
-    if (
-      waiting.length >= (this.options.maxWaitingTurns ?? 16) ||
-      waiting.filter((a) => a.agentId === turn.agentId).length >=
-        (this.options.maxWaitingPerAgent ?? 4)
-    )
-      throw new ConnectionError("Waiting turn limit reached.", 429);
-    const deadline = new Date(
-      Date.now() + (args.timeoutMs ?? 3600000),
-    ).toISOString();
     this.db.transaction(() => {
       this.db
         .prepare(
-          "INSERT INTO messaging_waits VALUES (?,?,?,?,?,'waiting',?,?) ON CONFLICT(turnId) DO UPDATE SET requestIds=excluded.requestIds,mode=excluded.mode,deadline=excluded.deadline,state='waiting',checkpoint=excluded.checkpoint",
+          "INSERT INTO messaging_waits(turnId,taskId,requestIds,mode,state,checkpoint,createdAt) VALUES (?,?,?,?,'waiting',?,?) ON CONFLICT(turnId) DO UPDATE SET requestIds=excluded.requestIds,mode=excluded.mode,state='waiting',checkpoint=excluded.checkpoint",
         )
         .run(
           turn.id,
           turn.taskId,
           JSON.stringify(ids),
           mode,
-          deadline,
           JSON.stringify({ ...checkpoint, callId: args.callId }),
           now(),
         );
@@ -1079,7 +1024,6 @@ export class AgentExecution {
         .run(turn.taskId);
     })();
     active.waiting = true;
-    clearTimeout(active.timer);
     active.release();
     this.event(turn.agentId);
     this.wake();
@@ -1088,8 +1032,7 @@ export class AgentExecution {
         try {
           active.controller.signal.throwIfAborted();
           if (
-            this.messaging!.waitState(owner, ids, mode).ready ||
-            deadline <= now()
+            this.messaging!.waitState(owner, ids, mode).ready
           )
             finish();
         } catch (e) {
@@ -1110,10 +1053,8 @@ export class AgentExecution {
       check();
     });
     const result = this.db.transaction(() => {
-      const ready = this.messaging!.waitState(owner, ids, mode).ready;
       const result = {
         ...this.messaging!.waitResult(owner, ids, mode),
-        timedOut: !ready,
       };
       this.db
         .prepare("UPDATE messaging_waits SET state='consumed' WHERE turnId=?")
@@ -1174,18 +1115,6 @@ export class AgentExecution {
     let pendingRound: any = null;
     let pendingResults: any[] = [];
     let pendingIndex = 0;
-    let usedRounds = checkpoint?.rounds ?? 0;
-    const arm = () => {
-      clearTimeout(active.timer);
-      active.timer = setTimeout(
-        () =>
-          active.controller.abort(
-            new Error("Generation timed out. Retry explicitly."),
-          ),
-        this.options.callTimeoutMs ?? 600000,
-      );
-    };
-    active.armDeadline = arm;
     const request: TaskRequest = {
       ...this.request(active, instructions, messages, onDelta),
       resolveMedia: (refs) => {
@@ -1204,7 +1133,6 @@ export class AgentExecution {
         );
       },
       tools: taskTools,
-      maxRounds: this.options.maxToolRounds ?? 32,
       continuation,
       onTool: (call) =>
         this.tools!.dispatch(
@@ -1218,7 +1146,6 @@ export class AgentExecution {
               pendingRound,
               pendingResults,
               pendingIndex,
-              rounds: usedRounds,
               context: {
                 instructions: request.instructions,
                 messages: request.messages,
@@ -1260,114 +1187,98 @@ export class AgentExecution {
         .prepare("UPDATE agent_turns SET usage=? WHERE id=?")
         .run(JSON.stringify(combined), turn.id);
     };
-    try {
-      if (checkpoint?.pendingRound && active.snapshot.provider !== "codex") {
-        const restored = checkpoint.pendingResults ?? [];
-        pendingRound = checkpoint.pendingRound;
-        pendingResults = restored;
-        const calls = checkpoint.pendingRound.calls;
-        for (let i = checkpoint.pendingIndex; i < calls.length; i++) {
-          pendingIndex = i;
-          const call = calls[i];
-          const old = this.db
-            .prepare(
-              "SELECT result FROM tool_invocations WHERE turnId=? AND callId=?",
-            )
-            .get(turn.id, call.id) as any;
-          restored.push({
-            call,
-            result: old?.result
-              ? JSON.parse(old.result)
-              : await request.onTool(call),
-          });
-        }
-        continuation.push({
-          response: checkpoint.pendingRound.continuation,
-          results: restored,
+    if (checkpoint?.pendingRound && active.snapshot.provider !== "codex") {
+      const restored = checkpoint.pendingResults ?? [];
+      pendingRound = checkpoint.pendingRound;
+      pendingResults = restored;
+      const calls = checkpoint.pendingRound.calls;
+      for (let i = checkpoint.pendingIndex; i < calls.length; i++) {
+        pendingIndex = i;
+        const call = calls[i];
+        const old = this.db
+          .prepare(
+            "SELECT result FROM tool_invocations WHERE turnId=? AND callId=?",
+          )
+          .get(turn.id, call.id) as any;
+        restored.push({
+          call,
+          result: old?.result
+            ? JSON.parse(old.result)
+            : await request.onTool(old ? call : recoveredToolCall(call)),
         });
-        pendingRound = null;
       }
-      if (storedWait)
-        this.db
-          .prepare("UPDATE messaging_waits SET state='consumed' WHERE turnId=?")
-          .run(turn.id);
-      if (
-        Buffer.byteLength(JSON.stringify([instructions, messages, taskTools])) +
-          (active.snapshot.provider === "codex" ? mediaBudget() : 0) >
-        active.snapshot.contextWindow -
-          request.outputTokens -
-          Math.ceil(active.snapshot.contextWindow * 0.1)
-      )
-        throw new ConnectionError(
-          "Tool context is too large. Use a larger context model or reduce instructions.",
-          409,
-        );
-      if (active.snapshot.provider === "codex") {
-        arm();
-        const result = await this.connections.executeTask(
-          active.snapshot,
-          request,
-        );
-        account(result.usage);
-        this.live(turn, active);
-        return result.text;
-      }
-      for (
-        let round = usedRounds;
-        round < (this.options.maxToolRounds ?? 32);
-        round++
-      ) {
-        this.live(turn, active);
-        const budget =
-          active.snapshot.contextWindow -
-          request.outputTokens -
-          Math.ceil(active.snapshot.contextWindow * 0.1);
-        const bytes = Buffer.byteLength(
-          JSON.stringify([instructions, messages, taskTools, continuation]),
-        );
-        const nativeCount = mediaBudget()
-          ? await this.connections.countTaskTokens(active.snapshot, request)
-          : null;
-        if ((nativeCount ?? bytes + mediaBudget()) > budget)
-          throw new ConnectionError(
-            "Tool context is too large. Start a smaller task or use a larger context model.",
-            409,
-          );
-        arm();
-        usedRounds++;
-        const result = await this.connections.toolRound(
-          active.snapshot,
-          request,
-        );
-        clearTimeout(active.timer);
-        account(result.usage);
-        this.live(turn, active);
-        if (!result.calls.length) return result.text;
-        if (result.text) this.tools!.item(owner, "commentary", result.text);
-        active.resetOutput?.();
-        const results: {
-          call: (typeof result.calls)[number];
-          result: ToolResult;
-        }[] = [];
-        pendingRound = result;
-        pendingResults = results;
-        for (let i = 0; i < result.calls.length; i++) {
-          pendingIndex = i;
-          const call = result.calls[i]!;
-          results.push({ call, result: await request.onTool(call) });
-        }
-        pendingRound = null;
-        continuation.push({ response: result.continuation, results });
-      }
+      continuation.push({
+        response: checkpoint.pendingRound.continuation,
+        results: restored,
+      });
+      pendingRound = null;
+    }
+    if (storedWait)
+      this.db
+        .prepare("UPDATE messaging_waits SET state='consumed' WHERE turnId=?")
+        .run(turn.id);
+    if (
+      Buffer.byteLength(JSON.stringify([instructions, messages, taskTools])) +
+        (active.snapshot.provider === "codex" ? mediaBudget() : 0) >
+      active.snapshot.contextWindow -
+        this.outputReserve(active.snapshot.contextWindow) -
+        Math.ceil(active.snapshot.contextWindow * 0.1)
+    )
       throw new ConnectionError(
-        "Model round limit reached. Inspect activity before continuing.",
+        "Tool context is too large. Use a larger context model or reduce instructions.",
         409,
       );
-    } finally {
-      clearTimeout(active.timer);
-      active.armDeadline = undefined;
+    if (active.snapshot.provider === "codex") {
+      const result = await this.connections.executeTask(
+        active.snapshot,
+        request,
+      );
+      account(result.usage);
+      this.live(turn, active);
+      return result.text;
+    }
+    while (true) {
+      this.live(turn, active);
+      const budget =
+        active.snapshot.contextWindow -
+        this.outputReserve(active.snapshot.contextWindow) -
+        Math.ceil(active.snapshot.contextWindow * 0.1);
+      const bytes = Buffer.byteLength(
+        JSON.stringify([instructions, messages, taskTools, continuation]),
+      );
+      const nativeCount = mediaBudget()
+        ? await this.connections.countTaskTokens(active.snapshot, request)
+        : null;
+      if ((nativeCount ?? bytes + mediaBudget()) > budget)
+        throw new ConnectionError(
+          "Tool context is too large. Start a smaller task or use a larger context model.",
+          409,
+        );
+      const result = await this.connections.toolRound(
+        active.snapshot,
+        request,
+      );
+      account(result.usage);
+      this.live(turn, active);
+      if (!result.calls.length) return result.text;
+      if (result.text) this.tools!.item(owner, "commentary", result.text);
+      active.resetOutput?.();
+      const results: {
+        call: (typeof result.calls)[number];
+        result: ToolResult;
+      }[] = [];
+      pendingRound = result;
+      pendingResults = results;
+      for (let i = 0; i < result.calls.length; i++) {
+        pendingIndex = i;
+        const call = result.calls[i]!;
+        results.push({ call, result: await request.onTool(call) });
+      }
+      pendingRound = null;
+      continuation.push({ response: result.continuation, results });
     }
   }
+
   private async structured(
     turn: AgentTurn,
     active: Active,
@@ -1525,7 +1436,7 @@ export class AgentExecution {
     };
     const messages = () => [...history.map(message), message(input)];
     const s = active.snapshot,
-      output = this.request(active, "", []).outputTokens;
+      output = this.outputReserve(s.contextWindow);
     const safe = s.contextWindow - output - Math.ceil(s.contextWindow * 0.1);
     const threshold = Math.min(
       safe,

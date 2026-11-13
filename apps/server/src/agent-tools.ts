@@ -75,7 +75,6 @@ export const taskTools: ToolSpec[] = [
       kind: { type: "string", enum: ["request", "notification"] },
       content: { type: "string", maxLength: 12000 },
       versionIds,
-      timeoutMs: number(1, 86400000),
     },
     ["agentId", "content"],
   ),
@@ -103,17 +102,15 @@ export const taskTools: ToolSpec[] = [
   ),
   spec(
     "agent_wait",
-    "Suspend until any/all requested helpers finish, a question arrives, or the wait deadline expires. Other tasks may run; durable messaging waits survive restart. Sending itself never blocks.",
+    "Suspend until any/all requested helpers finish or a question arrives. Other tasks may run; durable messaging waits survive restart. Sending itself never blocks.",
     {
       requestIds: {
         type: "array",
         minItems: 1,
-        maxItems: 16,
         uniqueItems: true,
         items: str("Request ID", 100),
       },
       mode: { type: "string", enum: ["any", "all"] },
-      timeoutMs: number(1, 86400000),
     },
     ["requestIds"],
   ),
@@ -172,7 +169,6 @@ export const taskTools: ToolSpec[] = [
       cwd: str("Absolute working directory"),
       pty: bool,
       background: bool,
-      timeoutMs: { type: ["integer", "null"], minimum: 1, maximum: 86400000 },
       yieldMs: number(0, 1000),
       cols: number(20, 500),
       rows: number(5, 200),
@@ -277,7 +273,7 @@ function validate(value: any, schema: any) {
   if (Array.isArray(value)) {
     if (
       value.length < (schema.minItems ?? 0) ||
-      value.length > (schema.maxItems ?? 100) ||
+      value.length > (schema.maxItems ?? Infinity) ||
       (schema.uniqueItems && new Set(value).size !== value.length)
     )
       throw new ConnectionError(
@@ -326,7 +322,6 @@ export class AgentTools {
     owner: ToolOwner,
   ) => import("./contracts.js").MediaCapabilities;
   ready = false;
-  private counts = new Map<string, number>();
   private inflight = new Map<string, Promise<ToolResult>>();
   private writes = new Map<string, Promise<unknown>>();
   constructor(
@@ -335,7 +330,6 @@ export class AgentTools {
     readonly processes: ProcessService,
     readonly artifacts: ArtifactService,
     private changed: (workspaceId: string) => void,
-    private maxCalls = 128,
   ) {
     db.prepare(
       "UPDATE tool_invocations SET state='interrupted',result=? WHERE state='running' AND NOT EXISTS (SELECT 1 FROM messaging_waits w WHERE w.turnId=tool_invocations.turnId AND w.state='waiting' AND tool_invocations.name='agent_wait')",
@@ -416,15 +410,6 @@ export class AgentTools {
             error: "Tool outcome is uncertain. It was not replayed.",
           };
     }
-    const count =
-      (
-        this.db
-          .prepare("SELECT count(*) n FROM tool_invocations WHERE turnId=?")
-          .get(owner.turnId) as { n: number }
-      ).n + 1;
-    if (count > this.maxCalls)
-      throw new ConnectionError("Tool call limit reached.", 409);
-    this.counts.set(owner.turnId, count);
     const stamp = new Date().toISOString();
     this.db
       .prepare(
@@ -511,7 +496,6 @@ export class AgentTools {
     }
   }
   release(turnId: string) {
-    this.counts.delete(turnId);
     this.db
       .prepare(
         "UPDATE tool_invocations SET state='interrupted',result=? WHERE turnId=? AND state='running' AND NOT EXISTS (SELECT 1 FROM messaging_waits w WHERE w.turnId=tool_invocations.turnId AND w.state='waiting' AND tool_invocations.name='agent_wait')",
@@ -877,11 +861,6 @@ export class AgentTools {
       }
     }
     if (name === "process_start") {
-      if (a.timeoutMs === null && !a.background)
-        throw new ConnectionError(
-          "Only explicit background sessions may omit their deadline.",
-          400,
-        );
       const args = {
         ...a,
         cwd: a.cwd

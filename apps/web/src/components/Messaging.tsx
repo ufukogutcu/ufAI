@@ -552,7 +552,7 @@ function RequestThread({ item }: { item: AgentRequest }) {
         )}
       </div>
       <span className={styles.meta}>
-        {item.kind} · Deadline {new Date(item.deadline).toLocaleString()}
+        {item.kind}
       </span>
       {(item.error || item.executionError) && (
         <p role="status">{item.error || item.executionError}</p>

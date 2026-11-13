@@ -23,7 +23,7 @@ async function until(fn: () => boolean) {
   }
   assert.fail("Timed out");
 }
-async function setup(t: any, run = false, options: any = {}) {
+async function setup(t: any, run = false) {
   const directory = await mkdtemp(join(tmpdir(), "ufai-messages-")),
     path = join(directory, "app.sqlite"),
     db = openDatabase(path),
@@ -64,7 +64,7 @@ async function setup(t: any, run = false, options: any = {}) {
       files,
       tools,
     ),
-    messaging = new MessagingService(db, engine, connections, options);
+    messaging = new MessagingService(db, engine, connections);
   engine.messaging = messaging;
   tools.messaging = messaging;
   files.bind(engine);
@@ -468,8 +468,8 @@ test("notification finishes without reply; Inbox notifications preserve delibera
   assert.equal(JSON.parse(turn.envelope).source, "user");
   assert.equal(JSON.parse(turn.envelope).replyKind, "inbox");
 });
-test("workflow limits, ancestor cycles, and complete-before-wait are explicit and atomic", async (t) => {
-  const s = await setup(t, false, { maxOpenChildren: 1 });
+test("unbounded helper requests retain ancestor checks and complete-before-wait atomicity", async (t) => {
+  const s = await setup(t);
   s.messaging.createLink(s.workspaceId, "a", "b");
   s.messaging.createLink(s.workspaceId, "b", "a");
   const sent = s.messaging.send(
@@ -477,10 +477,10 @@ test("workflow limits, ancestor cycles, and complete-before-wait are explicit an
     { agentId: "b", content: "Work" },
     "send",
   );
-  assert.throws(
-    () => s.messaging.send(s.owner, { agentId: "b", content: "More" }, "more"),
-    /limit/,
-  );
+  for (let i = 0; i < 70; i++)
+    s.messaging.send(s.owner, { agentId: "b", content: "More" }, `more-${i}`);
+  for (let i = 0; i < 260; i++)
+    s.messaging.message(s.owner, { requestId: sent.requestId, kind: "progress", content: "Still working" }, `progress-${i}`);
   assert.throws(
     () =>
       s.messaging.send(
@@ -506,7 +506,7 @@ test("workflow limits, ancestor cycles, and complete-before-wait are explicit an
   );
   assert.equal(
     (s.db.prepare("SELECT count(*) n FROM agent_requests").get() as any).n,
-    1,
+    71,
   );
   assert.throws(
     () => validateTool("agent_wait", { requestIds: ["same", "same"] }),
@@ -646,7 +646,7 @@ test("v13 upgrade preserves populated records and stable paths while backfilling
     if (table === "agents") rows.forEach((row, index) => assertCharacterUpgrade(row, retained[table]![index]));
     else assert.deepEqual(rows, retained[table], table);
   }
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 18);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 19);
   assert.deepEqual(
     (upgraded.prepare("SELECT content FROM agent_messages").all() as any[]).map(
       (r) => r.content,
@@ -775,6 +775,11 @@ test("durable messaging wait survives restart and embeds the delegated image wit
   );
   await s.engine.close();
   await s.messaging.close();
+  const oldWait = s.db.prepare("SELECT turnId,checkpoint FROM messaging_waits WHERE state='waiting'").get() as any;
+  const oldCheckpoint = JSON.parse(oldWait.checkpoint);
+  oldCheckpoint.rounds = 1000000;
+  oldCheckpoint.timeoutMs = 1;
+  s.db.prepare("UPDATE messaging_waits SET checkpoint=? WHERE turnId=?").run(JSON.stringify(oldCheckpoint),oldWait.turnId);
   assert.equal(
     (
       s.db
@@ -1086,7 +1091,7 @@ test("a child result wakes its helper with the helper original return route, nev
   assert.equal(JSON.parse(delivery.envelope).requestId, parent.requestId);
 });
 
-test("confirmed pending revocation resumes on startup, while deadline expiry returns a terminal outcome", async (t) => {
+test("confirmed pending revocation resumes on startup and requests have no expiry", async (t) => {
   const s = await setup(t),
     link = s.messaging.createLink(s.workspaceId, "a", "b");
   const pending = s.messaging.send(
@@ -1116,20 +1121,14 @@ test("confirmed pending revocation resumes on startup, while deadline expiry ret
       "revoked",
     );
     resumed.createLink(s.workspaceId, "a", "b");
-    const expiring = resumed.send(
-      s.owner,
-      { agentId: "b", content: "Short task", timeoutMs: 1 },
-      "expiring",
-    );
-    await until(
-      () =>
-        (
-          s.db
-            .prepare("SELECT state FROM agent_requests WHERE id=?")
-            .get(expiring.requestId) as any
-        ).state === "expired",
-    );
-    assert.equal(s.engine.task(expiring.taskId!).status, "cancelled");
+    const unbounded = resumed.send(s.owner, { agentId: "b", content: "Long task" }, "unbounded");
+    const originalNow = Date.now;
+    Date.now = () => originalNow() + 7 * 86400000;
+    try {
+      (resumed as any).tick();
+      assert.equal((s.db.prepare("SELECT state FROM agent_requests WHERE id=?").get(unbounded.requestId) as any).state, "open");
+      assert.equal(s.engine.task(unbounded.taskId!).status, "queued");
+    } finally { Date.now = originalNow; }
   } finally {
     await resumed.close();
   }
@@ -1434,4 +1433,51 @@ test("a permitted agent request lets only its recipient update its own saved ins
   assert.equal(update.ok, true);
   assert.equal(s.engine.requiredAgent("b").instructions, "Answer with short paragraphs.");
   assert.equal(s.engine.requiredAgent("a").instructions, "");
+});
+
+test("more than sixteen durable waits can park and remain cancellable without expiry", async t => {
+  const s = await setup(t);
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  const tasks: string[] = [s.owner.taskId];
+  for (let i = 0; i < 19; i++) tasks.push(s.engine.submit("a", "new", `Wait ${i}`, `wait-many-${i}`).taskId!);
+  s.connections.toolRound = async (_snapshot, request) => {
+    if (request.instructions.includes("You are b.")) {
+      await new Promise<void>((_, reject) => request.signal.addEventListener("abort", () => reject(new Error("Cancelled")), { once: true }));
+    }
+    const steps = request.continuation as any[];
+    return {
+      text: "", calls: steps.length ? [{ id:"wait",name:"agent_wait",arguments:{requestIds:[steps[0].results[0].result.requestId]} }] :
+        [{id:"send",name:"agent_send",arguments:{agentId:"b",content:"Help"}}],
+      continuation: [], usage:null,
+    };
+  };
+  (s.engine as any).options.autoStart = true;
+  s.engine.wake();
+  await until(() => (s.db.prepare("SELECT count(*) n FROM messaging_waits WHERE state='waiting'").get() as any).n === 20);
+  t.mock.timers.enable({apis:["setTimeout","Date"]});
+  try {
+    t.mock.timers.tick(7 * 86400000);
+    (s.messaging as any).tick();
+    s.engine.events.emit("change",s.workspaceId);
+    assert.equal((s.db.prepare("SELECT count(*) n FROM messaging_waits WHERE state='waiting'").get() as any).n,20);
+    assert.equal((s.db.prepare("SELECT count(*) n FROM agent_requests WHERE state='open'").get() as any).n,20);
+  } finally { t.mock.timers.reset(); }
+  await s.engine.cancelTask(tasks[0]);
+  assert.equal(s.engine.task(tasks[0]).status,"cancelled");
+});
+
+test("unbounded delegation depth retains ancestor-cycle prevention and wait schema accepts large sets", async t => {
+  const s = await setup(t);
+  let owner = s.owner;
+  for (let i = 0; i < 10; i++) {
+    const id = `deep-${i}`;
+    s.db.prepare("INSERT INTO agents(id,workspaceId,name,presetId,createdAt,updatedAt) VALUES (?,?,?,'p','now','now')").run(id,s.workspaceId,id);
+    s.messaging.createLink(s.workspaceId,owner.agentId,id);
+    const sent = s.messaging.send(owner,{agentId:id,content:"Help"},`depth-${i}`);
+    owner = s.helper(sent.requestId);
+  }
+  s.messaging.createLink(s.workspaceId,owner.agentId,"a");
+  assert.throws(() => s.messaging.send(owner,{agentId:"a",content:"Cycle"},"deep-cycle"),/ancestor/);
+  validateTool("agent_wait",{requestIds:Array.from({length:120},(_,i)=>`request-${i}`)});
+  for (const tool of ["agent_send","agent_wait","process_start"]) assert.throws(() => validateTool(tool,{timeoutMs:1}),/unknown|unexpected|required|missing/i);
 });

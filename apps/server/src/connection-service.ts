@@ -1,3 +1,4 @@
+import { anthropicOutputMaximum } from "./provider-output.js";
 import { effectiveMedia } from "./media-service.js";
 import { randomUUID, createHash } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -44,7 +45,7 @@ export class ConnectionService {
       else this.pins.delete(id);
     };
   }
-  private operations = new Map<string, Set<string>>();
+  private operations = new Map<string, Map<symbol, "work" | "chat" | "exclusive">>();
   constructor(
     private db: Database.Database,
     private fetcher: typeof fetch = fetch,
@@ -62,23 +63,24 @@ export class ConnectionService {
     return !!this.operations.get(id)?.size || !!this.pins.get(id);
   }
   claim(id: string, lane: "work" | "chat" | "exclusive") {
-    const active = this.operations.get(id) ?? new Set<string>();
+    const active = this.operations.get(id) ??
+      new Map<symbol, "work" | "chat" | "exclusive">();
     if (
-      active.has("exclusive") ||
-      (lane === "exclusive" && (active.size || this.pins.get(id))) ||
-      active.has(lane)
+      [...active.values()].includes("exclusive") ||
+      (lane === "exclusive" && (active.size || this.pins.get(id)))
     )
       throw new ConnectionError(
         "This Provider is busy. Retry when its current work finishes.",
         409,
       );
-    active.add(lane);
+    const reservation = Symbol(lane);
+    active.set(reservation, lane);
     this.operations.set(id, active);
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      active.delete(lane);
+      active.delete(reservation);
       if (!active.size) this.operations.delete(id);
     };
   }
@@ -146,6 +148,31 @@ export class ConnectionService {
       throw new ConnectionError("Provider credentials are missing.", 401);
     return c;
   }
+  private async outputMaximum(
+    c: Connection,
+    key: string | null,
+    request: TextRequest,
+  ) {
+    const revision = createHash("sha256")
+      .update(JSON.stringify([c.endpoint, c.credential])).digest("hex");
+    const cached = this.db.prepare(
+      "SELECT maxOutputTokens FROM provider_output_metadata WHERE connectionId=? AND modelId=? AND revision=?",
+    )
+      .get(c.id, request.modelId, revision) as { maxOutputTokens: number } | undefined;
+    if (cached) return cached.maxOutputTokens;
+    const maximum = await anthropicOutputMaximum(
+      c.endpoint ?? providerEndpoints.anthropic, key, request, this.fetcher,
+    );
+    request.signal.throwIfAborted();
+    // A running snapshot may outlive removal of its catalog record. Finish the
+    // request, but cache only metadata owned by a model that is still saved.
+    if (this.db.prepare("SELECT 1 FROM provider_models WHERE connectionId=? AND id=?")
+      .get(c.id, request.modelId)) {
+      this.db.prepare("INSERT OR REPLACE INTO provider_output_metadata VALUES (?,?,?,?)")
+        .run(c.id, request.modelId, revision, maximum);
+    }
+    return maximum;
+  }
   private provider(snapshot: ExecutionSnapshot) {
     const c = this.connection(snapshot.connectionId);
     if (c.provider !== snapshot.provider)
@@ -169,6 +196,7 @@ export class ConnectionService {
         providerEndpoints[c.provider as keyof typeof providerEndpoints],
       key,
       this.fetcher,
+      (request) => this.outputMaximum(c, key, request),
     );
   }
   async generate(
@@ -283,6 +311,7 @@ export class ConnectionService {
           .run(c.id, media.versionId, revision, value.id, now + 60 * 60 * 1000);
         return value.id;
       },
+      (request) => this.outputMaximum(c, key, request),
     )
       .round(request)
       .catch((error) => {

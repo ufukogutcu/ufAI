@@ -150,7 +150,6 @@ export function createApp(
     processes,
     artifacts,
     changed,
-    options.execution?.maxToolCalls,
   );
   execution = new AgentExecution(
     database,
@@ -159,7 +158,7 @@ export function createApp(
     files,
     tools,
   );
-  const messaging = new MessagingService(database,execution,connections,options.execution?.messaging);
+  const messaging = new MessagingService(database,execution,connections);
   execution.messaging=messaging; tools.messaging=messaging;
   const media = new MediaService(artifacts);
   tools.media = media;

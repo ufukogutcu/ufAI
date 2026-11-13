@@ -23,14 +23,6 @@ export interface MessageEnvelope {
   parentRequestId?: string;
   causationId?: string;
 }
-export interface MessagingOptions {
-  maxOpenChildren?: number;
-  maxDepth?: number;
-  maxRequests?: number;
-  maxMessages?: number;
-  defaultDeadlineMs?: number;
-  maxDeadlineMs?: number;
-}
 export class MessagingService {
   private stopped = false;
   private timer?: ReturnType<typeof setInterval>;
@@ -39,12 +31,7 @@ export class MessagingService {
     readonly db: Database.Database,
     readonly execution: AgentExecution,
     private connections: ConnectionService,
-    readonly options: MessagingOptions = {},
-  ) {
-    for (const value of Object.values(options))
-      if (!Number.isSafeInteger(value) || value < 1)
-        throw new Error("Invalid messaging limits.");
-  }
+  ) {}
   start() {
     this.db
       .prepare(
@@ -306,8 +293,6 @@ export class MessagingService {
         ? this.request(task.parentRequestId)
         : null;
       const depth = (parent?.depth ?? 0) + 1;
-      if (depth > (this.options.maxDepth ?? 8))
-        fail("Delegation depth limit reached.", 429);
       let ancestor = parent;
       while (ancestor) {
         if (
@@ -319,28 +304,8 @@ export class MessagingService {
           : null;
       }
       if (target.id === owner.agentId) fail("Self delegation is not allowed.");
-      const count = (sql: string, id: string) =>
-        (this.db.prepare(sql).get(id) as any).n;
-      if (
-        count(
-          "SELECT count(*) n FROM agent_requests WHERE rootWorkflowId=?",
-          root,
-        ) >= (this.options.maxRequests ?? 64) ||
-        count(
-          "SELECT count(*) n FROM agent_requests WHERE sourceTaskId=? AND state='open'",
-          task.id,
-        ) >= (this.options.maxOpenChildren ?? 16)
-      )
-        fail("Workflow request limit reached.", 429);
       const ids = this.attachments(owner, args.versionIds),
         text = this.text(args.content, ids.length > 0);
-      const ttl = args.timeoutMs ?? this.options.defaultDeadlineMs ?? 3600000;
-      if (
-        !Number.isSafeInteger(ttl) ||
-        ttl < 1 ||
-        ttl > (this.options.maxDeadlineMs ?? 86400000)
-      )
-        fail("Invalid request deadline.", 400);
       const id = randomUUID(),
         kind = args.kind ?? "request";
       if (!["request", "notification"].includes(kind))
@@ -368,7 +333,7 @@ export class MessagingService {
       );
       this.db
         .prepare(
-          "INSERT INTO agent_requests(id,workspaceId,linkId,sourceAgentId,targetAgentId,sourceName,targetName,sourceTaskId,targetTaskId,rootWorkflowId,parentRequestId,depth,kind,deadline,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          "INSERT INTO agent_requests(id,workspaceId,linkId,sourceAgentId,targetAgentId,sourceName,targetName,sourceTaskId,targetTaskId,rootWorkflowId,parentRequestId,depth,kind,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         )
         .run(
           id,
@@ -384,7 +349,6 @@ export class MessagingService {
           parent?.id ?? null,
           depth,
           kind,
-          new Date(Date.now() + ttl).toISOString(),
           now(),
           now(),
         );
@@ -413,18 +377,6 @@ export class MessagingService {
     delivered = false,
     accepted?: any,
   ): any {
-    const count = (
-      this.db
-        .prepare(
-          "SELECT count(*) n FROM communication_messages m JOIN agent_requests r ON r.id=m.requestId WHERE r.rootWorkflowId=?",
-        )
-        .get(request.rootWorkflowId) as any
-    ).n;
-    if (
-      !["result", "failure"].includes(kind) &&
-      count >= (this.options.maxMessages ?? 256)
-    )
-      fail("Workflow message limit reached.", 429);
     const id = randomUUID();
     const name =
       (
@@ -1051,17 +1003,6 @@ export class MessagingService {
   }
   private tick() {
     if (this.stopped) return;
-    for (const r of this.db
-      .prepare(
-        "SELECT id,targetTaskId FROM agent_requests WHERE state='open' AND deadline<=? LIMIT 32",
-      )
-      .all(now()) as any[]) {
-      this.db.transaction(() =>
-        this.terminal(r.id, "expired", "The agent request deadline expired."),
-      )();
-      if (r.targetTaskId)
-        void this.execution.cancelTask(r.targetTaskId).catch(() => {});
-    }
     for (const d of this.db
       .prepare(
         "SELECT d.messageId FROM communication_deliveries d JOIN communication_messages m ON m.id=d.messageId LEFT JOIN agent_tasks t ON t.id=m.recipientTaskId WHERE d.state='pending' AND (t.id IS NULL OR (t.status NOT IN ('failed','blocked','running') AND NOT EXISTS(SELECT 1 FROM messaging_waits w WHERE w.taskId=t.id AND w.state='waiting'))) ORDER BY d.createdAt,d.messageId LIMIT 32",

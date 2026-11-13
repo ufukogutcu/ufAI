@@ -9,7 +9,6 @@ export interface TextRequest {
   modelId: string;
   instructions: string;
   messages: TextMessage[];
-  outputTokens: number;
   contextWindow: number;
   signal: AbortSignal;
   onDelta?: (text: string) => void;
@@ -66,7 +65,6 @@ export interface TaskRequest extends TextRequest {
   messages: TaskMessage[];
   resolveMedia?: (refs: MediaReference[]) => Promise<NativeMedia[]>;
   tools: ToolSpec[];
-  maxRounds?: number;
   continuation?: unknown[];
   onTool: (call: ToolCall) => Promise<ToolResult>;
   onCommentary?: (text: string) => void;
