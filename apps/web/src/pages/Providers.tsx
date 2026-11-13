@@ -218,14 +218,16 @@ function ModelEditor({
   const [context, setContext] = useState(
     model?.contextWindowOverride?.toString() ?? "",
   );
+  const [imageSupport,setImageSupport]=useState(model?.mediaSettings?.overrides.image == null ? "auto" : model.mediaSettings.overrides.image ? "supported":"unsupported");
+  const [pdfSupport,setPdfSupport]=useState(model?.mediaSettings?.overrides.pdf == null ? "auto" : model.mediaSettings.overrides.pdf ? "supported":"unsupported");
   const [baseline] = useState(() =>
-    JSON.stringify([id, name, context]),
+    JSON.stringify([id, name, context,imageSupport,pdfSupport]),
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [confirm, setConfirm] = useState<"discard" | "delete" | null>(null);
-  const dirty = baseline !== JSON.stringify([id, name, context]);
+  const dirty = baseline !== JSON.stringify([id, name, context,imageSupport,pdfSupport]);
   useEffect(() => {
     onDirty(dirty);
     return () => onDirty(false);
@@ -253,6 +255,7 @@ function ModelEditor({
           id,
           name: name.trim() || id,
           contextWindowOverride: context === "" ? null : Number(context),
+          mediaOverrides:{image:imageSupport==="auto" ? null : imageSupport==="supported",pdf:pdfSupport==="auto" ? null : pdfSupport==="supported"},
         },
       );
       onSaved(model ? undefined : saved.id);
@@ -363,6 +366,12 @@ function ModelEditor({
                   placeholder="Automatic / unknown…"
                 />
               )}
+            </Field>
+            <Field label="Image input" error={fields.mediaOverrides} hint={`Discovered: ${model?.mediaSettings?.discovered.image ?? "unknown"}. Effective model support: ${model?.mediaSettings?.effective.image ?? "unknown"}.`}>
+              {props=><select {...props} name="imageSupport" value={imageSupport} onChange={e=>setImageSupport(e.target.value)}><option value="auto">Auto</option><option value="supported">Supported</option><option value="unsupported">Unsupported</option></select>}
+            </Field>
+            <Field label="Native PDF input" hint={`Discovered: ${model?.mediaSettings?.discovered.pdf ?? "unknown"}. Adapter protocol support is also required.`}>
+              {props=><select {...props} name="pdfSupport" value={pdfSupport} onChange={e=>setPdfSupport(e.target.value)}><option value="auto">Auto</option><option value="supported">Supported</option><option value="unsupported">Unsupported</option></select>}
             </Field>
             <button
               type="button"

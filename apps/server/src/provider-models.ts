@@ -27,14 +27,38 @@ type Row = Omit<
 };
 export class SelectionConfirmationError extends Error {
   constructor(public impact: SelectionImpact) {
-    super("Saving will clear model choices from linked presets. Confirm to continue.");
+    super(
+      "Saving will clear model choices from linked presets. Confirm to continue.",
+    );
   }
 }
 export class ProviderModels {
   constructor(private db: Database.Database) {}
   private public(row: Row): ProviderModel {
+    const caps = this.db
+      .prepare(
+        "SELECT * FROM model_media_capabilities WHERE connectionId=? AND modelId=?",
+      )
+      .get(row.connectionId, row.id) as any;
+    const support = (n: number | null | undefined) =>
+      n == null
+        ? ("unknown" as const)
+        : n
+          ? ("supported" as const)
+          : ("unsupported" as const);
     return {
       ...row,
+      mediaSettings: {
+        discovered: { image: support(caps?.image), pdf: support(caps?.pdf) },
+        overrides: {
+          image: caps?.imageOverride == null ? null : !!caps.imageOverride,
+          pdf: caps?.pdfOverride == null ? null : !!caps.pdfOverride,
+        },
+        effective: {
+          image: support(caps?.imageOverride ?? caps?.image),
+          pdf: support(caps?.pdfOverride ?? caps?.pdf),
+        },
+      },
       enabled: !!row.enabled,
       manual: !!row.manual,
       available: !!row.available,
@@ -64,11 +88,16 @@ export class ProviderModels {
         .get(connectionId) as { total: number }
     ).total;
   }
-  list(connectionId: string, limit: number, offset: number, query = "", enabledOnly = false) {
+  list(
+    connectionId: string,
+    limit: number,
+    offset: number,
+    query = "",
+    enabledOnly = false,
+  ) {
     // instr treats search text literally, including SQL wildcard characters.
     const args = [connectionId, query.toLowerCase(), query.toLowerCase()];
-    const where =
-      `connectionId = ? AND (instr(lower(name), ?) > 0 OR instr(lower(id), ?) > 0)${enabledOnly ? " AND enabled = 1" : ""}`;
+    const where = `connectionId = ? AND (instr(lower(name), ?) > 0 OR instr(lower(id), ?) > 0)${enabledOnly ? " AND enabled = 1" : ""}`;
     return {
       items: (
         this.db
@@ -88,12 +117,14 @@ export class ProviderModels {
   }
   selection(connectionId: string, query = ""): { items: ModelSelection[] } {
     const rows = this.db
-      .prepare(`SELECT id, enabled FROM provider_models WHERE connectionId = ?
-        AND (instr(lower(name), ?) > 0 OR instr(lower(id), ?) > 0) ORDER BY id LIMIT 5000`)
+      .prepare(
+        `SELECT id, enabled FROM provider_models WHERE connectionId = ?
+        AND (instr(lower(name), ?) > 0 OR instr(lower(id), ?) > 0) ORDER BY id LIMIT 5000`,
+      )
       .all(connectionId, query.toLowerCase(), query.toLowerCase()) as {
-        id: string;
-        enabled: number;
-      }[];
+      id: string;
+      enabled: number;
+    }[];
     return {
       items: rows.map((row) => ({ id: row.id, enabled: !!row.enabled })),
     };
@@ -113,10 +144,14 @@ export class ProviderModels {
     const seen = new Set<string>();
     for (const item of input) {
       if (
-        !item || typeof item !== "object" || Array.isArray(item) ||
+        !item ||
+        typeof item !== "object" ||
+        Array.isArray(item) ||
         Object.keys(item).some((key) => key !== "id" && key !== "enabled") ||
-        typeof item.id !== "string" || typeof item.enabled !== "boolean" ||
-        !catalog.has(item.id) || seen.has(item.id)
+        typeof item.id !== "string" ||
+        typeof item.enabled !== "boolean" ||
+        !catalog.has(item.id) ||
+        seen.has(item.id)
       )
         throw new InputError({
           models: "Choose each model once from this Provider’s saved catalog.",
@@ -125,7 +160,8 @@ export class ProviderModels {
     }
     if (
       confirmationToken !== undefined &&
-      (typeof confirmationToken !== "string" || !/^[a-f0-9]{64}$/.test(confirmationToken))
+      (typeof confirmationToken !== "string" ||
+        !/^[a-f0-9]{64}$/.test(confirmationToken))
     )
       throw new InputError({ models: "Invalid selection confirmation." });
     const changes = input as ModelSelection[];
@@ -139,13 +175,16 @@ export class ProviderModels {
         models: "Select at least one model before saving the Provider.",
       });
     const normalized = [...changes].sort((a, b) => a.id.localeCompare(b.id));
-    const hash = createHash("sha256").update(JSON.stringify([connectionId, normalized]));
+    const hash = createHash("sha256").update(
+      JSON.stringify([connectionId, normalized]),
+    );
     const impact: SelectionImpact = {
       total: 0,
       presets: [],
       confirmationToken: "",
     };
-    const affected = this.db.prepare(`SELECT p.id, p.name, p.modelId FROM model_presets p
+    const affected = this.db
+      .prepare(`SELECT p.id, p.name, p.modelId FROM model_presets p
       JOIN provider_models m ON m.connectionId = p.connectionId AND m.id = p.modelId
       WHERE p.connectionId = ? AND m.enabled = 0 ORDER BY p.id`);
     for (const value of affected.iterate(connectionId)) {
@@ -158,8 +197,11 @@ export class ProviderModels {
     impact.confirmationToken = hash.digest("hex");
     if (impact.total && confirmationToken !== impact.confirmationToken)
       throw new SelectionConfirmationError(impact);
-    this.db.prepare(`UPDATE model_presets SET modelId = NULL, contextWindow = NULL
-      WHERE connectionId = ? AND modelId IN (SELECT id FROM provider_models WHERE connectionId = ? AND enabled = 0)`)
+    this.db
+      .prepare(
+        `UPDATE model_presets SET modelId = NULL, contextWindow = NULL
+      WHERE connectionId = ? AND modelId IN (SELECT id FROM provider_models WHERE connectionId = ? AND enabled = 0)`,
+      )
       .run(connectionId, connectionId);
   }
   save(connectionId: string, body: unknown, id?: string) {
@@ -167,11 +209,7 @@ export class ProviderModels {
     const errors: Record<string, string> = {};
     for (const key of Object.keys(patch))
       if (
-        ![
-          "id",
-          "name",
-          "contextWindowOverride",
-        ].includes(key)
+        !["id", "name", "contextWindowOverride", "mediaOverrides"].includes(key)
       )
         errors[key] = "Unknown field.";
     if (id && patch.id !== undefined && patch.id !== id)
@@ -203,6 +241,17 @@ export class ProviderModels {
           "Enter a positive safe integer, or leave empty for automatic.";
       else contextWindowOverride = value as number | null;
     }
+    if (patch.mediaOverrides !== undefined) {
+      const v = patch.mediaOverrides as any;
+      if (
+        !v ||
+        typeof v !== "object" ||
+        Array.isArray(v) ||
+        Object.keys(v).some((k) => !["image", "pdf"].includes(k)) ||
+        Object.values(v).some((n) => n !== null && typeof n !== "boolean")
+      )
+        errors.mediaOverrides = "Use boolean or null image/PDF overrides.";
+    }
     if (Object.keys(errors).length) throw new InputError(errors);
     if (existing)
       this.db
@@ -229,6 +278,32 @@ export class ProviderModels {
           (name as string).trim(),
           contextWindowOverride,
         );
+    if (patch.mediaOverrides !== undefined) {
+      const v = patch.mediaOverrides as any,
+        old = existing?.mediaSettings?.overrides;
+      this.db
+        .prepare(
+          `INSERT INTO model_media_capabilities(connectionId,modelId,imageOverride,pdfOverride) VALUES (?,?,?,?) ON CONFLICT(connectionId,modelId) DO UPDATE SET imageOverride=excluded.imageOverride,pdfOverride=excluded.pdfOverride`,
+        )
+        .run(
+          connectionId,
+          (modelId as string).trim(),
+          v.image === undefined
+            ? old?.image == null
+              ? null
+              : +old.image
+            : v.image == null
+              ? null
+              : +v.image,
+          v.pdf === undefined
+            ? old?.pdf == null
+              ? null
+              : +old.pdf
+            : v.pdf == null
+              ? null
+              : +v.pdf,
+        );
+    }
     return this.get(connectionId, (modelId as string).trim())!;
   }
   merge(connectionId: string, models: DiscoveredModel[]) {
@@ -242,13 +317,21 @@ export class ProviderModels {
         .prepare(`INSERT INTO provider_models (connectionId, id, name, discoveredContextWindow) VALUES (?, ?, ?, ?)
         ON CONFLICT(connectionId, id) DO UPDATE SET name = excluded.name,
         discoveredContextWindow = excluded.discoveredContextWindow, available = 1`);
-      for (const m of models)
-        upsert.run(
-          connectionId,
-          m.id,
-          m.name,
-          m.contextWindow,
-        );
+      for (const m of models) {
+        upsert.run(connectionId, m.id, m.name, m.contextWindow);
+        const numeric = (s: string | undefined) =>
+          s === "supported" ? 1 : s === "unsupported" ? 0 : null;
+        this.db
+          .prepare(
+            `INSERT INTO model_media_capabilities(connectionId,modelId,image,pdf) VALUES (?,?,?,?) ON CONFLICT(connectionId,modelId) DO UPDATE SET image=excluded.image,pdf=excluded.pdf`,
+          )
+          .run(
+            connectionId,
+            m.id,
+            numeric(m.media?.image),
+            numeric(m.media?.pdf),
+          );
+      }
       if (this.count(connectionId) > 5000)
         throw new ConnectionError(
           "The merged model list exceeds 5,000 entries. Remove unused models first.",

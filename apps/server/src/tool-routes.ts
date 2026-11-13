@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import type { AgentExecution } from "./agent-execution.js";
 import type { ProcessService } from "./process-service.js";
 import type { ArtifactService } from "./artifact-service.js";
+import { imageMetadata } from "./media-service.js";
 import { guard } from "./connections.js";
 import { pagination, objectBody, InputError } from "./validation.js";
 import { validateTool } from "./agent-tools.js";
@@ -86,13 +87,13 @@ export function registerTools(
         return {
           items: db
             .prepare(
-              `SELECT * FROM artifact_versions WHERE ${key}=? ORDER BY createdAt DESC,id LIMIT ? OFFSET ?`,
+              `SELECT * FROM artifact_versions WHERE ${key}=? AND origin='published' ORDER BY createdAt DESC,id LIMIT ? OFFSET ?`,
             )
             .all(req.params.id, limit, offset),
           total: (
             db
               .prepare(
-                `SELECT count(*) AS n FROM artifact_versions WHERE ${key}=?`,
+                `SELECT count(*) AS n FROM artifact_versions WHERE ${key}=? AND origin='published'`,
               )
               .get(req.params.id) as { n: number }
           ).n,
@@ -142,7 +143,34 @@ export function registerTools(
   );
   app.get<{ Params: { id: string } }>(
     "/api/artifact-versions/:id",
-    async (req) => artifacts.get(req.params.id),
+    async (req) => {
+      const v = artifacts.get(req.params.id);
+      if ((v as { ingestId?: string }).ingestId)
+        throw new ConnectionError("File transfer has not been committed.", 409);
+      const { ingestId, ...publicVersion } = v as typeof v & {
+        ingestId?: string;
+      };
+      return publicVersion;
+    },
+  );
+  app.get<{ Params: { id: string } }>(
+    "/api/artifact-versions/:id/preview",
+    async (req, reply) => {
+      const version = artifacts.get(req.params.id);
+      if (
+        !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(
+          version.mediaType,
+        )
+      )
+        throw new ConnectionError("This format has no image preview.", 409);
+      const { bytes } = await artifacts.bytes(version.id, version.workspaceId);
+      const dimensions = imageMetadata(bytes);
+      reply
+        .header("X-Content-Type-Options", "nosniff")
+        .header("Cache-Control", "no-store")
+        .header("Content-Security-Policy", "default-src 'none'; sandbox");
+      return reply.type(version.mediaType).send(bytes);
+    },
   );
   app.get<{ Params: { id: string } }>(
     "/api/artifact-versions/:id/content",

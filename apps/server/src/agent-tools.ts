@@ -37,6 +37,11 @@ const spec = (
 });
 export const taskTools: ToolSpec[] = [
   spec(
+    "media_open",
+    "Open an image or PDF as native content for the current model. Supply exactly one immutable versionId or file path. Unsupported model/format and size limits return an error. A path is snapshotted before delivery.",
+    { versionId: str("Artifact version ID", 100), path: str("File path") },
+  ),
+  spec(
     "files_list",
     "List a bounded page of directory entries. Relative paths start in the task directory.",
     {
@@ -208,6 +213,10 @@ function validate(value: any, schema: any) {
   }
 }
 export class AgentTools {
+  media?: import("./media-service.js").MediaService;
+  mediaCapabilities?: (
+    owner: ToolOwner,
+  ) => import("./contracts.js").MediaCapabilities;
   ready = false;
   private counts = new Map<string, number>();
   private inflight = new Map<string, Promise<ToolResult>>();
@@ -346,6 +355,12 @@ export class AgentTools {
           owner.turnId,
           call.id,
         );
+      if (result.ok && result.media?.length)
+        this.db
+          .prepare(
+            "INSERT OR REPLACE INTO media_open_references VALUES (?,?,?)",
+          )
+          .run(owner.turnId, call.id, result.media[0]!.versionId);
       this.item(owner, "tool_result", {
         callId: call.id,
         name: call.name,
@@ -639,7 +654,7 @@ export class AgentTools {
       return {
         items: this.db
           .prepare(
-            "SELECT * FROM artifact_versions WHERE workspaceId=? AND (?=0 OR producerTaskId=?) ORDER BY createdAt DESC,id LIMIT ? OFFSET ?",
+            "SELECT * FROM artifact_versions WHERE workspaceId=? AND ingestId IS NULL AND (?=0 OR producerTaskId=?) ORDER BY createdAt DESC,id LIMIT ? OFFSET ?",
           )
           .all(
             owner.workspaceId,
@@ -649,8 +664,30 @@ export class AgentTools {
             a.offset ?? 0,
           ),
       };
+    if (name === "media_open") {
+      if (!!a.versionId === !!a.path)
+        throw new ConnectionError("Supply exactly one versionId or path.", 400);
+      if (!this.media || !this.mediaCapabilities)
+        throw new ConnectionError("Native media is unavailable.", 409);
+      const v = a.versionId
+        ? await this.artifacts.ready(a.versionId, owner.workspaceId)
+        : await this.artifacts.publish(
+            owner,
+            { path: a.path, origin: "inspection" },
+            signal,
+          );
+      const reference = this.media.reference(v.id, owner.workspaceId);
+      await this.media.prepare(
+        [reference],
+        owner.workspaceId,
+        this.mediaCapabilities(owner),
+      );
+      return { media: [reference] };
+    }
     if (name === "artifact_inspect") {
       const v = this.artifacts.get(a.versionId);
+      if ((v as { ingestId?: string }).ingestId)
+        throw new ConnectionError("File transfer has not been committed.", 409);
       if (v.workspaceId !== owner.workspaceId)
         throw new ConnectionError(
           "Artifact belongs to another workspace.",

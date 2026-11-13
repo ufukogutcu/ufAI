@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { effectiveMedia } from "./media-service.js";
+import { randomUUID, createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rm } from "node:fs/promises";
@@ -114,6 +115,7 @@ export class ConnectionService {
         409,
       );
     return {
+      mediaCapabilities: effectiveMedia(c.provider, model),
       presetId: p.id,
       connectionId: c.id,
       provider: c.provider,
@@ -203,7 +205,104 @@ export class ConnectionService {
         providerEndpoints[c.provider as keyof typeof providerEndpoints],
       key,
       this.fetcher,
-    ).round(request);
+      async (media) => {
+        const revision = createHash("sha256")
+          .update(JSON.stringify([c.provider, c.endpoint, c.credential]))
+          .digest("hex");
+        const now = Date.now();
+        this.db
+          .prepare(
+            "DELETE FROM provider_media_files WHERE expiresAt<? OR (connectionId=? AND revision!=?)",
+          )
+          .run(now, c.id, revision);
+        const cached = this.db
+          .prepare(
+            "SELECT fileId FROM provider_media_files WHERE connectionId=? AND versionId=?",
+          )
+          .get(c.id, media.versionId) as { fileId: string } | undefined;
+        if (cached) return cached.fileId;
+        const data = new FormData();
+        data.append("purpose", "assistants");
+        data.append(
+          "file",
+          new Blob([Buffer.from(media.data, "base64")], {
+            type: media.mediaType,
+          }),
+          media.name,
+        );
+        const result = await this.fetcher(
+          (c.endpoint ?? providerEndpoints.xai) + "/files",
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${key}` },
+            body: data,
+            signal: request.signal,
+            redirect: "error",
+          },
+        );
+        if (!result.ok) {
+          await result.body?.cancel();
+          throw new ConnectionError(
+            "Provider file upload failed. Retry explicitly.",
+            409,
+          );
+        }
+        // File-upload responses are metadata only; bound before parsing.
+        const reader = result.body?.getReader();
+        let bytes = 0;
+        const chunks: Uint8Array[] = [];
+        try {
+          if (reader)
+            while (true) {
+              const v = await reader.read();
+              if (v.done) break;
+              bytes += v.value.length;
+              if (bytes > 65536)
+                throw new ConnectionError(
+                  "Invalid Provider file response.",
+                  409,
+                );
+              chunks.push(v.value);
+            }
+        } finally {
+          await reader?.cancel();
+          reader?.releaseLock();
+        }
+        const value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        if (typeof value.id !== "string" || value.id.length > 200)
+          throw new ConnectionError("Invalid Provider file identity.", 409);
+        this.db
+          .prepare(
+            "DELETE FROM provider_media_files WHERE rowid IN (SELECT rowid FROM provider_media_files ORDER BY expiresAt LIMIT max(0,(SELECT count(*) FROM provider_media_files)-127))",
+          )
+          .run();
+        this.db
+          .prepare(
+            "INSERT OR REPLACE INTO provider_media_files VALUES (?,?,?,?,?)",
+          )
+          .run(c.id, media.versionId, revision, value.id, now + 60 * 60 * 1000);
+        return value.id;
+      },
+    )
+      .round(request)
+      .catch((error) => {
+        this.db
+          .prepare("DELETE FROM provider_media_files WHERE connectionId=?")
+          .run(c.id);
+        throw error;
+      });
+  }
+  async countTaskTokens(snapshot: ExecutionSnapshot, request: TaskRequest) {
+    const c = this.connection(snapshot.connectionId);
+    if (!["openai", "anthropic", "google"].includes(c.provider)) return null;
+    const key = c.credential ? this.secrets.decrypt(c.credential, c.id) : null;
+    return new ToolProvider(
+      c.provider as Exclude<ConnectionProvider, "codex">,
+      c.endpoint ??
+        providerEndpoints[c.provider as keyof typeof providerEndpoints],
+      key,
+      this.fetcher,
+    ).countTokens(request);
   }
   async executeTask(
     snapshot: ExecutionSnapshot,

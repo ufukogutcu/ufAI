@@ -1,3 +1,6 @@
+import { providerJson } from "./provider-inference.js";
+import { nativeExchange } from "./native-media.js";
+import type { NativeMedia } from "./media-service.js";
 import { randomUUID } from "node:crypto";
 import type { ConnectionProvider } from "./contracts.js";
 import type {
@@ -18,11 +21,13 @@ export class ToolProvider {
     private endpoint: string,
     private key: string | null,
     private fetcher: typeof fetch = fetch,
+    private uploadPdf?: (m: NativeMedia) => Promise<string>,
   ) {}
-  async round(r: TaskRequest): Promise<ToolRound> {
+  private async build(r: TaskRequest) {
     const p = this.provider,
       steps = (r.continuation ?? []) as Step[],
       tools = r.tools;
+    const media = await nativeExchange(r, p, steps, this.uploadPdf);
     const responses = p === "openai" || p === "xai",
       anthropic = p === "anthropic",
       google = p === "google",
@@ -42,7 +47,7 @@ export class ToolProvider {
         model: r.modelId,
         instructions: r.instructions,
         input: [
-          ...r.messages,
+          ...media.messages,
           ...steps.flatMap((s) => [
             ...s.response,
             ...s.results.map(({ call, result }) => ({
@@ -50,6 +55,7 @@ export class ToolProvider {
               call_id: call.id,
               output: JSON.stringify(result),
             })),
+            ...media.after(s.results),
           ]),
         ],
         tools: tools.map((t) => ({
@@ -70,7 +76,7 @@ export class ToolProvider {
         model: r.modelId,
         system: r.instructions,
         messages: [
-          ...r.messages,
+          ...media.messages,
           ...steps.flatMap((s) => [
             { role: "assistant", content: s.response },
             {
@@ -78,7 +84,10 @@ export class ToolProvider {
               content: s.results.map(({ call, result }) => ({
                 type: "tool_result",
                 tool_use_id: call.id,
-                content: JSON.stringify(result),
+                content: [
+                  { type: "text", text: JSON.stringify(result) },
+                  ...media.parts(result.media),
+                ],
                 is_error: !result.ok,
               })),
             },
@@ -97,25 +106,25 @@ export class ToolProvider {
       body = {
         systemInstruction: { parts: [{ text: r.instructions }] },
         contents: [
-          ...r.messages.map((m) => ({
-            role: m.role === "assistant" ? "model" : "user",
-            parts: [{ text: m.content }],
-          })),
+          ...media.messages,
           ...steps.flatMap((s) => [
             { role: "model", parts: s.response },
             {
               role: "user",
-              parts: s.results.map(({ call, result }) => ({
-                functionResponse: {
-                  name: call.name,
-                  response: result,
-                  ...(s.response.some(
-                    (p: any) => p.functionCall?.id === call.id,
-                  )
-                    ? { id: call.id }
-                    : {}),
-                },
-              })),
+              parts: [
+                ...s.results.map(({ call, result }) => ({
+                  functionResponse: {
+                    name: call.name,
+                    response: result,
+                    ...(s.response.some(
+                      (p: any) => p.functionCall?.id === call.id,
+                    )
+                      ? { id: call.id }
+                      : {}),
+                  },
+                })),
+                ...media.parts(s.results.flatMap((v) => v.result.media ?? [])),
+              ],
             },
           ]),
         ],
@@ -138,7 +147,7 @@ export class ToolProvider {
           { role: "system", content: r.instructions },
           // Older ufAI turns contain authoritative text, not replayable native reasoning.
           // Label that text as historical data instead of fabricating reasoning blocks.
-          ...r.messages.map((m) =>
+          ...media.messages.map((m) =>
             m.role === "assistant" &&
             ["deepseek", "openrouter", "openai-compatible"].includes(p)
               ? {
@@ -158,8 +167,12 @@ export class ToolProvider {
                 : { tool_call_id: call.id }),
               content: JSON.stringify(result),
             })),
+            ...media.after(s.results),
           ]),
         ],
+        ...(p === "openrouter" && media.hasPdf
+          ? { plugins: [{ id: "file-parser", pdf: { engine: "native" } }] }
+          : {}),
         tools: tools.map((t) => ({ type: "function", function: t })),
         stream: true,
         ...(ollama
@@ -172,12 +185,83 @@ export class ToolProvider {
           : { max_tokens: r.outputTokens }),
       };
     }
+    return { path, headers, body };
+  }
+  async countTokens(r: TaskRequest): Promise<number | null> {
+    if (!["openai", "anthropic", "google"].includes(this.provider)) return null;
+    try {
+      const { body, headers } = await this.build(r),
+        p = this.provider;
+      const countBody =
+        p === "openai"
+          ? {
+              model: r.modelId,
+              instructions: r.instructions,
+              input: body.input,
+              tools: body.tools,
+            }
+          : p === "anthropic"
+            ? {
+                model: r.modelId,
+                system: r.instructions,
+                messages: body.messages,
+                tools: body.tools,
+              }
+            : {
+                generateContentRequest: {
+                  model: `models/${r.modelId}`,
+                  systemInstruction: body.systemInstruction,
+                  contents: body.contents,
+                  tools: body.tools,
+                },
+              };
+      const result = await providerJson(
+        this.fetcher,
+        this.endpoint +
+          (p === "openai"
+            ? "/responses/input_tokens"
+            : p === "anthropic"
+              ? "/messages/count_tokens"
+              : `/models/${encodeURIComponent(r.modelId)}:countTokens`),
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(countBody),
+          signal: AbortSignal.any([r.signal, AbortSignal.timeout(15000)]),
+        },
+        65536,
+      );
+      const n = result.input_tokens ?? result.totalTokens;
+      return typeof n === "number" && Number.isSafeInteger(n) && n >= 0
+        ? n
+        : null;
+    } catch {
+      r.signal.throwIfAborted();
+      return null;
+    }
+  }
+  async round(r: TaskRequest): Promise<ToolRound> {
+    const p = this.provider,
+      responses = p === "openai" || p === "xai",
+      anthropic = p === "anthropic",
+      google = p === "google",
+      ollama = p === "ollama";
+    const { body, headers, path } = await this.build(r);
+    const encoded = JSON.stringify(body);
+    if (
+      Buffer.byteLength(encoded) >
+      (google ? 20 * 1000 * 1000 : anthropic ? 32_000_000 : 48 * 1024 * 1024)
+    )
+      throw new ConnectionError(
+        "Media request exceeds this Provider’s inline request limit. Use fewer or smaller files.",
+        413,
+      );
     let response: Response;
     try {
       response = await this.fetcher(this.endpoint + path, {
         method: "POST",
         headers,
-        body: JSON.stringify(body),
+        body: encoded,
         signal: r.signal,
         redirect: "error",
       });

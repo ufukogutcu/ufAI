@@ -263,16 +263,49 @@ for (const provider of [
         "test-key",
         fetcher as typeof fetch,
       ),
-      first = await adapter.round(base);
+      mediaRequest: TaskRequest = {
+        ...base,
+        messages: [
+          {
+            role: "user",
+            content: "Inspect image",
+            media: [
+              {
+                versionId: "image-1",
+                name: "a.png",
+                mediaType: "image/png",
+                size: 3,
+              },
+            ],
+          },
+        ],
+        resolveMedia: async (refs) =>
+          refs.map((ref) => ({ ...ref, data: "AQID", width: 1, height: 1 })),
+      },
+      first = await adapter.round(mediaRequest);
     assert.equal(first.calls.length, 1);
     assert.deepEqual(first.calls[0]!.arguments, { path: "a.txt" });
     const second = await adapter.round({
-      ...base,
+      ...mediaRequest,
       continuation: [
         {
           response: first.continuation,
           results: [
-            { call: first.calls[0], result: { ok: true, text: "contents" } },
+            {
+              call: first.calls[0],
+              result: {
+                ok: true,
+                text: "contents",
+                media: [
+                  {
+                    versionId: "image-2",
+                    name: "b.png",
+                    mediaType: "image/png",
+                    size: 3,
+                  },
+                ],
+              },
+            },
           ],
         },
       ],
@@ -281,6 +314,15 @@ for (const provider of [
     assert.equal(second.calls.length, 0);
     const replay = JSON.stringify(bodies[1]);
     assert.match(replay, /contents/);
+    assert.ok(
+      JSON.stringify(bodies[0]).includes("AQID"),
+      "initial image bytes reach protocol",
+    );
+    assert.equal(
+      (replay.match(/AQID/g) ?? []).length,
+      2,
+      "initial and tool-result media reach continuation",
+    );
     if (provider === "openai" || provider === "xai")
       assert.match(replay, /opaque/);
     if (provider === "google") assert.match(replay, /opaque-signature/);

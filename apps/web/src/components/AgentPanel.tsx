@@ -1,3 +1,5 @@
+import { TaskComposer as Composer } from "./TaskComposer";
+import { MessageAttachments } from "./MessageAttachments";
 import {
   useCallback,
   useEffect,
@@ -160,104 +162,6 @@ export function AgentForm({
     </form>
   );
 }
-function Composer({
-  agentId,
-  taskId,
-  onCreated,
-}: {
-  agentId: string;
-  taskId: string | null | "new";
-  onCreated: (id: string) => void;
-}) {
-  const store = useAgentStore(),
-    key = taskId === "new" ? `new:${agentId}` : (taskId ?? `status:${agentId}`);
-  const value = useAgents((s) => s.drafts[key] ?? "");
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
-  const pending = useRef<{ key: string; text: string; id: string } | null>(
-    null,
-  );
-  async function submit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!value.trim() || busy) return;
-    setBusy(true);
-    setError("");
-    pending.current = {
-      key,
-      text: value,
-      id: store.getState().submissionId(key, value),
-    };
-    try {
-      const id = await store
-        .getState()
-        .submit(
-          agentId,
-          typeof taskId === "string" && taskId !== "new" ? taskId : null,
-          value,
-          pending.current.id,
-          taskId === "new",
-        );
-      if (store.getState().drafts[key] === value)
-        store.getState().setDraft(key, "");
-      pending.current = null;
-      if (taskId === "new" && id) onCreated(id);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <form className={styles.composer} onSubmit={submit}>
-      <label htmlFor={`compose-${key}`}>
-        {taskId === null
-          ? "Ask status"
-          : taskId === "new"
-            ? "Describe a new task"
-            : "Message this task"}
-      </label>
-      <textarea
-        id={`compose-${key}`}
-        name="message"
-        rows={3}
-        maxLength={12000}
-        autoComplete="off"
-        placeholder={
-          taskId === null
-            ? "What are you working on?…"
-            : "What would you like help with?…"
-        }
-        value={value}
-        onChange={(e) => store.getState().setDraft(key, e.target.value)}
-        onKeyDown={(e) => {
-          if (
-            e.key === "Enter" &&
-            !e.shiftKey &&
-            !e.altKey &&
-            !e.ctrlKey &&
-            !e.metaKey
-          ) {
-            e.preventDefault();
-            if (!e.nativeEvent.isComposing && e.keyCode !== 229 && !e.repeat)
-              e.currentTarget.form?.requestSubmit();
-          }
-        }}
-      />
-      <div className={styles.actions}>
-        <span>Shift + Enter for a new line</span>
-        <button className="button primary" disabled={busy || !value.trim()}>
-          <Send size={15} />
-          {busy ? "Sending…" : "Send"}
-        </button>
-      </div>
-      {error && (
-        <p role="alert" className="errorBanner">
-          {error}
-        </p>
-      )}
-    </form>
-  );
-}
 function Transcript({
   agentId,
   taskId,
@@ -340,7 +244,8 @@ function Transcript({
                   : ""}
             </span>
           </div>
-          <div className={styles.messageText}>{m.content || "…"}</div>
+          <div className={styles.messageText}>{m.content || (m.parts?.some(p=>p.type==="artifact") ? "" : "…")}</div>
+          <MessageAttachments parts={m.parts} />
         </article>
       ))}
       {error && (

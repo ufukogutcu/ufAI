@@ -1,3 +1,8 @@
+import {
+  sendTaskFiles,
+  type DraftAttachment,
+  type FileSubmission,
+} from "./task-attachments";
 import { createContext, useContext } from "react";
 import { createStore, useStore } from "zustand";
 import { workspaceNodes } from "./canvas-layout";
@@ -76,6 +81,8 @@ interface AgentState {
   workloads: Record<string, AgentWorkload>;
   selected: Record<string, string | null>;
   drafts: Record<string, string>;
+  fileDrafts: Record<string, DraftAttachment[]>;
+  setFileDraft: (key: string, files: DraftAttachment[]) => void;
   createIn: string | null;
   positionError: string;
   submissionIds: Record<string, { content: string; id: string }>;
@@ -119,6 +126,7 @@ interface AgentState {
     content: string,
     requestId: string,
     newTask?: boolean,
+    files?: FileSubmission,
   ) => Promise<string | null>;
 }
 const emptyNodes: WorkspaceFlowNode[] = [];
@@ -185,6 +193,15 @@ export function createAgentStore() {
     }
     return {
       agents: {},
+      fileDrafts: {},
+      setFileDraft(key, files) {
+        set((s) => {
+          const drafts = { ...s.fileDrafts };
+          if (files.length) drafts[key] = files;
+          else delete drafts[key];
+          return { fileDrafts: drafts };
+        });
+      },
       dropTarget: null,
       canvasInteracting: false,
       canvasGeneration: 0,
@@ -241,14 +258,12 @@ export function createAgentStore() {
             try {
               await writeCluster(id, patch);
             } catch (e) {
-              if (
-                !(
-                  e instanceof RequestError &&
-                  e.status &&
-                  e.status >= 400 &&
-                  e.status < 500
-                )
-              )
+              if (!(
+                e instanceof RequestError &&
+                e.status &&
+                e.status >= 400 &&
+                e.status < 500
+              ))
                 pendingClusterLayouts.set(id, {
                   ...patch,
                   ...pendingClusterLayouts.get(id),
@@ -570,6 +585,14 @@ export function createAgentStore() {
         const a = get().agents[id];
         await deleteManaged(`/agents/${id}`);
         pendingPositions.delete(id);
+        const owned = new Set((get().tasks[id] ?? []).map((t) => t.id));
+        set((s) => ({
+          fileDrafts: Object.fromEntries(
+            Object.entries(s.fileDrafts).filter(
+              ([key]) => key !== `new:${id}` && !owned.has(key),
+            ),
+          ),
+        }));
         if (a) {
           revisions.set(a.workspaceId, (revisions.get(a.workspaceId) ?? 0) + 1);
           set((s) => ({
@@ -644,16 +667,26 @@ export function createAgentStore() {
       setDraft(key, value) {
         set((s) => ({ drafts: { ...s.drafts, [key]: value } }));
       },
-      async submit(id, taskId, value, requestId, newTask = false) {
+      async submit(id, taskId, value, requestId, newTask = false, files) {
         const path = newTask
           ? `/agents/${id}/tasks`
           : taskId
             ? `/tasks/${taskId}/messages`
             : `/agents/${id}/status/messages`;
-        const accepted = await request<{
-          taskId: string | null;
-          turnId: string;
-        }>(path, "POST", { content: value, requestId });
+        const send = files?.attachments.length
+          ? () =>
+              sendTaskFiles<{ taskId: string | null; turnId: string }>(
+                path,
+                value,
+                requestId,
+                files,
+              )
+          : () =>
+              request<{
+                taskId: string | null;
+                turnId: string;
+              }>(path, "POST", { content: value, requestId });
+        const accepted = await send();
         await get().refreshAgent(id);
         await get()
           .loadMessages(id, accepted.taskId)

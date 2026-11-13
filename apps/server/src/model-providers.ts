@@ -78,7 +78,29 @@ export function normalizeModel(
       m.max_input_tokens ??
       m.inputTokenLimit,
   );
+  const modalities = m.input_modalities ?? architecture.input_modalities;
+  const image = Array.isArray(modalities)
+    ? modalities.includes("image")
+      ? "supported"
+      : "unsupported"
+    : typeof capabilities.vision === "boolean"
+      ? capabilities.vision
+        ? "supported"
+        : "unsupported"
+      : "unknown";
   return {
+    ...(image !== "unknown" ||
+    (Array.isArray(modalities) && modalities.includes("file"))
+      ? {
+          media: {
+            image,
+            pdf:
+              Array.isArray(modalities) && modalities.includes("file")
+                ? ("supported" as const)
+                : ("unknown" as const),
+          },
+        }
+      : {}),
     id,
     name: typeof name === "string" ? name.slice(0, 300) : id,
     contextWindow,

@@ -470,3 +470,17 @@ test("activity refresh uses a sequence cursor instead of replaying large prior t
     [5, 6],
   );
 });
+test("attachment drafts stay scoped and retain File identities through refreshes and failed sends",async t=>{
+ const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});
+ const one=new File(["a"],"one.txt"),two=new File(["b"],"two.txt"),store=createAgentStore();
+ const first=[{id:"one",file:one,mode:"file" as const}],second=[{id:"two",file:two,mode:"file" as const}];
+ store.getState().setFileDraft("new:agent",first);store.getState().setFileDraft("task-other",second);
+ store.getState().setDraft("new:agent","Keep this");
+ globalThis.fetch=async()=>Response.json({items:[],total:0});
+ await store.getState().loadWorkspace("elsewhere");
+ assert.equal(store.getState().fileDrafts["new:agent"],first);assert.equal(store.getState().fileDrafts["task-other"]![0]!.file,two);
+ globalThis.fetch=async()=>Response.json({error:"Unavailable"},{status:503});
+ await assert.rejects(()=>store.getState().submit("agent",null,"Keep this","request-123",true),/Unavailable/);
+ assert.equal(store.getState().fileDrafts["new:agent"]![0]!.file,one);assert.equal(store.getState().drafts["new:agent"],"Keep this");
+ store.getState().setFileDraft("new:agent",[]);assert.equal(store.getState().fileDrafts["task-other"],second);
+});

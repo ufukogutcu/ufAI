@@ -365,7 +365,7 @@ test("populated v11 upgrade retains task content and managed paths", async (t) =
   removeToolTables(s.db);
   s.db.pragma("user_version=11");
   const upgraded = openDatabase(s.path);
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 12);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 13);
   assert.equal(
     (
       upgraded
@@ -650,7 +650,40 @@ test("workspace cleanup closes active artifact streams and forbids new downloads
   await assert.rejects(() => s.artifacts.download(v.id), /shutting down/);
 });
 
-test('activity API pages newest-first and refreshes by validated ascending sequence cursor',async(t)=>{
- const s=await setup(t);for(const text of ['first','second','third'])s.tools.item(s.owner,'commentary',text);
- const app=createApp({databasePath:s.path,filesRoot:s.files.root,execution:{autoStart:false}});try{await app.ready();const initial=(await app.inject(`/api/tasks/${s.owner.taskId}/activity?limit=1`)).json();assert.equal(initial.items[0].content,'third');assert.equal(initial.total,3);const first=(s.db.prepare('SELECT min(sequence) AS n FROM execution_items').get() as {n:number}).n;const update=(await app.inject(`/api/tasks/${s.owner.taskId}/activity?after=${first}`)).json();assert.deepEqual(update.items.map((i:any)=>i.content),['second','third']);assert.equal((await app.inject(`/api/tasks/${s.owner.taskId}/activity?after=-1`)).statusCode,400);}finally{await app.close();}
+test("activity API pages newest-first and refreshes by validated ascending sequence cursor", async (t) => {
+  const s = await setup(t);
+  for (const text of ["first", "second", "third"])
+    s.tools.item(s.owner, "commentary", text);
+  const app = createApp({
+    databasePath: s.path,
+    filesRoot: s.files.root,
+    execution: { autoStart: false },
+  });
+  try {
+    await app.ready();
+    const initial = (
+      await app.inject(`/api/tasks/${s.owner.taskId}/activity?limit=1`)
+    ).json();
+    assert.equal(initial.items[0].content, "third");
+    assert.equal(initial.total, 3);
+    const first = (
+      s.db.prepare("SELECT min(sequence) AS n FROM execution_items").get() as {
+        n: number;
+      }
+    ).n;
+    const update = (
+      await app.inject(`/api/tasks/${s.owner.taskId}/activity?after=${first}`)
+    ).json();
+    assert.deepEqual(
+      update.items.map((i: any) => i.content),
+      ["second", "third"],
+    );
+    assert.equal(
+      (await app.inject(`/api/tasks/${s.owner.taskId}/activity?after=-1`))
+        .statusCode,
+      400,
+    );
+  } finally {
+    await app.close();
+  }
 });

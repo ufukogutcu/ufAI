@@ -11,8 +11,16 @@ export function restoreOutputColumns(database: Database.Database) {
 }
 
 export function removeToolTables(database: Database.Database) {
+  if (
+    (
+      database.pragma("table_info(agent_submissions)") as { name: string }[]
+    ).some((c) => c.name === "attachmentFingerprint")
+  )
+    database.exec(
+      "ALTER TABLE agent_submissions DROP COLUMN attachmentFingerprint",
+    );
   database.exec(
-    `DROP TABLE IF EXISTS artifact_references; DROP TABLE IF EXISTS artifact_versions; DROP TABLE IF EXISTS artifacts; DROP TABLE IF EXISTS process_waits; DROP TABLE IF EXISTS owned_processes; DROP TABLE IF EXISTS tool_invocations; DROP TABLE IF EXISTS execution_items;`,
+    `DROP TABLE IF EXISTS provider_media_files; DROP TABLE IF EXISTS model_media_capabilities; DROP TABLE IF EXISTS media_open_references; DROP TABLE IF EXISTS submission_ingests; DROP TABLE IF EXISTS artifact_references; DROP TABLE IF EXISTS artifact_versions; DROP TABLE IF EXISTS artifacts; DROP TABLE IF EXISTS process_waits; DROP TABLE IF EXISTS owned_processes; DROP TABLE IF EXISTS tool_invocations; DROP TABLE IF EXISTS execution_items;`,
   );
 }
 export function removeLocationTables(database: Database.Database) {

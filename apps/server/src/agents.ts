@@ -40,6 +40,7 @@ export function registerAgents(
   db: Database.Database,
   execution: AgentExecution,
   files: ManagedFiles,
+  incoming?: import("./submission-media.js").SubmissionMedia,
 ) {
   app.addHook("onRequest", async (request) => {
     if (
@@ -257,6 +258,10 @@ export function registerAgents(
   app.post<{ Params: { id: string } }>(
     "/api/agents/:id/tasks",
     async (req, reply) => {
+      if (req.isMultipart() && incoming)
+        return reply
+          .code(202)
+          .send(await incoming.receive(req, req.params.id, "new"));
       const v = input(req.body);
       return reply
         .code(202)
@@ -304,7 +309,7 @@ export function registerAgents(
             ...(
               db
                 .prepare(
-                  "SELECT r.versionId,v.name FROM artifact_references r JOIN artifact_versions v ON v.id=r.versionId WHERE r.messageId=? ORDER BY r.ordinal",
+                  "SELECT r.versionId,r.mode,v.name FROM artifact_references r JOIN artifact_versions v ON v.id=r.versionId WHERE r.messageId=? ORDER BY r.ordinal",
                 )
                 .all(m.id) as { versionId: string; name: string }[]
             ).map((v) => ({ type: "artifact", ...v })),
@@ -325,8 +330,12 @@ export function registerAgents(
   app.post<{ Params: { id: string } }>(
     "/api/tasks/:id/messages",
     async (req, reply) => {
-      const task = execution.task(req.params.id),
-        v = input(req.body);
+      const task = execution.task(req.params.id);
+      if (req.isMultipart() && incoming)
+        return reply
+          .code(202)
+          .send(await incoming.receive(req, task.agentId, task.id));
+      const v = input(req.body);
       return reply
         .code(202)
         .send(execution.submit(task.agentId, task.id, v.content, v.requestId));

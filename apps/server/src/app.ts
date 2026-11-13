@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyError } from "fastify";
+import multipart from "@fastify/multipart";
+import { MediaService, effectiveMedia } from "./media-service.js";
+import { SubmissionMedia, type UploadOptions } from "./submission-media.js";
 import fastifyStatic from "@fastify/static";
 import { ConnectionService } from "./connection-service.js";
 import { AgentExecution, type ExecutionOptions } from "./agent-execution.js";
@@ -15,7 +18,11 @@ import { registerAgents } from "./agents.js";
 import { registerSettings } from "./settings.js";
 import { registerThemes } from "./themes.js";
 import { openDatabase } from "./database.js";
-import { registerConnections, type ConnectionOptions } from "./connections.js";
+import {
+  guard as guardMedia,
+  registerConnections,
+  type ConnectionOptions,
+} from "./connections.js";
 import { SelectionConfirmationError } from "./provider-models.js";
 import { ConnectionError } from "./model-providers.js";
 import type {
@@ -65,12 +72,14 @@ export function createApp(
     execution?: ExecutionOptions;
     processes?: ProcessOptions;
     artifacts?: ArtifactOptions;
+    uploads?: UploadOptions;
   } = {},
 ) {
   const app = Fastify({
     logger: options.logger ?? false,
     bodyLimit: 32 * 1024,
   });
+  app.register(multipart);
   const database = openDatabase(options.databasePath);
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof SelectionConfirmationError)
@@ -146,11 +155,54 @@ export function createApp(
     files,
     tools,
   );
+  const media = new MediaService(artifacts);
+  tools.media = media;
+  tools.mediaCapabilities = (owner) => {
+    const row = database
+      .prepare("SELECT snapshot FROM agent_turns WHERE id=?")
+      .get(owner.turnId) as { snapshot: string | null } | undefined;
+    const s = row?.snapshot
+      ? JSON.parse(row.snapshot)
+      : connections.snapshot(execution.requiredAgent(owner.agentId));
+    return (
+      s.mediaCapabilities ??
+      effectiveMedia(
+        s.provider,
+        connections.models.get(s.connectionId, s.modelId),
+      )
+    );
+  };
+  app.get<{ Params: { id: string } }>(
+    "/api/agents/:id/media-capabilities",
+    async (req) => {
+      guardMedia(req);
+      const s = connections.snapshot(execution.requiredAgent(req.params.id));
+      return {
+        capabilities: effectiveMedia(
+          s.provider,
+          connections.models.get(s.connectionId, s.modelId),
+        ),
+        maxFiles: incoming.maxFiles,
+        maxBytes: incoming.maxBytes,
+      };
+    },
+  );
+  const incoming = new SubmissionMedia(
+    database,
+    media,
+    execution,
+    connections,
+    options.uploads,
+  );
+  execution.incoming = incoming;
   files.bind(execution);
-  registerAgents(app, database, execution, files);
+  registerAgents(app, database, execution, files, incoming);
   registerLocations(app, database, execution, files);
   registerTools(app, database, execution, processes, artifacts);
-  app.addHook("preClose", async () => artifacts.quiesce());
+  app.addHook("preClose", async () => {
+    await incoming.close();
+    await artifacts.quiesce();
+  });
   app.addHook("onReady", async () => {
     await files.start();
     await artifacts.start();
@@ -207,8 +259,7 @@ export function createApp(
     "/api/workspaces/:id",
     async (request, reply) => {
       const existing = workspaceGet.get(request.params.id) as
-        | Workspace
-        | undefined;
+        Workspace | undefined;
       if (!existing)
         return reply.code(404).send({ error: "Workspace not found." });
       files.assertAvailable(existing.id);
@@ -232,8 +283,7 @@ export function createApp(
       if (!workspaceGet.get(request.params.id))
         return reply.code(404).send({ error: "Workspace not found." });
       const body = request.body as
-        | { confirmFilesDeletion?: unknown }
-        | undefined;
+        { confirmFilesDeletion?: unknown } | undefined;
       return reply
         .code(202)
         .send(

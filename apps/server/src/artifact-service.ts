@@ -27,12 +27,19 @@ const limit = (option: number | undefined, env: string, fallback: number) => {
   if (!Number.isSafeInteger(n) || n < 1) throw new Error(`Invalid ${env}.`);
   return n;
 };
+export type ArtifactOwner = {
+  workspaceId: string;
+  agentId?: string;
+  taskId?: string;
+  turnId?: string;
+};
 export class ArtifactService {
   private pending = new Map<
     string,
-    { owner: ToolOwner; promise: Promise<ArtifactVersion> }
+    { owner: ArtifactOwner; promise: Promise<ArtifactVersion> }
   >();
   private stopped = false;
+  private byteReads = 0;
   private downloads = new Map<ReadStream, string>();
   readonly maxVersionBytes: number;
   readonly maxStorageBytes: number;
@@ -64,6 +71,18 @@ export class ArtifactService {
     return join(this.directory(v.workspaceId), v.id, "bytes");
   }
   async start() {
+    let cursor = "";
+    while (true) {
+      const abandoned = this.db
+        .prepare(
+          "SELECT id FROM submission_ingests WHERE state!='committed' AND id>? ORDER BY id LIMIT 32",
+        )
+        .all(cursor) as { id: string }[];
+      if (!abandoned.length) break;
+      for (const row of abandoned) await this.discardIngest(row.id);
+      cursor = abandoned.at(-1)!.id;
+      await new Promise<void>((r) => setImmediate(r));
+    }
     const staging = this.db
       .prepare(
         "SELECT v.* FROM artifact_versions v WHERE v.state='staging' AND NOT EXISTS(SELECT 1 FROM deletion_operations d WHERE d.workspaceId=v.workspaceId AND d.kind='workspace' AND d.state!='completed')",
@@ -180,7 +199,11 @@ export class ArtifactService {
     }
     return this.get(v.id);
   }
-  publish(owner: ToolOwner, args: Record<string, any>, signal: AbortSignal) {
+  publish(
+    owner: ArtifactOwner,
+    args: Record<string, any>,
+    signal: AbortSignal,
+  ) {
     if (this.stopped)
       throw new ConnectionError("Artifact service is shutting down.", 503);
     if (this.pending.size >= this.maxIngests)
@@ -198,27 +221,36 @@ export class ArtifactService {
     return promise;
   }
   private async ingest(
-    owner: ToolOwner,
+    owner: ArtifactOwner,
     args: Record<string, any>,
     signal: AbortSignal,
   ) {
     signal.throwIfAborted();
     await this.files.verifyRoot();
     this.files.assertAvailable(owner.workspaceId, owner.agentId);
-    const source = resolve(
-        this.files.location("task", owner.taskId).path,
-        args.path,
-      ),
-      info = await lstat(source);
-    if (!info.isFile() || info.isSymbolicLink())
+    const source = args.stream
+      ? null
+      : resolve(
+          owner.taskId
+            ? this.files.location("task", owner.taskId).path
+            : this.files.root,
+          args.path,
+        );
+    const info = source ? await lstat(source) : null;
+    if (info && (!info.isFile() || info.isSymbolicLink()))
       throw new ConnectionError(
-        "Publish a regular file, not a directory, link, or device.",
+        "Use a regular file, not a directory, link, or device.",
         400,
       );
-    if (info.size > this.maxVersionBytes)
+    const expectedSize = info?.size ?? args.size;
+    if (
+      !Number.isSafeInteger(expectedSize) ||
+      expectedSize < 0 ||
+      expectedSize > this.maxVersionBytes
+    )
       throw new ConnectionError("File exceeds the artifact size limit.", 413);
     const name =
-      (args.name ?? basename(source))
+      (args.name ?? basename(source ?? "file"))
         .replace(/[\x00-\x1f\x7f/\\<>:"|?*]/g, "_")
         .replace(/[. ]+$/g, "")
         .slice(0, 240) || "file";
@@ -247,7 +279,7 @@ export class ArtifactService {
           "SELECT coalesce(sum(size),0) AS n FROM artifact_versions WHERE state IN ('ready','staging','unavailable')",
         )
         .get() as { n: number };
-      if (used.n + info.size > this.maxStorageBytes)
+      if (used.n + expectedSize > this.maxStorageBytes)
         throw new ConnectionError("Artifact storage limit reached.", 413);
       if (!args.artifactId)
         this.db
@@ -255,20 +287,22 @@ export class ArtifactService {
           .run(artifactId, owner.workspaceId, name, time());
       this.db
         .prepare(
-          "INSERT INTO artifact_versions(id,artifactId,workspaceId,producerAgentId,producerTaskId,provenance,sourceVersionId,name,mediaType,size,state,createdAt) VALUES (?,?,?,?,?,?,?,?,?,?,'staging',?)",
+          "INSERT INTO artifact_versions(id,artifactId,workspaceId,producerAgentId,producerTaskId,provenance,sourceVersionId,name,mediaType,size,state,createdAt,origin,ingestId) VALUES (?,?,?,?,?,?,?,?,?,?,'staging',?,?,?)",
         )
         .run(
           id,
           artifactId,
           owner.workspaceId,
-          owner.agentId,
-          owner.taskId,
+          owner.agentId ?? null,
+          owner.taskId ?? null,
           JSON.stringify(owner),
           args.sourceVersionId ?? null,
           name,
           "application/octet-stream",
-          info.size,
+          expectedSize,
           time(),
+          args.origin ?? "published",
+          args.ingestId ?? null,
         );
     })();
     const directory = this.directory(owner.workspaceId),
@@ -276,52 +310,56 @@ export class ArtifactService {
     try {
       await managedDirectory(directory, true);
       await managedDirectory(join(directory, id), true);
-      const input = await open(
-          source,
-          constants.O_RDONLY | constants.O_NOFOLLOW,
-        ),
-        output = await open(staged, "wx", 0o600);
+      const input = source
+        ? await open(source, constants.O_RDONLY | constants.O_NOFOLLOW)
+        : null;
+      const output = await open(staged, "wx", 0o600);
       const hash = createHash("sha256");
       let size = 0,
         head = Buffer.alloc(0);
       try {
-        const before = await input.stat();
-        if (
-          !before.isFile() ||
-          before.ino !== info.ino ||
-          before.dev !== info.dev
-        )
-          throw new Error("Changed source");
-        const bytes = Buffer.alloc(65536);
-        while (true) {
+        if (input && info) {
+          const before = await input.stat();
+          if (
+            !before.isFile() ||
+            before.ino !== info.ino ||
+            before.dev !== info.dev
+          )
+            throw new ConnectionError("Changed source.", 409);
+        }
+        const chunks: AsyncIterable<Buffer> = input
+          ? input.createReadStream({ autoClose: false, highWaterMark: 65536 })
+          : args.stream;
+        for await (const chunk of chunks) {
           signal.throwIfAborted();
-          const { bytesRead } = await input.read(bytes, 0, bytes.length, null);
-          if (!bytesRead) break;
-          size += bytesRead;
-          if (size > this.maxVersionBytes || size > info.size)
+          this.files.assertAvailable(owner.workspaceId, owner.agentId);
+          size += chunk.length;
+          if (size > expectedSize || size > this.maxVersionBytes)
             throw new ConnectionError(
               "File changed or exceeded its size limit.",
-              409,
+              413,
             );
-          const part = bytes.subarray(0, bytesRead);
-          if (!head.length) head = Buffer.from(part.subarray(0, 512));
-          hash.update(part);
-          await output.write(part);
+          if (!head.length) head = Buffer.from(chunk.subarray(0, 512));
+          hash.update(chunk);
+          let offset = 0;
+          while (offset < chunk.length)
+            offset += (await output.write(chunk, offset, chunk.length - offset))
+              .bytesWritten;
         }
-        const after = await input.stat();
-        if (
-          size !== info.size ||
-          after.mtimeMs !== info.mtimeMs ||
-          after.ctimeMs !== info.ctimeMs ||
-          after.size !== size
-        )
-          throw new ConnectionError(
-            "Source file changed while publishing. Retry with a stable file.",
-            409,
-          );
+        if (size !== expectedSize)
+          throw new ConnectionError("File transfer was incomplete.", 409);
+        if (input && info) {
+          const after = await input.stat();
+          if (
+            after.size !== size ||
+            after.mtimeMs !== info.mtimeMs ||
+            after.ctimeMs !== info.ctimeMs
+          )
+            throw new ConnectionError("Source changed while copying.", 409);
+        }
         await output.sync();
       } finally {
-        await Promise.all([input.close(), output.close()]);
+        await Promise.all([input?.close(), output.close()]);
       }
       signal.throwIfAborted();
       this.files.assertAvailable(owner.workspaceId, owner.agentId);
@@ -353,6 +391,83 @@ export class ArtifactService {
       throw error;
     }
   }
+  async discardIngest(ingestId: string) {
+    await this.files.verifyRoot();
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM artifact_versions WHERE ingestId=? AND NOT EXISTS(SELECT 1 FROM artifact_references r WHERE r.versionId=artifact_versions.id)",
+      )
+      .all(ingestId) as ArtifactVersion[];
+    for (const v of rows) {
+      try {
+        await managedDirectory(this.directory(v.workspaceId));
+        await rm(join(this.directory(v.workspaceId), `.staging-${v.id}`), {
+          force: true,
+        });
+        await managedDirectory(join(this.directory(v.workspaceId), v.id));
+        await rm(this.path(v), { force: true });
+        await rm(join(this.directory(v.workspaceId), v.id), {
+          recursive: true,
+          force: true,
+        });
+      } catch (e: any) {
+        if (e.code !== "ENOENT") continue;
+      }
+      this.db.prepare("DELETE FROM artifact_versions WHERE id=?").run(v.id);
+      this.db
+        .prepare(
+          "DELETE FROM artifacts WHERE id=? AND NOT EXISTS(SELECT 1 FROM artifact_versions WHERE artifactId=?)",
+        )
+        .run(v.artifactId, v.artifactId);
+    }
+    this.db
+      .prepare(
+        "DELETE FROM submission_ingests WHERE id=? AND NOT EXISTS(SELECT 1 FROM artifact_versions WHERE ingestId=?)",
+      )
+      .run(ingestId, ingestId);
+  }
+  async bytes(
+    id: string,
+    workspaceId: string,
+    maxBytes = 20 * 1024 * 1024,
+    ingestId?: string,
+  ) {
+    if (this.byteReads >= 2)
+      throw new ConnectionError("Media reads are busy. Retry shortly.", 429);
+    this.byteReads++;
+    try {
+      const v = await this.ready(id, workspaceId, ingestId);
+      if (v.size > maxBytes)
+        throw new ConnectionError(
+          "Media exceeds the native inspection size limit. The original file remains available.",
+          413,
+        );
+      const f = await open(
+        this.path(v),
+        constants.O_RDONLY | constants.O_NOFOLLOW,
+      );
+      try {
+        const bytes = Buffer.alloc(v.size);
+        let n = 0;
+        while (n < bytes.length) {
+          const r = await f.read(bytes, n, bytes.length - n, n);
+          if (!r.bytesRead) break;
+          n += r.bytesRead;
+        }
+        if (
+          n !== v.size ||
+          createHash("sha256").update(bytes).digest("hex") !== v.sha256
+        )
+          throw new ConnectionError("Artifact bytes changed.", 409);
+        this.files.assertAvailable(workspaceId);
+        return { version: v, bytes };
+      } finally {
+        await f.close();
+      }
+    } finally {
+      this.byteReads--;
+    }
+  }
   async materialize(owner: ToolOwner, id: string, name?: string) {
     const v = await this.ready(id, owner.workspaceId);
     const task = await this.files.repair("task", owner.taskId);
@@ -372,9 +487,14 @@ export class ArtifactService {
     await copyFile(this.path(v), target, constants.COPYFILE_EXCL);
     return { path: target, versionId: id, sha256: v.sha256 };
   }
-  async ready(id: string, workspaceId?: string) {
+  async ready(id: string, workspaceId?: string, ingestId?: string) {
     await this.files.verifyRoot();
     let v = this.get(id);
+    if (
+      (v as ArtifactVersion & { ingestId?: string }).ingestId &&
+      (v as ArtifactVersion & { ingestId?: string }).ingestId !== ingestId
+    )
+      throw new ConnectionError("File transfer has not been committed.", 409);
     if (workspaceId && v.workspaceId !== workspaceId)
       throw new ConnectionError("Artifact is outside this workspace.", 403);
     if (v.state === "ready") v = await this.check(v, true);
@@ -408,7 +528,7 @@ export class ArtifactService {
   async settleAgents(ids: string[]) {
     await Promise.allSettled(
       [...this.pending.values()]
-        .filter((p) => ids.includes(p.owner.agentId))
+        .filter((p) => !!p.owner.agentId && ids.includes(p.owner.agentId))
         .map((p) => p.promise),
     );
   }
@@ -445,6 +565,11 @@ function detect(head: Buffer) {
   )
     return "image/png";
   if (head[0] === 255 && head[1] === 216) return "image/jpeg";
+  if (
+    head.toString("ascii", 0, 4) === "RIFF" &&
+    head.toString("ascii", 8, 12) === "WEBP"
+  )
+    return "image/webp";
   if (head.subarray(0, 5).toString() === "%PDF-") return "application/pdf";
   if (head.subarray(0, 2).toString() === "PK") return "application/zip";
   if (head.subarray(0, 3).toString() === "GIF") return "image/gif";

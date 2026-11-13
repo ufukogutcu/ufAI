@@ -73,7 +73,23 @@ export interface ProviderConnection {
   createdAt: string;
   updatedAt: string;
 }
+export type MediaSupport = "supported" | "unsupported" | "unknown";
+export interface MediaCapabilities {
+  limits?: {
+    maxImageBytes?: number;
+    maxTotalBytes?: number;
+    imageTypes?: string[];
+  };
+  image: MediaSupport;
+  pdf: MediaSupport;
+}
+export interface ModelMedia {
+  discovered: MediaCapabilities;
+  overrides: { image: boolean | null; pdf: boolean | null };
+  effective: MediaCapabilities;
+}
 export interface DiscoveredModel {
+  media?: MediaCapabilities;
   id: string;
   name: string;
   contextWindow: number | null;
@@ -95,6 +111,7 @@ export interface SelectionImpact {
   confirmationToken: string;
 }
 export interface ProviderModel extends DiscoveredModel {
+  mediaSettings?: ModelMedia;
   enabled: boolean;
   connectionId: string;
   discoveredContextWindow: number | null;
@@ -198,10 +215,7 @@ export interface CodexResetInput {
   creditId?: string;
 }
 export type CodexResetOutcome =
-  | "reset"
-  | "alreadyRedeemed"
-  | "nothingToReset"
-  | "noCredit";
+  "reset" | "alreadyRedeemed" | "nothingToReset" | "noCredit";
 
 export type TaskStatus =
   | "waiting"
@@ -326,7 +340,12 @@ export interface DeletionOperation {
 
 export type ContentPart =
   | { type: "text"; text: string }
-  | { type: "artifact"; versionId: string; name: string };
+  | {
+      type: "artifact";
+      versionId: string;
+      name: string;
+      mode?: "inspect" | "file";
+    };
 export interface ExecutionItem {
   sequence: number;
   id: string;
@@ -375,6 +394,7 @@ export interface ProcessOutput {
   state: OwnedProcess["state"];
 }
 export interface ArtifactVersion {
+  origin?: "published" | "user_upload" | "inspection";
   id: string;
   artifactId: string;
   workspaceId: string;

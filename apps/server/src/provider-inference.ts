@@ -101,6 +101,13 @@ export async function discoverOllama(
               signal,
               body: JSON.stringify({ model: model.id }),
             });
+            if (Array.isArray(detail.capabilities))
+              model.media = {
+                image: detail.capabilities.includes("vision")
+                  ? "supported"
+                  : "unsupported",
+                pdf: "unsupported",
+              };
             const info = object(detail.model_info);
             const key = Object.keys(info).find((key) =>
               key.endsWith(".context_length"),

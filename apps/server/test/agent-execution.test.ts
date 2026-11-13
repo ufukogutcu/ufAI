@@ -437,10 +437,13 @@ test("compaction preserves full transcripts and covers complete exchanges before
       "UPDATE model_presets SET compactionMode='tokens',compactionValue=2200",
     )
     .run();
-  let compactions = 0;
+  let compactions = 0,
+    sawAttachmentMetadata = false;
   f.connections.generate = async (_s, r) => {
     if (r.instructions.startsWith("Summarize earlier")) {
       compactions++;
+      sawAttachmentMetadata ||=
+        r.messages[0]!.content.includes("retained-version");
       return result("Earlier questions were answered.");
     }
     if (r.instructions.startsWith("Maintain this task"))
@@ -470,7 +473,9 @@ test("compaction preserves full transcripts and covers complete exchanges before
     )
     .get(x.turnId) as { id: string };
   f.db
-    .prepare("INSERT INTO artifact_references VALUES ('retained-version',?,0)")
+    .prepare(
+      "INSERT INTO artifact_references(versionId,messageId,ordinal) VALUES ('retained-version',?,0)",
+    )
     .run(output.id);
   for (let i = 0; i < 4; i++) {
     f.engine.submit(
@@ -482,6 +487,7 @@ test("compaction preserves full transcripts and covers complete exchanges before
     await until(() => f.engine.task(x.taskId!).status === "completed");
   }
   assert.ok(compactions > 0);
+  assert.equal(sawAttachmentMetadata, true);
   assert.match(
     (
       f.db

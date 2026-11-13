@@ -1,3 +1,4 @@
+import type { MediaReference, NativeMedia } from "./media-service.js";
 import type { Compaction, ConnectionProvider } from "./contracts.js";
 
 export interface TextMessage {
@@ -19,6 +20,7 @@ export interface TextResult {
   usage: Record<string, number> | null;
 }
 export interface ExecutionSnapshot {
+  mediaCapabilities?: import("./contracts.js").MediaCapabilities;
   presetId: string;
   connectionId: string;
   provider: ConnectionProvider;
@@ -47,6 +49,7 @@ export interface ToolCall {
   arguments: Record<string, unknown>;
 }
 export interface ToolResult {
+  media?: MediaReference[];
   ok: boolean;
   [key: string]: unknown;
 }
@@ -56,7 +59,12 @@ export interface ToolRound {
   continuation: unknown;
   usage: Record<string, number> | null;
 }
+export interface TaskMessage extends TextMessage {
+  media?: MediaReference[];
+}
 export interface TaskRequest extends TextRequest {
+  messages: TaskMessage[];
+  resolveMedia?: (refs: MediaReference[]) => Promise<NativeMedia[]>;
   tools: ToolSpec[];
   maxRounds?: number;
   continuation?: unknown[];

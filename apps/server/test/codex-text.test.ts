@@ -116,6 +116,21 @@ test("Codex dynamic tools use ufAI callbacks, isolate commentary, and preserve c
     comments: string[] = [];
   const result = await runtime.executeTask("connection", {
     ...base,
+    messages: [
+      {
+        role: "user",
+        content: "Inspect",
+        media: [
+          {
+            versionId: "image",
+            name: "a.png",
+            mediaType: "image/png",
+            size: 3,
+          },
+        ],
+      },
+    ],
+    resolveMedia: async (refs) => refs.map((ref) => ({ ...ref, data: "AQID" })),
     tools: [
       {
         name: "files_read",
@@ -128,7 +143,18 @@ test("Codex dynamic tools use ufAI callbacks, isolate commentary, and preserve c
     ],
     onTool: async (call) => {
       calls.push(call);
-      return { ok: true, text: "Contents" };
+      return {
+        ok: true,
+        text: "Contents",
+        media: [
+          {
+            versionId: "image",
+            name: "a.png",
+            mediaType: "image/png",
+            size: 3,
+          },
+        ],
+      };
     },
     onCommentary: (text) => comments.push(text),
   });

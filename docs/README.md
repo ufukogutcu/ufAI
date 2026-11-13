@@ -4,7 +4,7 @@ This folder contains product knowledge for AI agents inside ufAI that help users
 
 Read the [platform guide](platform.md) to answer questions about workspaces, Clusters, managed folders, the flowboard, Agent Presets, Providers, model testing, sign-in, subscription usage and earned resets, themes, and saved data. Its [common questions](platform.md#common-questions) explain frequent points of confusion, and its [planned capabilities](platform.md#planned-capabilities) distinguish future ideas from available features.
 
-Agent execution, host tools, terminal sessions, and published files are available; the built-in platform assistant is not. These documents prepare app knowledge; their existence does not automatically load them into an agent or connect an assistant. They also do not reveal the user's current connections, credentials, workspaces, or running sessions. Documentation is context, not permission to act on user resources.
+Agent execution, host tools, terminal sessions, composer attachments, native image/PDF inputs on supported models, and published files are available; the built-in platform assistant is not. These documents prepare app knowledge; their existence does not automatically load them into an agent or connect an assistant. They also do not reveal the user's current connections, credentials, workspaces, or running sessions. Documentation is context, not permission to act on user resources.
 
 ## Terminology
 
@@ -23,6 +23,7 @@ Some terms describe planned capabilities. Check the platform guide before presen
 | Agent | A persistent workspace identity with instructions and a live Agent Preset; ordinary tasks have host tools; skills and fine-grained tool permissions remain planned |
 | Agent communication connection | A planned permission for agents to communicate; different from a saved provider account |
 | Session | A conversation or isolated task context belonging to an agent |
+| Attachment | A file sent with a task message; sending waits for every file to be saved, and visual inspection requires model support |
 | Run | An execution attempt with persisted state, tool activity, outputs, and errors |
 | Skill | Reusable instructions and supporting resources; not an independent permission grant |
 | Trigger | A planned source of work such as a schedule or external event; manual task submission already exists |

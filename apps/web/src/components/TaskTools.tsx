@@ -1,3 +1,4 @@
+import { ImagePreview } from "./MessageAttachments";
 import { useEffect, useRef, useState } from "react";
 import {
   Download,
@@ -23,6 +24,7 @@ export function ArtifactCard({ version }: { version: ArtifactVersion }) {
     <div className={styles.file}>
       <div>
         <strong>{version.name}</strong>
+        <ImagePreview version={version}/>
         <span className={styles.meta}>
           {version.mediaType} · {new Intl.NumberFormat().format(version.size)}{" "}
           bytes · {version.state}

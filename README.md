@@ -2,11 +2,13 @@
 
 An open-source, local-first application for one user to organize AI agents in multiple workspaces through a browser interface. One local backend and SQLite database hold the shared setup across browser sessions.
 
-**Status: agent execution, host tools, terminals, and published files.** Workspaces contain visual department Clusters, managed shared/agent/task folders, canvas agents with live Agent Preset links, separate task chats, a read-only workload/status chat, automatic shared memory, and context compaction. Saved Providers cover all existing API types, Ollama, and bundled Codex. Navigation, themes, model catalogs, prompt tests, and Codex subscription usage remain available. Ordinary agent tasks can use host file tools, commands, interactive terminals, and immutable downloadable file outputs. Waiting tasks release execution capacity. Skills, agent-to-agent messaging, Interfaces, Triggers, uploads, and media perception remain planned.
+**Status: agent execution, host tools, terminals, attachments, and native media inputs.** Workspaces contain visual department Clusters, managed shared/agent/task folders, canvas agents with live Agent Preset links, separate task chats, a read-only workload/status chat, automatic shared memory, and context compaction. Saved Providers cover all existing API types, Ollama, and bundled Codex. Navigation, themes, model catalogs, prompt tests, and Codex subscription usage remain available. Ordinary agent tasks can use host file tools, commands, interactive terminals, and immutable downloadable file outputs. Waiting tasks release execution capacity. Users can attach files to task messages, send images to supported vision models, and let agents open images/PDFs through native provider inputs. Skills, agent-to-agent messaging, Interfaces, Triggers, audio/video perception, and dedicated image generation remain planned.
 
 Agents run with the backend’s OS permissions. Their folders organize work and are not sandboxes. Published versions survive agent deletion and are permanently removed with their workspace. Background processes stop on task cancellation, owner deletion, or server shutdown; deliberately detached host daemons are outside guaranteed supervision.
 
 PTY support uses native bindings. A platform without a matching prebuilt binding needs the native build prerequisites required by `node-pty`.
+
+Select files in the task composer, then press Send once. Images default to Inspect image; File only sends a durable file reference without visual input. Model image/PDF capabilities can be discovered or overridden in Providers. Unknown capability does not enable inspection. PDF opening depends on the selected model and adapter; the pinned Codex protocol accepts images, not PDFs. ufAI does not install conversion tools or provide OCR/page rendering. Native inspection is limited to ten items, 20 MiB per item and 32 MiB combined, with tighter provider limits applied. Browser image previews cover PNG/JPEG/WebP; other formats remain downloadable.
 
 ## Stack
 
@@ -103,9 +105,11 @@ Set environment variables in the shell before starting the application. `.env` f
 | `WEB_PORT` | `5173` | Vite development server port |
 | `DATABASE_PATH` | Repository-root `data/ufai.sqlite` | SQLite file path; relative paths resolve from the server process's working directory |
 | `UFAI_FILES_ROOT` | `<absolute database filename>.files` | Managed working folders and published artifacts; separate from credentials |
-| `UFAI_ARTIFACT_MAX_BYTES` | `268435456` (256 MiB) | Maximum bytes per published version |
+| `UFAI_ARTIFACT_MAX_BYTES` | `268435456` (256 MiB) | Maximum bytes per artifact version |
 | `UFAI_ARTIFACT_STORAGE_BYTES` | `10737418240` (10 GiB) | Managed artifact quota, including pending reservations |
-| `UFAI_ARTIFACT_INGESTS` | `2` | Concurrent file publications |
+| `UFAI_ARTIFACT_INGESTS` | `2` | Concurrent artifact ingests and maximum incoming transfers |
+| `UFAI_UPLOAD_MAX_FILES` | `10` | Attachments per message (maximum configurable value: 100) |
+| `UFAI_UPLOAD_MAX_BYTES` | `268435456` (256 MiB) | Combined attachment bytes per message, also subject to artifact limits |
 
 The server binds to loopback by default. Authentication and remote access are not configured. Keep the default loopback binding for local use.
 

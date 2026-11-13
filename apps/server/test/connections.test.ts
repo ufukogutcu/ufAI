@@ -100,7 +100,9 @@ test("connections remain independent and deletion unlinks presets without substi
   ]);
   const third = await add(app, { name: "Third" });
   await app.inject({ method: "DELETE", url: `/api/connections/${second.id}` });
-  assert.deepEqual((await app.inject("/api/connections")).json().items, [third]);
+  assert.deepEqual((await app.inject("/api/connections")).json().items, [
+    third,
+  ]);
 });
 
 test("removed default selection is rejected on creation and updates", async (t) => {
@@ -112,7 +114,12 @@ test("removed default selection is rejected on creation and updates", async (t) 
       const result = await app.inject({
         method,
         url: `/api/connections${method === "PATCH" ? `/${connection.id}` : ""}`,
-        payload: { provider: "openai", name: "Changed", apiKey: key, isDefault },
+        payload: {
+          provider: "openai",
+          name: "Changed",
+          apiKey: key,
+          isDefault,
+        },
       });
       assert.equal(result.statusCode, 400);
       assert.equal(result.json().fields.isDefault, "Unknown field.");
@@ -229,7 +236,10 @@ test("API credentials are encrypted, connection-bound, replaceable, and durable 
     serveStatic: false,
     connections: { fetcher },
   });
-  t.after(async () => {await app.close();await rm(directory, {recursive:true,force:true});});
+  t.after(async () => {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  });
   const connection = await add(app);
   const storage = new Database(databasePath);
   const ciphertext = (
@@ -500,7 +510,9 @@ test("identical discovery calls coalesce and edits cannot change credentials dur
 test("Codex routes handle sign-in, device fallback, cancellation, logout and sanitized model results", async (t) => {
   const actions: string[] = [];
   const codex: CodexAdapter = {
-    usage: async () => { throw new Error("unused"); },
+    usage: async () => {
+      throw new Error("unused");
+    },
     consumeReset: async () => "noCredit",
     status: async () => ({ status: "disconnected" }),
     hasCredential: () => false,
@@ -593,11 +605,11 @@ test("migration 7 removes provider defaults and preserves configuration, catalog
   const secrets = new ConnectionSecrets(`${path}.connections`);
   let db = openDatabase(path);
   const credential = secrets.encrypt(key, "saved");
-  db.prepare(`INSERT INTO connections
+  db.prepare(
+    `INSERT INTO connections
     (id, provider, name, endpoint, credential, draft, createdAt, updatedAt)
-    VALUES ('saved', 'openai', 'Saved', NULL, ?, 0, 'created', 'updated')`).run(
-    credential,
-  );
+    VALUES ('saved', 'openai', 'Saved', NULL, ?, 0, 'created', 'updated')`,
+  ).run(credential);
   db.exec(`
     INSERT INTO connections (id, provider, name, endpoint, credential, draft, createdAt, updatedAt)
     VALUES ('second', 'openai', 'Second', NULL, NULL, 0, 'created', 'updated'),
@@ -645,18 +657,22 @@ test("migration 7 removes provider defaults and preserves configuration, catalog
   for (let attempt = 0; attempt < 2; attempt++) {
     db = openDatabase(path);
     try {
-      assert.equal(db.pragma("user_version", { simple: true }), 12);
+      assert.equal(db.pragma("user_version", { simple: true }), 13);
       assert.deepEqual(db.pragma("foreign_key_check"), []);
       assert.equal(
-        db.prepare(
-          "SELECT name FROM pragma_table_info('connections') WHERE name = 'isDefault'",
-        ).get(),
+        db
+          .prepare(
+            "SELECT name FROM pragma_table_info('connections') WHERE name = 'isDefault'",
+          )
+          .get(),
         undefined,
       );
       assert.equal(
-        db.prepare(
-          "SELECT name FROM sqlite_master WHERE name = 'connections_default'",
-        ).get(),
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE name = 'connections_default'",
+          )
+          .get(),
         undefined,
       );
       assert.deepEqual(snapshot(db), expected);
@@ -683,7 +699,10 @@ test("migration 5 removes notes and preserves legacy records, settings and times
   const settings = old.prepare("SELECT * FROM app_settings").get();
   old.close();
   const app = createApp({ databasePath, serveStatic: false });
-  t.after(async () => {await app.close();await rm(directory, {recursive:true,force:true});});
+  t.after(async () => {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  });
   const preset = (await app.inject("/api/model-presets")).json().items[0];
   assert.equal(preset.id, "kept");
   assert.equal(preset.provider, null);
