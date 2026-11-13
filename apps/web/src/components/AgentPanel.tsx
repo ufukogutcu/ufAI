@@ -27,6 +27,7 @@ import type {
   AgentMemory,
   AgentMessage,
   AgentTask,
+  ModelPreset,
 } from "../../../server/src/contracts";
 import { TaskTools } from "./TaskTools";
 import { FolderLocation } from "./FolderLocation";
@@ -41,16 +42,20 @@ export function AgentForm({
   agent?: Agent;
   onSave: (values: {
     name: string;
-    instructions: string;
     presetId: string | null;
   }) => Promise<void>;
 }) {
   const presets = useDashboard((s) => s.presets),
     load = useDashboard((s) => s.loadPresets),
-    presetTotal = useDashboard((s) => s.presetTotal);
+    presetTotal = useDashboard((s) => s.presetTotal),
+    loadDefault = useDashboard((s) => s.loadDefaultPreset);
+  const presetTouched = useRef(false);
+  const [defaultReady, setDefaultReady] = useState(!!agent);
+  const [defaultError, setDefaultError] = useState("");
+  const [defaultAttempt, setDefaultAttempt] = useState(0);
+  const [initialPreset, setInitialPreset] = useState<ModelPreset | null>(null);
   const initial = {
     name: agent?.name ?? "",
-    instructions: agent?.instructions ?? "",
     presetId: agent?.presetId ?? null,
   };
   const [draft, setDraft] = useState(initial),
@@ -63,18 +68,43 @@ export function AgentForm({
     void load().catch(() => {});
   }, [load]);
   useEffect(() => {
+    if (agent) return;
+    let alive = true;
+    setDefaultError("");
+    void loadDefault()
+      .then((preset) => {
+        if (!alive) return;
+        setInitialPreset(preset);
+        if (!presetTouched.current) {
+          setDraft((value) => ({ ...value, presetId: preset?.id ?? null }));
+          setBaseline((value) => ({ ...value, presetId: preset?.id ?? null }));
+        }
+        setDefaultReady(true);
+      })
+      .catch((err) => {
+        if (alive) setDefaultError(errorMessage(err));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [agent, loadDefault, defaultAttempt]);
+  useEffect(() => {
     if (!dirty && agent) {
       const next = {
         name: agent.name,
-        instructions: agent.instructions,
         presetId: agent.presetId,
       };
       setDraft(next);
       setBaseline(next);
     }
   }, [agent, dirty]);
+  function retryDefault() {
+    setDefaultAttempt((value) => value + 1);
+    void load().catch(() => {});
+  }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!defaultReady) return;
     setBusy(true);
     setError("");
     try {
@@ -102,37 +132,28 @@ export function AgentForm({
         )}
       </Field>
       <Field
-        label="Instructions"
-        hint="Describe the agent’s role and how it should respond."
-      >
-        {(p) => (
-          <textarea
-            {...p}
-            name="instructions"
-            autoComplete="off"
-            rows={7}
-            maxLength={8000}
-            value={draft.instructions}
-            onChange={(e) =>
-              setDraft({ ...draft, instructions: e.target.value })
-            }
-          />
-        )}
-      </Field>
-      <Field
-        label="Agent Preset"
-        hint="Changes to this preset apply to future turns. A complete preset and known context window are required to run."
+        label="Agent Preset (optional)"
+        hint="You can leave this empty and choose later. A complete preset and known context window are required to run tasks."
       >
         {(p) => (
           <select
             {...p}
             name="presetId"
             value={draft.presetId ?? ""}
-            onChange={(e) =>
-              setDraft({ ...draft, presetId: e.target.value || null })
-            }
+            onChange={(e) => {
+              presetTouched.current = true;
+              setDraft({ ...draft, presetId: e.target.value || null });
+            }}
           >
-            <option value="">Choose later</option>
+            <option value="">No preset — choose later</option>
+            {draft.presetId &&
+              !presets.some((preset) => preset.id === draft.presetId) && (
+                <option value={draft.presetId}>
+                  {initialPreset?.id === draft.presetId
+                    ? initialPreset.name
+                    : "Selected preset"}
+                </option>
+              )}
             {presets.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.name}
@@ -141,6 +162,21 @@ export function AgentForm({
           </select>
         )}
       </Field>
+      {!defaultReady && !defaultError && (
+        <p role="status">Loading default preset…</p>
+      )}
+      {defaultError && (
+        <p role="alert" className="errorBanner">
+          {defaultError}
+          <button
+            type="button"
+            className="textButton"
+            onClick={retryDefault}
+          >
+            Retry
+          </button>
+        </p>
+      )}
       {presets.length < presetTotal && (
         <button
           type="button"
@@ -156,7 +192,7 @@ export function AgentForm({
         </p>
       )}
       <div className={styles.actions}>
-        <button className="button primary" disabled={busy}>
+        <button className="button primary" disabled={busy || !defaultReady}>
           {busy ? "Saving…" : agent ? "Save Agent" : "Create Agent"}
         </button>
       </div>
@@ -471,7 +507,6 @@ export function AgentPanel({
   const current = tasks.find((t) => t.id === taskId) ?? details?.task;
   async function save(values: {
     name: string;
-    instructions: string;
     presetId: string | null;
   }) {
     await store.getState().update(agent.id, values);

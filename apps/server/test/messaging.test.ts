@@ -646,7 +646,7 @@ test("v13 upgrade preserves populated records and stable paths while backfilling
       retained[table],
       table,
     );
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 14);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 15);
   assert.deepEqual(
     (upgraded.prepare("SELECT content FROM agent_messages").all() as any[]).map(
       (r) => r.content,
@@ -1419,4 +1419,19 @@ test("unfinished permission removal preserves its retry path by fencing endpoint
     (s.db.prepare("SELECT count(*) n FROM deletion_operations").get() as any).n,
     0,
   );
+});
+
+test("a permitted agent request lets only its recipient update its own saved instructions", async (t) => {
+  const s = await setup(t);
+  const signal = new AbortController().signal;
+  const send = { id: "request-role", name: "agent_send", arguments: { agentId: "b", content: "Please remember to answer with short paragraphs." } };
+  assert.equal((await s.tools.dispatch(s.owner, send, signal, async () => {})).ok, false);
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  const sent = await s.tools.dispatch(s.owner, { ...send, id: "permitted-role" }, signal, async () => {});
+  assert.equal(sent.ok, true);
+  const helper = s.helper((sent as any).requestId);
+  const update = await s.tools.dispatch(helper, { id: "save-role", name: "agent_update_instructions", arguments: { instructions: "Answer with short paragraphs." } }, signal, async () => {});
+  assert.equal(update.ok, true);
+  assert.equal(s.engine.requiredAgent("b").instructions, "Answer with short paragraphs.");
+  assert.equal(s.engine.requiredAgent("a").instructions, "");
 });

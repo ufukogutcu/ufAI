@@ -42,6 +42,12 @@ const versionIds = {
 };
 export const taskTools: ToolSpec[] = [
   spec(
+    "agent_update_instructions",
+    "Replace your own saved instructions when the user or a permitted agent requests a lasting instruction change. Preserve existing instructions that still apply. Empty text clears them. Changes apply to subsequent turns; this turn keeps its starting instructions. Other agents must request changes through agent_send, never edit another agent directly.",
+    { instructions: { type: "string", maxLength: 8000 } },
+    ["instructions"],
+  ),
+  spec(
     "agents_find",
     "Find agents this agent is permitted to contact. Capabilities are reported facts, not guarantees.",
     {
@@ -548,6 +554,33 @@ export class AgentTools {
     callId?: string,
   ): Promise<Record<string, unknown>> {
     this.messaging?.assertOwner(owner);
+    if (name === "agent_update_instructions") {
+      const row = this.db
+        .prepare(`SELECT a.instructions, a.revision FROM agents a
+        JOIN agent_tasks t ON t.agentId=a.id JOIN agent_turns r ON r.taskId=t.id
+        WHERE a.id=? AND a.workspaceId=? AND t.id=? AND r.id=? AND r.agentId=a.id`)
+        .get(owner.agentId, owner.workspaceId, owner.taskId, owner.turnId) as
+        | { instructions: string; revision: number }
+        | undefined;
+      if (!row)
+        throw new ConnectionError(
+          "Instruction updates require an owned ordinary task turn.",
+          403,
+        );
+      if (row.instructions !== a.instructions) {
+        this.db
+          .prepare(
+            "UPDATE agents SET instructions=?, revision=revision+1, updatedAt=? WHERE id=?",
+          )
+          .run(a.instructions, new Date().toISOString(), owner.agentId);
+        this.changed(owner.workspaceId);
+      }
+      return {
+        instructions: a.instructions,
+        revision: row.revision + Number(row.instructions !== a.instructions),
+        appliesTo: "subsequent_turns",
+      };
+    }
     const messaging = this.messaging;
     const key = `tool_${owner.turnId}_${callId}`;
     if (messaging) {

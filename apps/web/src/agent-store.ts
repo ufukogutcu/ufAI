@@ -128,10 +128,9 @@ interface AgentState {
     workspaceId: string,
     input: {
       name: string;
-      instructions: string;
-      presetId: string | null;
-      x: number;
-      y: number;
+      presetId?: string | null;
+      x?: number;
+      y?: number;
     },
   ) => Promise<Agent>;
   update: (id: string, input: Partial<Agent>) => Promise<Agent>;

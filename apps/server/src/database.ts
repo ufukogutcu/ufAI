@@ -23,7 +23,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 14)
+    if (version > 15)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -210,6 +210,14 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
       database.transaction(() => {
         migrateMessaging(database);
         database.pragma("user_version = 14");
+      })();
+    if (version < 15)
+      database.transaction(() => {
+        database.exec(`
+          ALTER TABLE model_presets ADD COLUMN isDefault INTEGER NOT NULL DEFAULT 0 CHECK (isDefault IN (0, 1));
+          CREATE UNIQUE INDEX model_presets_default ON model_presets(isDefault) WHERE isDefault = 1;
+        `);
+        database.pragma("user_version = 15");
       })();
   } catch (error) {
     database.close();

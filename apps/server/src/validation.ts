@@ -63,9 +63,12 @@ export function presetInput(
   const input = { ...existing, ...patch };
   const fields: Record<string, string> = {};
   for (const key of Object.keys(patch))
-    if (!["name", "connectionId", "modelId", "compaction"].includes(key))
+    if (!["name", "isDefault", "connectionId", "modelId", "compaction"].includes(key))
       fields[key] = "Unknown field.";
   const name = text(input.name, "name", 120, fields);
+  const isDefault = input.isDefault === undefined ? false : input.isDefault;
+  if (typeof isDefault !== "boolean")
+    fields.isDefault = "Choose whether this preset is the default.";
   const connectionId = input.connectionId ?? null;
   if (
     connectionId !== null &&
@@ -100,6 +103,7 @@ export function presetInput(
   if (Object.keys(fields).length) throw new InputError(fields);
   return {
     name,
+    isDefault: isDefault as boolean,
     connectionId: connectionId as string | null,
     modelId,
     integrationKind: null,

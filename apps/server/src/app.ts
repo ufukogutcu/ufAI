@@ -39,7 +39,8 @@ import {
   workspaceInput,
 } from "./validation.js";
 
-type PresetRow = Omit<ModelPreset, "compaction"> & {
+type PresetRow = Omit<ModelPreset, "compaction" | "isDefault"> & {
+  isDefault: number;
   compactionMode: Compaction["mode"] | null;
   compactionValue: number | null;
 };
@@ -47,6 +48,7 @@ function fromRow(row: PresetRow): ModelPreset {
   const { compactionMode, compactionValue, ...rest } = row;
   return {
     ...rest,
+    isDefault: !!row.isDefault,
     compaction:
       compactionMode && compactionValue !== null
         ? { mode: compactionMode, value: compactionValue }
@@ -57,6 +59,7 @@ function toRow(input: PresetConfiguration) {
   const { compaction, ...rest } = input;
   return {
     ...rest,
+    isDefault: Number(input.isDefault),
     contextWindow: null,
     compactionMode: compaction?.mode ?? null,
     compactionValue: compaction?.value ?? null,
@@ -313,19 +316,28 @@ export function createApp(
   );
   const presetInsert = database.prepare(`INSERT INTO model_presets (
     id, name, integrationKind, provider, customProviderName, modelId,
-    contextWindow, connectionId, compactionMode, compactionValue, createdAt, updatedAt
+    contextWindow, connectionId, compactionMode, compactionValue, isDefault, createdAt, updatedAt
   ) VALUES (
     @id, @name, @integrationKind, @provider, @customProviderName, @modelId,
-    @contextWindow, @connectionId, @compactionMode, @compactionValue, @createdAt, @updatedAt
+    @contextWindow, @connectionId, @compactionMode, @compactionValue, @isDefault, @createdAt, @updatedAt
   )`);
   const presetUpdate = database.prepare(`UPDATE model_presets SET name = @name,
     integrationKind = @integrationKind, provider = @provider, customProviderName = @customProviderName,
     modelId = @modelId, contextWindow = @contextWindow,
     connectionId = @connectionId, compactionMode = @compactionMode, compactionValue = @compactionValue,
-    updatedAt = @updatedAt WHERE id = @id`);
+    isDefault = @isDefault, updatedAt = @updatedAt WHERE id = @id`);
   const presetDelete = database.prepare(
     "DELETE FROM model_presets WHERE id = ?",
   );
+  const clearDefault = database.prepare(
+    "UPDATE model_presets SET isDefault=0, updatedAt=? WHERE isDefault=1 AND id!=?",
+  );
+  app.get("/api/model-presets/default", async () => {
+    const row = database
+      .prepare("SELECT * FROM model_presets WHERE isDefault=1")
+      .get() as PresetRow | undefined;
+    return { preset: row ? validatePresetConnection(fromRow(row)) : null };
+  });
   app.get("/api/model-presets", async (request) => {
     const { limit, offset } = pagination(request.query);
     return {
@@ -344,12 +356,15 @@ export function createApp(
       createdAt: now,
       updatedAt: now,
     };
-    presetInsert.run({
-      ...toRow(input),
-      id: preset.id,
-      createdAt: now,
-      updatedAt: now,
-    });
+    database.transaction(() => {
+      if (input.isDefault) clearDefault.run(now, preset.id);
+      presetInsert.run({
+        ...toRow(input),
+        id: preset.id,
+        createdAt: now,
+        updatedAt: now,
+      });
+    })();
     return reply.code(201).send(preset);
   });
   app.patch<{ Params: { id: string } }>(
@@ -361,11 +376,11 @@ export function createApp(
       const input = validatePresetConnection(
         presetInput(request.body, fromRow(row)),
       );
-      presetUpdate.run({
-        ...toRow(input),
-        id: row.id,
-        updatedAt: new Date().toISOString(),
-      });
+      database.transaction(() => {
+        const now = new Date().toISOString();
+        if (input.isDefault) clearDefault.run(now, row.id);
+        presetUpdate.run({ ...toRow(input), id: row.id, updatedAt: now });
+      })();
       return validatePresetConnection(
         fromRow(presetGet.get(row.id) as PresetRow),
       );

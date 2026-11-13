@@ -19,6 +19,8 @@ type Status = "idle" | "loading" | "ready" | "error";
 interface DashboardState {
   workspaces: Workspace[];
   presets: ModelPreset[];
+  defaultPreset: ModelPreset | null;
+  loadDefaultPreset: () => Promise<ModelPreset | null>;
   lastOpenedPresetId: string | null;
   rememberOpenedPreset: (id: string | null) => void;
   workspaceStatus: Status;
@@ -60,6 +62,9 @@ function merge<T extends { id: string; createdAt: string }>(
 
 export function createDashboardStore(settings: SettingsStore) {
   let presetRevision = 0;
+  let defaultLoad:
+    | { revision: number; promise: Promise<ModelPreset | null> }
+    | undefined;
   const viewportLoads = new Map<string, Promise<void>>();
   const viewportWrites = new Map<string, Promise<void>>();
   const viewportRevisions = new Map<string, number>();
@@ -70,6 +75,7 @@ export function createDashboardStore(settings: SettingsStore) {
   return createStore<DashboardState>()((set, get) => ({
     workspaces: [],
     presets: [],
+    defaultPreset: null,
     lastOpenedPresetId: null,
     rememberOpenedPreset: (id) => set({ lastOpenedPresetId: id }),
     workspaceStatus: "idle",
@@ -103,6 +109,38 @@ export function createDashboardStore(settings: SettingsStore) {
         set({ workspaceStatus: "error", workspaceError: errorMessage(error) });
       }
     },
+    loadDefaultPreset: () => {
+      if (defaultLoad?.revision === presetRevision) return defaultLoad.promise;
+      const started = presetRevision;
+      let promise!: Promise<ModelPreset | null>;
+      promise = (async () => {
+        try {
+          const { preset } = await request<{ preset: ModelPreset | null }>(
+            "/model-presets/default",
+          );
+          if (started !== presetRevision) return get().defaultPreset;
+          set((state) => ({
+            defaultPreset:
+              state.defaultPreset &&
+              JSON.stringify(state.defaultPreset) === JSON.stringify(preset)
+                ? state.defaultPreset
+                : preset,
+            presets: state.presets.map((item) => {
+              const isDefault = item.id === preset?.id;
+              return item.isDefault === isDefault ? item : { ...item, isDefault };
+            }),
+          }));
+          return preset;
+        } catch (error) {
+          if (started !== presetRevision) return get().defaultPreset;
+          throw error;
+        } finally {
+          if (defaultLoad?.promise === promise) defaultLoad = undefined;
+        }
+      })();
+      defaultLoad = { revision: started, promise };
+      return promise;
+    },
     loadPresets: async (more = false) => {
       if (get().presetStatus === "loading") return;
       const started = presetRevision;
@@ -111,6 +149,8 @@ export function createDashboardStore(settings: SettingsStore) {
       const rememberedId = more ? null : get().lastOpenedPresetId;
       set({ presetStatus: "loading", presetError: "" });
       try {
+        await get().loadDefaultPreset();
+        if (started !== presetRevision) return;
         const items: ModelPreset[] = [];
         let nextOffset = offset;
         let total = 0;
@@ -130,7 +170,11 @@ export function createDashboardStore(settings: SettingsStore) {
           const previous = new Map(
             state.presets.map((preset) => [preset.id, preset]),
           );
-          const refreshed = items.map((preset) => {
+          const refreshed = items.map((item) => {
+            const preset = {
+              ...item,
+              isDefault: item.id === state.defaultPreset?.id,
+            };
             const saved = previous.get(preset.id);
             return saved && JSON.stringify(saved) === JSON.stringify(preset)
               ? saved
@@ -305,6 +349,12 @@ export function createDashboardStore(settings: SettingsStore) {
       const disabled = new Set(modelIds);
       presetRevision++;
       set(state => ({
+        defaultPreset:
+          state.defaultPreset?.connectionId === connectionId &&
+          state.defaultPreset.modelId &&
+          disabled.has(state.defaultPreset.modelId)
+            ? { ...state.defaultPreset, modelId: null, contextWindow: null }
+            : state.defaultPreset,
         presets: state.presets.map(preset =>
           preset.connectionId === connectionId && preset.modelId && disabled.has(preset.modelId)
             ? { ...preset, modelId: null, contextWindow: null }
@@ -320,7 +370,19 @@ export function createDashboardStore(settings: SettingsStore) {
       presetRevision++;
       set((state) => ({
         presetError: "",
-        presets: merge(state.presets, [preset]),
+        defaultPreset: preset.isDefault
+          ? preset
+          : state.defaultPreset?.id === preset.id
+            ? null
+            : state.defaultPreset,
+        presets: merge(
+          state.presets.map((item) =>
+            preset.isDefault && item.isDefault && item.id !== preset.id
+              ? { ...item, isDefault: false, updatedAt: preset.updatedAt }
+              : item,
+          ),
+          [preset],
+        ),
         presetTotal: state.presetTotal + (id ? 0 : 1),
         presetOffset:
           !id && state.presetOffset === state.presetTotal
@@ -333,6 +395,7 @@ export function createDashboardStore(settings: SettingsStore) {
       await request(`/model-presets/${id}`, "DELETE");
       presetRevision++;
       set((state) => ({
+        defaultPreset: state.defaultPreset?.id === id ? null : state.defaultPreset,
         presets: state.presets.filter((p) => p.id !== id),
         lastOpenedPresetId:
           state.lastOpenedPresetId === id ? null : state.lastOpenedPresetId,

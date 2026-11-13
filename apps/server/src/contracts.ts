@@ -31,6 +31,7 @@ export interface Workspace extends WorkspaceInput {
 
 export interface PresetInput {
   name: string;
+  isDefault?: boolean;
   connectionId?: string | null;
   modelId?: string | null;
   compaction?: Compaction | null;
@@ -38,6 +39,7 @@ export interface PresetInput {
 
 export interface PresetConfiguration {
   name: string;
+  isDefault: boolean;
   integrationKind: IntegrationKind | null;
   provider: ProviderId | null;
   customProviderName: string | null;

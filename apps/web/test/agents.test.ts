@@ -484,3 +484,15 @@ test("attachment drafts stay scoped and retain File identities through refreshes
  assert.equal(store.getState().fileDrafts["new:agent"]![0]!.file,one);assert.equal(store.getState().drafts["new:agent"],"Keep this");
  store.getState().setFileDraft("new:agent",[]);assert.equal(store.getState().fileDrafts["task-other"],second);
 });
+
+test("name-only client creation and ordinary configuration updates omit instructions", async (t) => {
+  const { connectedSetup } = await import("./helpers.js");
+  const { app, initial } = await connectedSetup(t);
+  const store = createAgentStore();
+  const agent = await store.getState().create(initial.activeWorkspace!.id, { name: "Name only" });
+  assert.equal(agent.instructions, "");
+  assert.equal(agent.presetId, null);
+  await app.inject({ method: "PATCH", url: `/api/agents/${agent.id}`, payload: { instructions: "Agentically saved role" } });
+  const updated = await store.getState().update(agent.id, { name: "New name", presetId: null });
+  assert.equal(updated.instructions, "Agentically saved role");
+});

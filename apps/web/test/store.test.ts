@@ -107,6 +107,7 @@ test("preset state changes only after a successful server response", async (t) =
   });
   const record: ModelPreset = {
     name: input.name,
+    isDefault: false,
     connectionId: null,
     modelId: null,
     compaction: null,
@@ -158,6 +159,7 @@ function presetRecord(id: string): ModelPreset {
   return {
     id,
     name: id,
+    isDefault: false,
     connectionId: null,
     modelId: null,
     compaction: null,
@@ -175,6 +177,7 @@ test("preset focus refresh retains all loaded pages and unchanged record identit
   );
   const offsets: number[] = [];
   t.mock.method(globalThis, "fetch", async (url: string) => {
+    if (url.endsWith("/default")) return Response.json({ preset: null });
     const offset = Number(
       new URL(url, "http://localhost").searchParams.get("offset"),
     );
@@ -203,7 +206,7 @@ test("an old preset refresh cannot overwrite a newer successful save", async (t)
     globalThis,
     "fetch",
     async (_url: string, options?: RequestInit) =>
-      options?.method === "PATCH"
+      _url.endsWith("/default") ? Response.json({ preset: null }) : options?.method === "PATCH"
         ? Response.json({ ...record, name: "New" })
         : old,
   );
@@ -222,7 +225,8 @@ test("confirmed provider selection repairs loaded preset bindings and prevents s
   let finish!: (response: Response) => void;
   const pending = new Promise<Response>(resolve => { finish = resolve; });
   let reads = 0;
-  t.mock.method(globalThis, "fetch", async () => {
+  t.mock.method(globalThis, "fetch", async (url: string) => {
+    if (url.endsWith("/default")) return Response.json({ preset: null });
     reads++;
     return reads === 1 ? Response.json({ items: [linked, unrelated], total: 2 }) : pending;
   });
@@ -240,4 +244,74 @@ test("confirmed provider selection repairs loaded preset bindings and prevents s
   assert.deepEqual(repaired.compaction, linked.compaction);
   assert.equal(repaired.updatedAt, linked.updatedAt);
   assert.equal(store.getState().presets[1], other);
+});
+
+test("default presets beyond the loaded page stay available, replace previous flags and clear without rebinding agents", async (t) => {
+  const { app, settings } = await connectedSetup(t);
+  const store = createDashboardStore(settings);
+  for (let i = 0; i < 100; i++) await store.getState().savePreset(null, { name: `Preset ${i}` });
+  // Separate creation timestamps so UUID tie-breaking cannot move this into page one.
+  await new Promise((resolve) => setTimeout(resolve, 2));
+  const outside = await store.getState().savePreset(null, { name: "Default beyond page", isDefault: true });
+  const fresh = createDashboardStore(settings);
+  await fresh.getState().loadPresets();
+  assert.equal(fresh.getState().presets.length, 100);
+  assert.equal(fresh.getState().presets.some((preset) => preset.id === outside.id), false);
+  assert.equal(fresh.getState().defaultPreset?.id, outside.id);
+  const first = fresh.getState().presets[0]!;
+  await fresh.getState().savePreset(first.id, { isDefault: true, name: first.name });
+  assert.equal(fresh.getState().defaultPreset?.id, first.id);
+  assert.equal(fresh.getState().presets.filter((preset) => preset.isDefault).length, 1);
+  await store.getState().loadPresets();
+  assert.equal(store.getState().defaultPreset?.id, first.id);
+  assert.equal(store.getState().presets.find((preset) => preset.id === outside.id)?.isDefault, false);
+  await app.inject({ method: "PATCH", url: `/api/model-presets/${outside.id}`, payload: { isDefault: true } });
+  await fresh.getState().loadPresets();
+  assert.equal(fresh.getState().defaultPreset?.id, outside.id);
+  assert.equal(fresh.getState().presets.find((preset) => preset.id === first.id)?.isDefault, false);
+  await fresh.getState().savePreset(outside.id, { name: outside.name, isDefault: false });
+  assert.equal(fresh.getState().defaultPreset, null);
+  await fresh.getState().savePreset(outside.id, { name: outside.name, isDefault: true });
+  const before = fresh.getState().defaultPreset;
+  await assert.rejects(fresh.getState().savePreset(first.id, { name: "", isDefault: true }));
+  assert.equal(fresh.getState().defaultPreset, before);
+  await fresh.getState().deletePreset(outside.id);
+  assert.equal(fresh.getState().defaultPreset, null);
+});
+
+test("default reads coalesce, reject stale responses after saves, retain failures and can retry", async (t) => {
+  const previous = { ...presetRecord("old"), isDefault: true };
+  const next = { ...presetRecord("next"), isDefault: true };
+  let finish!: (response: Response) => void;
+  let fail = false;
+  let reads = 0;
+  t.mock.method(globalThis, "fetch", async (_url: string, options?: RequestInit) => {
+    if (options?.method === "PATCH") return Response.json(next);
+    reads++;
+    if (fail) return Response.json({ error: "Unavailable" }, { status: 500 });
+    return new Promise<Response>((resolve) => { finish = resolve; });
+  });
+  const store = createDashboardStore(createSettingsStore(initialSettings()));
+  store.setState({ defaultPreset: previous, presets: [previous, { ...next, isDefault: false }] });
+  const first = store.getState().loadDefaultPreset();
+  const duplicate = store.getState().loadDefaultPreset();
+  assert.equal(first, duplicate);
+  assert.equal(reads, 1);
+  await store.getState().savePreset(next.id, { name: next.name, isDefault: true });
+  finish(Response.json({ preset: previous }));
+  assert.equal((await first)?.id, next.id);
+  assert.equal(store.getState().defaultPreset?.id, next.id);
+  assert.equal(store.getState().presets.find((preset) => preset.id === previous.id)?.isDefault, false);
+  const staleFailure = store.getState().loadDefaultPreset();
+  await store.getState().savePreset(next.id, { name: next.name, isDefault: true });
+  finish(Response.json({ error: "Stale failure" }, { status: 500 }));
+  assert.equal((await staleFailure)?.id, next.id);
+  fail = true;
+  await assert.rejects(store.getState().loadDefaultPreset(), /Unavailable/);
+  assert.equal(store.getState().defaultPreset?.id, next.id);
+  fail = false;
+  const retry = store.getState().loadDefaultPreset();
+  finish(Response.json({ preset: null }));
+  assert.equal(await retry, null);
+  assert.equal(store.getState().defaultPreset, null);
 });

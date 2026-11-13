@@ -116,6 +116,22 @@ function PresetEditor({
               />
             )}
           </Field>
+          <label className={styles.defaultOption}>
+            <input
+              name="isDefault"
+              type="checkbox"
+              checked={draft.isDefault}
+              onChange={(event) =>
+                setDraft({ ...draft, isDefault: event.target.checked })
+              }
+              aria-describedby="preset-default-hint"
+            />
+            Use as default for new agents
+          </label>
+          <p id="preset-default-hint" className={styles.modelStatus}>
+            Saving this as the default replaces any previous default. New agents
+            can still be created without a preset.
+          </p>
         </section>
         <section className={styles.formSection}>
           <Field
@@ -416,6 +432,9 @@ export default function Presets() {
                 <span>
                   <strong>{preset.name}</strong>
                   <small>{preset.modelId ?? "No model selected"}</small>
+                  {preset.isDefault && (
+                    <small className={styles.defaultLabel}>Default</small>
+                  )}
                 </span>
               </button></Appearance>
             ))}

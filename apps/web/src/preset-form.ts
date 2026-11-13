@@ -1,6 +1,7 @@
 import type { Compaction, ModelPreset, PresetInput } from "./api";
 export interface PresetDraft {
   name: string;
+  isDefault: boolean;
   modelId: string;
   connectionId: string | null;
   compactionMode: Compaction["mode"];
@@ -9,6 +10,7 @@ export interface PresetDraft {
 export function draftFromPreset(preset?: ModelPreset): PresetDraft {
   return {
     name: preset?.name ?? "",
+    isDefault: preset?.isDefault ?? false,
     modelId: preset?.modelId ?? "",
     connectionId: preset?.connectionId ?? null,
     compactionMode: preset?.compaction?.mode ?? "percentage",
@@ -18,6 +20,7 @@ export function draftFromPreset(preset?: ModelPreset): PresetDraft {
 export function draftToInput(draft: PresetDraft): PresetInput {
   return {
     name: draft.name.trim(),
+    isDefault: draft.isDefault,
     connectionId: draft.connectionId,
     modelId: draft.connectionId ? draft.modelId.trim() || null : null,
     compaction:

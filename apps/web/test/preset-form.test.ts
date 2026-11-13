@@ -11,6 +11,7 @@ test("only a name is required and compaction defaults to empty", () => {
   assert.deepEqual(validateDraft(draft), {});
   assert.deepEqual(draftToInput(draft), {
     name: "Agent",
+    isDefault: false,
     connectionId: null,
     modelId: null,
     compaction: null,

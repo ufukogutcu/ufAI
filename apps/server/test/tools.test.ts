@@ -365,7 +365,7 @@ test("populated v11 upgrade retains task content and managed paths", async (t) =
   removeToolTables(s.db);
   s.db.pragma("user_version=11");
   const upgraded = openDatabase(s.path);
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 14);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 15);
   assert.equal(
     (
       upgraded
@@ -686,4 +686,66 @@ test("activity API pages newest-first and refreshes by validated ascending seque
   } finally {
     await app.close();
   }
+});
+
+test("instruction updates are owned, bounded, recorded, replay-safe and clearable", async (t) => {
+  const s = await setup(t);
+  const before = s.engine.requiredAgent("a");
+  const events: string[] = [];
+  (s.tools as any).changed = (id: string) => events.push(id);
+  const call = { id: "instructions", name: "agent_update_instructions", arguments: { instructions: "Keep responses concise." } };
+  const result = await s.tools.dispatch(s.owner, call, s.signal, async () => {});
+  assert.equal(result.ok, true);
+  assert.equal(s.engine.requiredAgent("a").instructions, call.arguments.instructions);
+  assert.equal(s.engine.requiredAgent("a").revision, before.revision + 1);
+  assert.equal(s.engine.requiredAgent("b").instructions, "Use tools");
+  assert.deepEqual(events, [s.owner.workspaceId, s.owner.workspaceId, s.owner.workspaceId]);
+  assert.deepEqual(await s.tools.dispatch(s.owner, call, s.signal, async () => {}), result);
+  assert.equal(events.length, 3);
+  assert.equal(s.engine.requiredAgent("a").revision, before.revision + 1);
+  assert.equal((s.db.prepare("SELECT state FROM tool_invocations WHERE callId='instructions'").get() as any).state, "completed");
+  const reopened = openDatabase(s.path);
+  try { assert.equal((reopened.prepare("SELECT instructions FROM agents WHERE id='a'").get() as any).instructions, call.arguments.instructions); }
+  finally { reopened.close(); }
+  for (const [i, args] of [
+    { instructions: "x".repeat(8001) },
+    { instructions: null },
+    { instructions: "Other", agentId: "b" },
+  ].entries()) {
+    const bad = await s.tools.dispatch(s.owner, { ...call, id: `invalid-${i}`, arguments: args }, s.signal, async () => {});
+    assert.equal(bad.ok, false);
+  }
+  const spoofed = await s.tools.dispatch({ ...s.owner, agentId: "b" }, { ...call, id: "foreign" }, s.signal, async () => {});
+  assert.equal(spoofed.ok, false);
+  assert.equal(s.engine.requiredAgent("b").instructions, "Use tools");
+  const status = s.engine.submit("a", "status", "Status", randomUUID());
+  const statusResult = await s.tools.dispatch({ ...s.owner, turnId: status.turnId }, { ...call, id: "status" }, s.signal, async () => {});
+  assert.equal(statusResult.ok, false);
+  const boundary = await s.tools.dispatch(s.owner, { ...call, id: "boundary", arguments: { instructions: "x".repeat(8000) } }, s.signal, async () => {});
+  assert.equal(boundary.ok, true);
+  const clear = await s.tools.dispatch(s.owner, { ...call, id: "clear", arguments: { instructions: "" } }, s.signal, async () => {});
+  assert.equal(clear.ok, true);
+  assert.equal(s.engine.requiredAgent("a").instructions, "");
+});
+
+test("self-updated instructions keep the running snapshot and reach subsequent ordinary turns", async (t) => {
+  const s = await setup(t);
+  const seen: string[] = [];
+  let round = 0;
+  s.connections.toolRound = async (snapshot, request): Promise<ToolRound> => {
+    seen.push(snapshot.instructions);
+    assert.ok(request.tools.some((tool) => tool.name === "agent_update_instructions"));
+    return {
+      text: "Done",
+      calls: round++ === 0 ? [{ id: "self-update", name: "agent_update_instructions", arguments: { instructions: "Use short paragraphs." } }] : [],
+      continuation: [], usage: null,
+    };
+  };
+  (s.engine as any).options.autoStart = true;
+  s.engine.wake();
+  await until(() => s.engine.task(s.owner.taskId).status === "completed");
+  assert.deepEqual(seen, ["Use tools", "Use tools"]);
+  const next = s.engine.submit("a", "new", "Follow up", randomUUID());
+  await until(() => s.engine.task(next.taskId!).status === "completed");
+  assert.equal(seen.at(-1), "Use short paragraphs.");
 });

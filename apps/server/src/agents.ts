@@ -121,6 +121,12 @@ export function registerAgents(
     async (req, reply) => {
       workspace(req.params.id);
       const v = validate(req.body);
+      if (!Object.hasOwn(req.body as object, "presetId")) {
+        const preset = db
+          .prepare("SELECT id FROM model_presets WHERE isDefault=1")
+          .get() as { id: string } | undefined;
+        v.presetId = preset?.id ?? null;
+      }
       if (v.clusterId !== null) {
         if (typeof v.clusterId !== "string")
           invalid("clusterId", "Choose a Cluster in this workspace.");

@@ -10,7 +10,14 @@ export function restoreOutputColumns(database: Database.Database) {
   `);
 }
 
+export function removePresetDefault(database: Database.Database) {
+  if ((database.pragma("table_info(model_presets)") as { name: string }[]).some((column) => column.name === "isDefault")) {
+    database.exec("DROP INDEX model_presets_default; ALTER TABLE model_presets DROP COLUMN isDefault");
+  }
+}
+
 export function removeMessagingTables(database: Database.Database) {
+  removePresetDefault(database);
   database.exec(`DROP TRIGGER IF EXISTS communication_workspace;
     DROP TABLE IF EXISTS agent_schedule_state; DROP TABLE IF EXISTS messaging_idempotency;
     DROP TABLE IF EXISTS messaging_operations; DROP TABLE IF EXISTS workspace_inbox;
