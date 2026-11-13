@@ -169,6 +169,12 @@ function merge<T extends { id: string }>(before: T[], after: T[]) {
 export function createAgentStore() {
   const toolRefresh = new Set<string>();
   const communicationRefresh = new Set<string>();
+  const pendingRefresh = new Set<string>();
+  const layoutRefresh = new Set<string>();
+  // Execution changes do not increment the saved agent revision. Order runtime
+  // snapshots independently so a slower read or position save cannot rewind them.
+  let snapshotSequence = 0;
+  const activitySequences = new Map<string, number>();
   const loads = new Map<string, Promise<void>>(),
     positionWrites = new Map<string, Promise<void>>();
   const pendingPositions = new Map<
@@ -179,12 +185,51 @@ export function createAgentStore() {
   const pendingClusterLayouts = new Map<string, Partial<Cluster>>();
   const revisions = new Map<string, number>();
   return createStore<AgentState>((set, get) => {
-    function put(agent: Agent) {
+    function reconcileAgent(
+      existing: Agent | undefined,
+      agent: Agent,
+      sequence?: number,
+      preserveLayout = false,
+      preserveSaved = false,
+    ) {
+      let next = existing && (preserveSaved || existing.revision > agent.revision)
+        ? {
+            ...existing,
+            state: agent.state,
+            queuedCount: agent.queuedCount,
+            runningTaskCount: agent.runningTaskCount,
+          }
+        : agent;
+      if (sequence !== undefined) {
+        if (existing && sequence < (activitySequences.get(agent.id) ?? 0)) {
+          next = {
+            ...next,
+            state: existing.state,
+            queuedCount: existing.queuedCount,
+            runningTaskCount: existing.runningTaskCount,
+          };
+        } else {
+          activitySequences.set(agent.id, sequence);
+        }
+      }
+      if (existing && preserveLayout)
+        next = {
+          ...next,
+          x: existing.x,
+          y: existing.y,
+          clusterId: existing.clusterId,
+        };
+      return equal(existing, next) ? existing! : next;
+    }
+    function layoutPending(id: string) {
+      return pendingPositions.has(id) || positionWrites.has(id);
+    }
+    function put(agent: Agent, sequence?: number, preserveLayout = false) {
       const state = get(),
         existing = state.agents[agent.id];
-      if (existing && existing.revision > agent.revision) return;
-      if (equal(existing, agent)) return;
-      const agents = { ...state.agents, [agent.id]: agent };
+      const next = reconcileAgent(existing, agent, sequence, preserveLayout);
+      if (next === existing) return;
+      const agents = { ...state.agents, [agent.id]: next };
       const old = state.nodes[agent.workspaceId] ?? emptyNodes;
       const nodes = workspaceNodes(
         Object.values(agents).filter(
@@ -209,6 +254,19 @@ export function createAgentStore() {
       const promise = action().finally(() => loads.delete(key));
       loads.set(key, promise);
       return promise;
+    }
+    async function refresh(key: string, action: () => Promise<void>) {
+      const running = loads.get(key);
+      if (running) {
+        pendingRefresh.add(key);
+        return running;
+      }
+      return single(key, async () => {
+        do {
+          pendingRefresh.delete(key);
+          await action();
+        } while (pendingRefresh.has(key));
+      });
     }
     async function writeCluster(id: string, input: Partial<Cluster>) {
       const cluster = await request<Cluster>(`/clusters/${id}`, "PATCH", input);
@@ -526,7 +584,9 @@ export function createAgentStore() {
       error: "",
       connected: true,
       async loadWorkspace(id, layoutMutation = false) {
-        return single(`workspace:${id}`, async () => {
+        if (layoutMutation) layoutRefresh.add(id);
+        return refresh(`workspace:${id}`, async () => {
+          const applyLayout = layoutRefresh.delete(id);
           try {
             const version = revisions.get(id) ?? 0;
             async function all<T>(path: string) {
@@ -549,34 +609,43 @@ export function createAgentStore() {
               `/workspaces/${id}/deletions`,
             );
             set((s) => ({ deletions: { ...s.deletions, [id]: deletions } }));
+            const sequence = ++snapshotSequence;
             const [allAgents, allClusters] = await Promise.all([
               all<Agent>(`/workspaces/${id}/agents`),
               all<Cluster>(`/workspaces/${id}/clusters`),
             ]);
-            if (
-              (revisions.get(id) ?? 0) !== version ||
-              (get().canvasInteracting && !layoutMutation)
-            )
-              return;
             set((state) => {
+              const invalidated = (revisions.get(id) ?? 0) !== version;
+              const preserveLayout =
+                invalidated ||
+                (state.canvasInteracting && !applyLayout);
               const agents = { ...state.agents },
                 clusters = { ...state.clusters };
               const ids = new Set(allAgents.map((a) => a.id)),
                 cids = new Set(allClusters.map((c) => c.id));
               for (const a of Object.values(agents))
-                if (a.workspaceId === id && !ids.has(a.id)) delete agents[a.id];
+                if (
+                  !preserveLayout &&
+                  a.workspaceId === id &&
+                  !ids.has(a.id) &&
+                  sequence >= (activitySequences.get(a.id) ?? 0)
+                ) delete agents[a.id];
               for (const c of Object.values(clusters))
-                if (c.workspaceId === id && !cids.has(c.id))
+                if (!preserveLayout && c.workspaceId === id && !cids.has(c.id))
                   delete clusters[c.id];
               for (const a of allAgents)
-                if (
-                  !pendingPositions.has(a.id) &&
-                  !positionWrites.has(a.id) &&
-                  !(agents[a.id] && agents[a.id]!.revision > a.revision)
-                )
-                  agents[a.id] = equal(agents[a.id], a) ? agents[a.id]! : a;
+                if (!preserveLayout || agents[a.id])
+                  agents[a.id] = reconcileAgent(
+                    agents[a.id], a, sequence,
+                    preserveLayout || layoutPending(a.id), invalidated,
+                  );
               for (const c of allClusters)
-                clusters[c.id] = equal(clusters[c.id], c) ? clusters[c.id]! : c;
+                if (
+                  !preserveLayout &&
+                  !clusterWrites.has(c.id) &&
+                  !pendingClusterLayouts.has(c.id)
+                )
+                  clusters[c.id] = equal(clusters[c.id], c) ? clusters[c.id]! : c;
               const old = state.nodes[id] ?? emptyNodes;
               const nodes = workspaceNodes(
                 Object.values(agents).filter((a) => a.workspaceId === id),
@@ -589,7 +658,7 @@ export function createAgentStore() {
                 nodes:
                   nodes === old ? state.nodes : { ...state.nodes, [id]: nodes },
                 selected:
-                  state.selected[id] && !ids.has(state.selected[id]!)
+                  state.selected[id] && !agents[state.selected[id]!]
                     ? { ...state.selected, [id]: null }
                     : state.selected,
                 selectedCluster:
@@ -605,14 +674,15 @@ export function createAgentStore() {
         });
       },
       async refreshAgent(id) {
-        return single(`agent:${id}`, async () => {
+        return refresh(`agent:${id}`, async () => {
           try {
+            const sequence = ++snapshotSequence;
             const [a, w, chat] = await Promise.all([
               request<Agent>(`/agents/${id}`),
               request<AgentWorkload>(`/agents/${id}/status`),
               request<AgentChat>(`/agents/${id}/chat`),
             ]);
-            if (!pendingPositions.has(id) && !positionWrites.has(id)) put(a);
+            put(a, sequence, get().canvasInteracting || layoutPending(id));
             set((s) => ({
               workloads: { ...s.workloads, [id]: w },
               chats: { ...s.chats, [id]: chat },
@@ -687,13 +757,14 @@ export function createAgentStore() {
         if (id) void get().refreshAgent(id);
       },
       async create(workspaceId, input) {
+        const sequence = ++snapshotSequence;
         const a = await request<Agent>(
           `/workspaces/${workspaceId}/agents`,
           "POST",
           input,
         );
         revisions.set(workspaceId, (revisions.get(workspaceId) ?? 0) + 1);
-        put(a);
+        put(a, sequence);
         set((s) => ({
           createIn: null,
           selected: { ...s.selected, [workspaceId]: a.id },
@@ -701,9 +772,10 @@ export function createAgentStore() {
         return a;
       },
       async update(id, input) {
+        const sequence = ++snapshotSequence;
         const a = await request<Agent>(`/agents/${id}`, "PATCH", input);
         revisions.set(a.workspaceId, (revisions.get(a.workspaceId) ?? 0) + 1);
-        put(a);
+        put(a, sequence, get().canvasInteracting || layoutPending(id));
         return a;
       },
       async remove(id) {
@@ -750,6 +822,7 @@ export function createAgentStore() {
             const value = pendingPositions.get(id)!;
             pendingPositions.delete(id);
             try {
+              const sequence = ++snapshotSequence;
               const saved = await request<Agent>(
                 `/agents/${id}`,
                 "PATCH",
@@ -759,7 +832,7 @@ export function createAgentStore() {
                 a.workspaceId,
                 (revisions.get(a.workspaceId) ?? 0) + 1,
               );
-              if (!pendingPositions.has(id)) put(saved);
+              put(saved, sequence, pendingPositions.has(id));
               if (!pendingPositions.size && !pendingClusterLayouts.size)
                 set({ positionError: "" });
             } catch (e) {

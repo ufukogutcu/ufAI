@@ -105,6 +105,52 @@ test("running-task counts are distinct, agent-scoped and exclude queued, waiting
   assert.equal(f.engine.requiredAgent("a").runningTaskCount, 0);
 });
 
+test("agent activity combines Chat and tasks, prioritizes waits over fresh queues and preserves parked resumptions", async t => {
+  const f = setup(async () => result("Unused"), false);
+  t.after(() => f.close());
+  const task = f.engine.submit("a", "new", "Task", "activity-task");
+  const chat = f.engine.submit("a", "chat", "Chat", "activity-chat");
+  const setTurn = f.db.prepare("UPDATE agent_turns SET status=?,phase=? WHERE id=?");
+  const setTask = f.db.prepare("UPDATE agent_tasks SET status=? WHERE id=?");
+  const cases = [
+    ["queued", "queued", "queued", 0, 2],
+    ["running", "queued", "running", 1, 1],
+    ["queued", "running", "running", 0, 1],
+    ["running", "running", "running", 1, 0],
+    ["waiting", "running", "running", 0, 0],
+    ["running", "waiting", "running", 1, 0],
+    ["waiting", "queued", "waiting", 0, 1],
+    ["queued", "waiting", "waiting", 0, 1],
+    ["waiting", "waiting", "waiting", 0, 0],
+    ["completed", "completed", "idle", 0, 0],
+    ["cancelled", "cancelled", "idle", 0, 0],
+    ["failed", "completed", "failed", 0, 0],
+    ["completed", "blocked", "blocked", 0, 0],
+  ] as const;
+  for (const [taskStatus, chatStatus, state, runningTaskCount, queuedCount] of cases) {
+    setTurn.run(taskStatus, "generating", task.turnId);
+    setTurn.run(chatStatus, "generating", chat.turnId);
+    setTask.run(taskStatus, task.taskId);
+    setTask.run(chatStatus, chat.taskId);
+    const actual = f.engine.requiredAgent("a");
+    assert.deepEqual({ state: actual.state, runningTaskCount: actual.runningTaskCount, queuedCount: actual.queuedCount },
+      { state, runningTaskCount, queuedCount }, `${taskStatus} task with ${chatStatus} Chat`);
+  }
+  setTask.run("queued", task.taskId);
+  setTask.run("queued", chat.taskId);
+  for (const parked of [task, chat]) {
+    for (const phase of ["waiting", "agent_wait", "agent_resume"]) {
+      setTurn.run("queued", "generating", task.turnId);
+      setTurn.run("queued", "generating", chat.turnId);
+      setTurn.run("queued", phase, parked.turnId);
+      const actual = f.engine.requiredAgent("a");
+      assert.equal(actual.state, "waiting", phase);
+      assert.equal(actual.runningTaskCount, 0);
+      assert.equal(actual.queuedCount, 2);
+    }
+  }
+});
+
 test("submissions are durable, deduplicated, and task contexts include prior replies even when follow-ups were queued early", async (t) => {
   let release!: () => void;
   const gate = new Promise<void>((r) => {

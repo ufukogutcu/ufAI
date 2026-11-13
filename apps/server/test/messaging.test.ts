@@ -526,17 +526,26 @@ test("automatic tool loop parks requester, runs helper and unrelated work, then 
   const s = await setup(t, true);
   s.messaging.createLink(s.workspaceId, "a", "b");
   const ran: string[] = [];
+  let sawWaiting = false, sawResumedEvent = false;
+  s.engine.events.on("change", () => {
+    const turn = s.db.prepare("SELECT status FROM agent_turns WHERE id=?").get(s.owner.turnId) as { status: string };
+    if (turn.status === "waiting") sawWaiting = true;
+    if (sawWaiting && turn.status === "running") sawResumedEvent = true;
+  });
   s.connections.toolRound = async (_snapshot, request) => {
     const agent = request.instructions.includes("You are a.") ? "a" : "b";
     ran.push(agent);
     const steps = request.continuation as any[];
-    if (agent === "b")
+    if (agent === "b") {
+      await until(() => s.engine.task(s.owner.taskId).status === "waiting");
+      assert.equal(s.engine.requiredAgent("a").state, "waiting");
       return {
         text: "Helper result",
         calls: [],
         continuation: [],
         usage: null,
       };
+    }
     if (!steps.length)
       return {
         text: "Delegating",
@@ -563,6 +572,7 @@ test("automatic tool loop parks requester, runs helper and unrelated work, then 
         continuation: [],
         usage: null,
       };
+    assert.ok(sawResumedEvent, "messaging resumption must invalidate activity before the next model round");
     return {
       text: "User final with helper result",
       calls: [],

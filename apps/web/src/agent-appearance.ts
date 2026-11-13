@@ -12,5 +12,5 @@ export const accessories = (Object.keys(catalog.accessories) as CharacterAccesso
 export const activities = (Object.keys(catalog.activities) as CharacterActivity[]).map(id => ({ id, ...catalog.activities[id] }));
 export const defaultAppearance: AgentAppearance = { kind: "pebble", color: "sage", accessories: [] };
 export function agentActivity(state: Agent["state"]): CharacterActivity {
-  return state === "running" ? "working" : "idle";
+  return state === "running" || state === "waiting" ? "working" : "idle";
 }

@@ -298,6 +298,12 @@ test("artifact quotas, source links, managed symlinks and failed ingest are expl
 test("waiting releases agent and connection slots, completion before wait is not lost", async (t) => {
   const s = await setup(t),
     steps = new Map<string, number>();
+  let sawWaiting = false, sawResumedEvent = false;
+  s.engine.events.on("change", () => {
+    const turn = s.db.prepare("SELECT status FROM agent_turns WHERE id=?").get(s.owner.turnId) as { status: string };
+    if (turn.status === "waiting") sawWaiting = true;
+    if (sawWaiting && turn.status === "running") sawResumedEvent = true;
+  });
   s.connections.toolRound = async (
     _snapshot,
     r: TaskRequest,
@@ -340,6 +346,7 @@ test("waiting releases agent and connection slots, completion before wait is not
         usage: null,
       };
     }
+    assert.ok(sawResumedEvent, "resumption must invalidate the UI before the next model round produces output");
     return {
       text: "Finished after wait",
       calls: [],

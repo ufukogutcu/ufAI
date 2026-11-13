@@ -117,7 +117,8 @@ export class AgentExecution {
       .get(id) as { count: number };
     const waiting = this.db
       .prepare(
-        "SELECT id FROM agent_turns WHERE agentId=? AND status='waiting' LIMIT 1",
+        `SELECT id FROM agent_turns WHERE agentId=? AND taskId IS NOT NULL
+          AND (status='waiting' OR (status='queued' AND phase IN ('waiting','agent_wait','agent_resume'))) LIMIT 1`,
       )
       .get(id);
     const issue = this.db
@@ -132,10 +133,10 @@ export class AgentExecution {
       runningTaskCount: running.count,
       state: this.db.prepare("SELECT 1 FROM agent_turns WHERE agentId=? AND taskId IS NOT NULL AND status='running' LIMIT 1").get(id)
         ? "running"
-        : counts.queued
-          ? "queued"
-          : waiting
-            ? "waiting"
+        : waiting
+          ? "waiting"
+          : counts.queued
+            ? "queued"
             : (issue?.status ?? "idle"),
     };
   }
@@ -740,6 +741,7 @@ export class AgentExecution {
             )
             .run(now(), turn.id);
           if (turn.taskId) this.refreshTask(turn.taskId);
+          this.event(turn.agentId);
           parked.resume?.();
           parked.resume = undefined;
           continue;

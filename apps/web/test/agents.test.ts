@@ -58,9 +58,10 @@ test("unchanged workspace snapshots retain node and agent references; status upd
   assert.deepEqual(s.getState().agents.agent!.appearance, agent.appearance);
 });
 
-test("only running agents work and Cluster membership uses the character node center", () => {
+test("running and waiting agents work and Cluster membership uses the character node center", () => {
   assert.equal(agentActivity("running"), "working");
-  for (const state of ["idle", "queued", "waiting", "awaiting_user", "completed", "blocked", "failed", "cancelled"] as const)
+  assert.equal(agentActivity("waiting"), "working");
+  for (const state of ["idle", "queued", "awaiting_user", "completed", "blocked", "failed", "cancelled"] as const)
     assert.equal(agentActivity(state), "idle");
   assert.equal(AGENT_WIDTH, 144); assert.equal(AGENT_HEIGHT, 192);
   const cluster = { id: "cluster", workspaceId: "workspace", name: "Group", description: "", x: 0, y: 0, width: 320, height: 200, colorSlot: 0, createdAt: "now", updatedAt: "now" };
