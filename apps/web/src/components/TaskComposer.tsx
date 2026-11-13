@@ -69,7 +69,7 @@ export function TaskComposer({
   draftKey?: string;
 }) {
   const store = useAgentStore(),
-    key = draftKey ?? (taskId === "new" ? `new:${agentId}` : (taskId ?? `status:${agentId}`));
+    key = draftKey ?? (taskId === "new" ? `new:${agentId}` : (taskId ?? `chat:${agentId}`));
   const value = useAgents((s) => s.drafts[key] ?? ""),
     files = useAgents((s) => s.fileDrafts[key] ?? emptyList);
   const [busy, setBusy] = useState(false),
@@ -93,7 +93,6 @@ export function TaskComposer({
     };
   }, [key]);
   useEffect(() => {
-    if (taskId === null) return;
     const c = new AbortController();
     setCaps(null);
     void request<{
@@ -111,7 +110,7 @@ export function TaskComposer({
     return () => c.abort();
   }, [agentId, taskId]);
   function add(incoming: File[]) {
-    if (busy || taskId === null) return;
+    if (busy) return;
     const next = [
       ...(store.getState().fileDrafts[key] ?? []),
       ...incoming.map((file) => ({
@@ -203,11 +202,11 @@ export function TaskComposer({
       className={`${styles.composer} ${mediaStyles.composer}`}
       onSubmit={submit}
       onDragOver={(e) => {
-        if (taskId !== null && e.dataTransfer.types.includes("Files"))
+        if (e.dataTransfer.types.includes("Files"))
           e.preventDefault();
       }}
       onDrop={(e) => {
-        if (taskId !== null && e.dataTransfer.files.length) {
+        if (e.dataTransfer.files.length) {
           e.preventDefault();
           add(Array.from(e.dataTransfer.files));
         }
@@ -216,7 +215,7 @@ export function TaskComposer({
       <div className={mediaStyles.fields}>
         <label htmlFor={`compose-${key}`}>
           {taskId === null
-            ? "Ask status"
+            ? "Message this agent"
             : taskId === "new"
               ? "Describe a new task"
               : "Message this task"}
@@ -227,18 +226,14 @@ export function TaskComposer({
           rows={3}
           maxLength={12000}
           autoComplete="off"
-          placeholder={
-            taskId === null
-              ? "What are you working on?…"
-              : "What would you like help with?…"
-          }
+          placeholder="What would you like help with?…"
           value={value}
           onChange={(e) => store.getState().setDraft(key, e.target.value)}
           onPaste={(e) => {
             const pasted = Array.from(e.clipboardData.files).filter((f) =>
               f.type.startsWith("image/"),
             );
-            if (pasted.length && taskId !== null) {
+            if (pasted.length) {
               e.preventDefault();
               add(pasted);
             }
@@ -276,8 +271,7 @@ export function TaskComposer({
             configure image support in Providers.
           </p>
         )}
-        {taskId !== null && (
-          <>
+        <>
             <input
               ref={input}
               className={mediaStyles.visuallyHidden}
@@ -285,7 +279,7 @@ export function TaskComposer({
               name="attachments"
               multiple
               tabIndex={-1}
-              aria-label="Choose task attachments"
+              aria-label="Choose message attachments"
               disabled={busy}
               onChange={(e) => {
                 add(Array.from(e.target.files ?? []));
@@ -301,8 +295,7 @@ export function TaskComposer({
               <Paperclip size={15} aria-hidden="true" />
               Attach Files
             </button>
-          </>
-        )}
+        </>
       </div>
       <div className={`${styles.actions} ${mediaStyles.footer}`}>
         <span>

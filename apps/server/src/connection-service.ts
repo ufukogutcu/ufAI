@@ -61,7 +61,7 @@ export class ConnectionService {
   busy(id: string) {
     return !!this.operations.get(id)?.size || !!this.pins.get(id);
   }
-  claim(id: string, lane: "work" | "status" | "exclusive") {
+  claim(id: string, lane: "work" | "chat" | "exclusive") {
     const active = this.operations.get(id) ?? new Set<string>();
     if (
       active.has("exclusive") ||

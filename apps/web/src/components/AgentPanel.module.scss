@@ -179,14 +179,11 @@
     overflow-wrap: anywhere;
   }
 }
-.workload {
+.chatStatus {
   padding: 0 20px 12px;
+  flex-shrink: 0;
   max-height: 30%;
   overflow: auto;
-  flex-shrink: 0;
-  p {
-    font-size: 13px;
-  }
 }
 .memory {
   padding: 12px 0 20px;
@@ -323,9 +320,6 @@
   .header {
     padding: 10px 16px;
   }
-  .workload {
-    max-height: 22%;
-  }
   .composer textarea {
     min-height: 36px;
     max-height: 64px;
@@ -365,8 +359,8 @@
   .taskHeading {
     max-height: none;
   }
-  .workload {
-    max-height: 140px;
+  .chatStatus {
+    max-height: none;
   }
   .composer textarea {
     resize: vertical;

@@ -524,3 +524,50 @@ test("name-only client creation and ordinary configuration updates omit instruct
   const updated = await store.getState().update(agent.id, { name: "New name", presetId: null });
   assert.equal(updated.instructions, "Agentically saved role");
 });
+
+test("Chat submissions and transcripts stay separate from task and draft state", async t => {
+  const { connectedSetup } = await import("./helpers.js");
+  const { initial } = await connectedSetup(t);
+  const store = createAgentStore();
+  const agent = await store.getState().create(initial.activeWorkspace!.id, { name: "Assistant" });
+  store.getState().setDraft(`chat:${agent.id}`, "Unsent Chat draft");
+  store.getState().setDraft(`new:${agent.id}`, "Unsent task draft");
+  const chatId = await store.getState().submit(agent.id, null, "Hello in Chat", "chat_submission");
+  assert.equal(store.getState().chats[agent.id]!.task!.id, chatId);
+  assert.equal(store.getState().chats[agent.id]!.task!.kind, "chat");
+  assert.equal(store.getState().messages[`chat:${agent.id}`]![0]!.content, "Hello in Chat");
+  assert.equal(store.getState().tasks[agent.id]!.length, 0);
+  const taskId = await store.getState().submit(agent.id, null, "Separate work", "task_submission", true);
+  assert.notEqual(chatId, taskId);
+  assert.equal(store.getState().tasks[agent.id]!.length, 1);
+  assert.equal(store.getState().drafts[`chat:${agent.id}`], "Unsent Chat draft");
+  assert.equal(store.getState().drafts[`new:${agent.id}`], "Unsent task draft");
+});
+
+test("configuration refresh updates clean fields and preserves dirty instructions with the original revision", async () => {
+  const { configurationValues, refreshConfiguration } = await import("../src/agent-configuration.js");
+  const saved = configurationValues(a);
+  const next = { ...a, name: "Renamed", instructions: "Saved by agent", revision: 2 };
+  const clean = refreshConfiguration({ draft: saved, baseline: saved, revision: 1 }, next);
+  assert.equal(clean.draft.instructions, "Saved by agent");
+  assert.equal(clean.revision, 2);
+  const dirty = refreshConfiguration({ draft: { ...saved, instructions: "My unsaved role" }, baseline: saved, revision: 1 }, next);
+  assert.equal(dirty.draft.instructions, "My unsaved role");
+  assert.equal(dirty.baseline.instructions, saved.instructions);
+  assert.equal(dirty.draft.name, "Renamed");
+  assert.equal(dirty.baseline.name, "Renamed");
+  assert.equal(dirty.revision, 1);
+});
+
+test("stale workspace snapshots cannot replace a newer saved instruction revision", async t => {
+  const oldFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = oldFetch; });
+  let agent = { ...a, instructions: "Newest role", revision: 2 };
+  globalThis.fetch = async url => Response.json(String(url).includes("/agents") ? { items: [agent], total: 1 } : { items: [], total: 0 });
+  const store = createAgentStore();
+  await store.getState().loadWorkspace("workspace");
+  agent = { ...a, instructions: "Stale role", revision: 1 };
+  await store.getState().loadWorkspace("workspace");
+  assert.equal(store.getState().agents.agent!.instructions, "Newest role");
+  assert.equal(store.getState().agents.agent!.revision, 2);
+});

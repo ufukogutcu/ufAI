@@ -365,7 +365,7 @@ test("populated v11 upgrade retains task content and managed paths", async (t) =
   removeToolTables(s.db);
   s.db.pragma("user_version=11");
   const upgraded = openDatabase(s.path);
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 17);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 18);
   assert.equal(
     (
       upgraded
@@ -693,7 +693,7 @@ test("instruction updates are owned, bounded, recorded, replay-safe and clearabl
   const before = s.engine.requiredAgent("a");
   const events: string[] = [];
   (s.tools as any).changed = (id: string) => events.push(id);
-  const call = { id: "instructions", name: "agent_update_instructions", arguments: { instructions: "Keep responses concise." } };
+  const call = { id: "instructions", name: "agent_update_instructions", arguments: { instructions: "Keep responses concise.", expectedRevision: before.revision } };
   const result = await s.tools.dispatch(s.owner, call, s.signal, async () => {});
   assert.equal(result.ok, true);
   assert.equal(s.engine.requiredAgent("a").instructions, call.arguments.instructions);
@@ -718,12 +718,12 @@ test("instruction updates are owned, bounded, recorded, replay-safe and clearabl
   const spoofed = await s.tools.dispatch({ ...s.owner, agentId: "b" }, { ...call, id: "foreign" }, s.signal, async () => {});
   assert.equal(spoofed.ok, false);
   assert.equal(s.engine.requiredAgent("b").instructions, "Use tools");
-  const status = s.engine.submit("a", "status", "Status", randomUUID());
-  const statusResult = await s.tools.dispatch({ ...s.owner, turnId: status.turnId }, { ...call, id: "status" }, s.signal, async () => {});
+  const foreign = s.engine.submit("b", "new", "Foreign task", randomUUID());
+  const statusResult = await s.tools.dispatch({ ...s.owner, turnId: foreign.turnId }, { ...call, id: "foreign-turn" }, s.signal, async () => {});
   assert.equal(statusResult.ok, false);
-  const boundary = await s.tools.dispatch(s.owner, { ...call, id: "boundary", arguments: { instructions: "x".repeat(8000) } }, s.signal, async () => {});
+  const boundary = await s.tools.dispatch(s.owner, { ...call, id: "boundary", arguments: { instructions: "x".repeat(8000), expectedRevision: s.engine.requiredAgent("a").revision } }, s.signal, async () => {});
   assert.equal(boundary.ok, true);
-  const clear = await s.tools.dispatch(s.owner, { ...call, id: "clear", arguments: { instructions: "" } }, s.signal, async () => {});
+  const clear = await s.tools.dispatch(s.owner, { ...call, id: "clear", arguments: { instructions: "", expectedRevision: s.engine.requiredAgent("a").revision } }, s.signal, async () => {});
   assert.equal(clear.ok, true);
   assert.equal(s.engine.requiredAgent("a").instructions, "");
 });
@@ -737,7 +737,7 @@ test("self-updated instructions keep the running snapshot and reach subsequent o
     assert.ok(request.tools.some((tool) => tool.name === "agent_update_instructions"));
     return {
       text: "Done",
-      calls: round++ === 0 ? [{ id: "self-update", name: "agent_update_instructions", arguments: { instructions: "Use short paragraphs." } }] : [],
+      calls: round++ === 0 ? [{ id: "self-update", name: "agent_update_instructions", arguments: { instructions: "Use short paragraphs.", expectedRevision: s.engine.requiredAgent("a").revision } }] : [],
       continuation: [], usage: null,
     };
   };
@@ -748,4 +748,69 @@ test("self-updated instructions keep the running snapshot and reach subsequent o
   const next = s.engine.submit("a", "new", "Follow up", randomUUID());
   await until(() => s.engine.task(next.taskId!).status === "completed");
   assert.equal(seen.at(-1), "Use short paragraphs.");
+});
+
+test("Chat executes tools alongside work, inspects current tasks and saves its own instructions", async t => {
+  const s = await setup(t);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  t.after(() => release());
+  let workStarted = false;
+  const chatInputs: string[] = [];
+  s.connections.toolRound = async (_snapshot, request): Promise<ToolRound> => {
+    if (!request.instructions.includes("Main agent Chat")) {
+      workStarted = true;
+      await gate;
+      return { text: "Work done", calls: [], continuation: [], usage: null };
+    }
+    chatInputs.push(request.messages.at(-1)!.content);
+    const info = await request.onTool({ id: "inspect", name: "agent_inspect", arguments: { limit: 1 } });
+    assert.equal(info.ok, true);
+    assert.equal((info.tasks as any[])[0].id, s.owner.taskId);
+    assert.equal((info.tasks as any[])[0].status, "running");
+    assert.match(request.instructions, new RegExp(s.owner.taskId));
+    const written = await request.onTool({ id: "write", name: "files_write", arguments: { path: "chat.txt", text: "Made in Chat", expectedSha256: null } });
+    assert.equal(written.ok, true);
+    const updated = await request.onTool({ id: "role", name: "agent_update_instructions", arguments: { instructions: "Be a helpful researcher.", expectedRevision: (info.agent as any).revision } });
+    assert.equal(updated.ok, true);
+    return { text: "Done in Chat", calls: [], continuation: [], usage: null };
+  };
+  (s.engine as any).options.autoStart = true;
+  s.engine.wake();
+  await until(() => workStarted);
+  const chat = s.engine.submit("a", "chat", "Set your role and make a file", randomUUID());
+  await until(() => s.engine.task(chat.taskId!).status === "completed");
+  assert.equal(s.engine.task(s.owner.taskId).status, "running");
+  assert.equal(s.engine.requiredAgent("a").runningTaskCount, 1);
+  assert.equal(s.engine.requiredAgent("a").instructions, "Be a helpful researcher.");
+  assert.equal(await readFile(join(s.files.location("task", chat.taskId!).path, "chat.txt"), "utf8"), "Made in Chat");
+  assert.deepEqual(chatInputs, ["Set your role and make a file"]);
+  release();
+  await until(() => s.engine.task(s.owner.taskId).status === "completed");
+});
+
+test("inspection is fresh, paginated and agent-owned; stale instruction tools cannot overwrite changes", async t => {
+  const s = await setup(t);
+  const dispatch = (id: string, name: string, args: Record<string, unknown>) => s.tools.dispatch(s.owner, { id, name, arguments: args }, s.signal, async () => ({}));
+  const first = await dispatch("initial", "agent_inspect", { limit: 1 });
+  assert.equal(first.ok, true);
+  assert.equal(first.total, 1);
+  const revision = (first.agent as any).revision;
+  s.db.prepare("UPDATE agent_tasks SET status='completed',summary='Finished externally' WHERE id=?").run(s.owner.taskId);
+  s.db.prepare("UPDATE agents SET instructions='Saved in Configuration',revision=revision+1 WHERE id='a'").run();
+  const stale = await dispatch("stale", "agent_update_instructions", { instructions: "Old change", expectedRevision: revision });
+  assert.equal(stale.ok, false);
+  assert.match(String(stale.error), /changed/);
+  assert.equal(s.engine.requiredAgent("a").instructions, "Saved in Configuration");
+  const fresh = await dispatch("fresh", "agent_inspect", { limit: 1 });
+  assert.equal((fresh.tasks as any[])[0].status, "completed");
+  assert.equal((fresh.agent as any).instructions, "Saved in Configuration");
+  const own = await dispatch("read-own", "agent_task_read", { taskId: s.owner.taskId, limit: 1 });
+  assert.equal(own.ok, true);
+  assert.equal((own.messages as any[])[0].content, "Make a file");
+  const next = await dispatch("read-later", "agent_task_read", { taskId: s.owner.taskId, afterSequence: (own.messages as any[])[0].sequence });
+  assert.deepEqual(next.messages, []);
+  const foreign = s.engine.submit("b", "new", "Private work", randomUUID());
+  assert.equal((await dispatch("read-foreign", "agent_task_read", { taskId: foreign.taskId })).ok, false);
+  assert.deepEqual((await dispatch("next-page", "agent_inspect", { offset: 1, limit: 1 })).tasks, []);
 });

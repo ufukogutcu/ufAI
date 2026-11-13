@@ -646,7 +646,7 @@ test("v13 upgrade preserves populated records and stable paths while backfilling
     if (table === "agents") rows.forEach((row, index) => assertCharacterUpgrade(row, retained[table]![index]));
     else assert.deepEqual(rows, retained[table], table);
   }
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 17);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 18);
   assert.deepEqual(
     (upgraded.prepare("SELECT content FROM agent_messages").all() as any[]).map(
       (r) => r.content,
@@ -1430,7 +1430,7 @@ test("a permitted agent request lets only its recipient update its own saved ins
   const sent = await s.tools.dispatch(s.owner, { ...send, id: "permitted-role" }, signal, async () => {});
   assert.equal(sent.ok, true);
   const helper = s.helper((sent as any).requestId);
-  const update = await s.tools.dispatch(helper, { id: "save-role", name: "agent_update_instructions", arguments: { instructions: "Answer with short paragraphs." } }, signal, async () => {});
+  const update = await s.tools.dispatch(helper, { id: "save-role", name: "agent_update_instructions", arguments: { instructions: "Answer with short paragraphs.", expectedRevision: s.engine.requiredAgent("b").revision } }, signal, async () => {});
   assert.equal(update.ok, true);
   assert.equal(s.engine.requiredAgent("b").instructions, "Answer with short paragraphs.");
   assert.equal(s.engine.requiredAgent("a").instructions, "");

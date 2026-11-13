@@ -24,7 +24,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 17)
+    if (version > 18)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -230,6 +230,18 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
         // Preserve centers when narrowing the character node from 208px to 144px.
         database.exec("UPDATE agents SET x = min(1000000, max(-1000000, x + 32))");
         database.pragma("user_version = 17");
+      })();
+    if (version < 18)
+      database.transaction(() => {
+        database.exec(`
+          ALTER TABLE agent_tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'task' CHECK(kind IN ('task','chat'));
+          CREATE UNIQUE INDEX agent_tasks_chat ON agent_tasks(agentId) WHERE kind='chat';
+          UPDATE agent_turns SET status='cancelled', generation=generation+1, error=NULL
+            WHERE taskId IS NULL AND status NOT IN ('completed','cancelled','superseded');
+          UPDATE agent_messages SET state='incomplete' WHERE state='streaming'
+            AND conversationId IN (SELECT id FROM conversations WHERE kind='status');
+        `);
+        database.pragma("user_version = 18");
       })();
   } catch (error) {
     database.close();

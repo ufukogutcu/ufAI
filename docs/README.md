@@ -20,10 +20,10 @@ Some terms describe planned capabilities. Check the platform guide before presen
 | Model provider | A service or local endpoint offering model access; ufAI supports connection setup, model discovery, shared model context windows, and short prompt tests; task inference with tools where the selected model supports them is supported through Agent Presets |
 | Agent runtime | An existing agent system such as Codex; ufAI currently supports Codex sign-in, model discovery, subscription usage and earned resets, and short prompt tests; task conversations with ufAI-managed tools are supported |
 | Provider | A named saved service/account/endpoint configuration with at least one model; Agent Presets select from these records |
-| Agent | A persistent workspace identity with a customizable character, instructions and a live Agent Preset; ordinary tasks have host tools; skills and fine-grained tool permissions remain planned |
+| Agent | A persistent workspace identity with a customizable character, instructions and a live Agent Preset; Chat and ordinary tasks have host tools; skills and fine-grained tool permissions remain planned |
 | Agent communication connection | A directed permission for an agent to initiate requests or notifications to another agent; different from a saved Provider account |
 | Session | A conversation or isolated task context belonging to an agent |
-| Attachment | A file sent with a task message; sending waits for every file to be saved, and visual inspection requires model support |
+| Attachment | A file sent with a Chat or task message; sending waits for every file to be saved, and visual inspection requires model support |
 | Run | An execution attempt with persisted state, tool activity, outputs, and errors |
 | Skill | Reusable instructions and supporting resources; not an independent permission grant |
 | Trigger | A planned source of work such as a schedule or external event; manual task submission already exists |

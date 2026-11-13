@@ -257,6 +257,7 @@ export interface Agent {
   runningTaskCount: number;
 }
 export interface AgentTask {
+  kind: "task" | "chat";
   source?: "user" | "agent";
   rootWorkflowId?: string;
   parentRequestId?: string | null;
@@ -317,7 +318,12 @@ export interface AgentWorkload {
   tasks: AgentTask[];
   running: AgentTurn[];
   queuedCount: number;
+  /** Retired status conversations never execute. */
   statusTurn: AgentTurn | null;
+}
+export interface AgentChat {
+  task: AgentTask | null;
+  turns: AgentTurn[];
 }
 export interface TaskDetail {
   task: AgentTask;

@@ -358,7 +358,7 @@ test("v12 upgrade retains existing messages, references and paths; interrupted i
     (db.prepare("SELECT mode FROM artifact_references").get() as any).mode,
     "file",
   );
-  assert.equal(db.pragma("user_version", { simple: true }), 17);
+  assert.equal(db.pragma("user_version", { simple: true }), 18);
   const files = new ManagedFiles(db, join(root, "files"));
   await files.start();
   const artifacts = new ArtifactService(db, files, () => {});
@@ -949,4 +949,21 @@ test("native adapter restrictions reject unsupported formats and oversized media
     /native input limit/,
   );
   assert.equal(reads, 0);
+});
+
+test("Chat accepts file-only messages atomically and retries preserve one Chat and its uploads", async t => {
+  const s = await setup(t);
+  const requestId = randomUUID();
+  const send = () => s.app.inject({ method: "POST", url: "/api/agents/a/chat/messages", ...multipart([{ name: "notes.txt", bytes: Buffer.from("Chat input") }], "", requestId) });
+  const first = await send();
+  assert.equal(first.statusCode, 202, first.body);
+  assert.deepEqual((await send()).json(), first.json());
+  const detail = (await s.app.inject("/api/agents/a/chat")).json();
+  assert.equal(detail.task.kind, "chat");
+  const messages = (await s.app.inject("/api/agents/a/chat/messages")).json();
+  const attachment = messages.items[0].parts.find((p: any) => p.type === "artifact");
+  assert.equal(attachment.name, "notes.txt");
+  assert.equal((await s.app.inject(`/api/artifact-versions/${attachment.versionId}/content`)).body, "Chat input");
+  assert.equal((s.db.prepare("SELECT count(*) AS n FROM artifact_versions").get() as any).n, 1);
+  assert.equal((await s.app.inject("/api/agents/a/tasks")).json().total, 0);
 });

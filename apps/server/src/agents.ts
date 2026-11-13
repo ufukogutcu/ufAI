@@ -67,6 +67,7 @@ export function registerAgents(
       "y",
       "clusterId",
       "appearance",
+      ...(existing ? ["expectedRevision"] : []),
     ]);
     const v = {
       name: "",
@@ -78,6 +79,10 @@ export function registerAgents(
       ...existing,
       ...p,
     };
+    if (p.expectedRevision !== undefined && (!Number.isSafeInteger(p.expectedRevision) || (p.expectedRevision as number) < 1))
+      invalid("expectedRevision", "Use a positive saved revision.");
+    if (existing && p.expectedRevision !== undefined && p.expectedRevision !== existing.revision)
+      throw new ConnectionError("Agent configuration changed. Reload the saved configuration before saving again.", 409);
     v.name = content(v.name, "name", 120);
     if (typeof v.instructions !== "string" || v.instructions.length > 8000)
       invalid("instructions", "Use at most 8,000 characters.");
@@ -263,12 +268,12 @@ export function registerAgents(
     return {
       items: db
         .prepare(
-          "SELECT * FROM agent_tasks WHERE agentId=? ORDER BY updatedAt DESC,id LIMIT ? OFFSET ?",
+          "SELECT * FROM agent_tasks WHERE agentId=? AND kind='task' ORDER BY updatedAt DESC,id LIMIT ? OFFSET ?",
         )
         .all(req.params.id, limit, offset),
       total: (
         db
-          .prepare("SELECT count(*) AS n FROM agent_tasks WHERE agentId=?")
+          .prepare("SELECT count(*) AS n FROM agent_tasks WHERE agentId=? AND kind='task'")
           .get(req.params.id) as any
       ).n,
     };
@@ -374,27 +379,53 @@ export function registerAgents(
   app.get<{ Params: { id: string } }>("/api/agents/:id/status", async (req) =>
     execution.workload(req.params.id),
   );
+  app.get<{ Params: { id: string } }>("/api/agents/:id/chat", async (req) => {
+    const task = execution.chat(req.params.id);
+    return {
+      task,
+      turns: task
+        ? db
+            .prepare(
+              "SELECT * FROM agent_turns WHERE taskId=? ORDER BY updatedAt DESC,rowid DESC LIMIT 100",
+            )
+            .all(task.id)
+        : [],
+    };
+  });
   app.get<{ Params: { id: string } }>(
-    "/api/agents/:id/status/messages",
+    "/api/agents/:id/chat/messages",
     async (req) => {
-      execution.requiredAgent(req.params.id);
-      return messages(
-        execution.conversation(req.params.id, "status"),
-        req.query,
-      );
+      const task = execution.chat(req.params.id);
+      return task
+        ? messages(task.conversationId, req.query)
+        : messages("", req.query);
     },
   );
   app.post<{ Params: { id: string } }>(
-    "/api/agents/:id/status/messages",
+    "/api/agents/:id/chat/messages",
     async (req, reply) => {
+      if (req.isMultipart() && incoming)
+        return reply
+          .code(202)
+          .send(await incoming.receive(req, req.params.id, "chat"));
       const v = input(req.body);
       return reply
         .code(202)
-        .send(
-          execution.submit(req.params.id, "status", v.content, v.requestId),
-        );
+        .send(execution.submit(req.params.id, "chat", v.content, v.requestId));
     },
   );
+  for (const method of ["GET", "POST"] as const)
+    app.route<{ Params: { id: string } }>({
+      method,
+      url: "/api/agents/:id/status/messages",
+      handler: async (req) => {
+        execution.requiredAgent(req.params.id);
+        throw new ConnectionError(
+          "Status messaging has been retired. Use /api/agents/:id/chat/messages.",
+          410,
+        );
+      },
+    });
   app.get<{ Params: { id: string } }>(
     "/api/agents/:id/memories",
     async (req) => {

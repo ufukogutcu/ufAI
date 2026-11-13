@@ -1,3 +1,4 @@
+import { configurationValues, refreshConfiguration, type ConfigurationValues } from "../agent-configuration";
 import type { AgentAppearance } from "../../../server/src/contracts";
 import { defaultAppearance } from "../agent-appearance";
 import { AgentCharacter } from "./AgentCharacter";
@@ -35,6 +36,7 @@ import type {
   AgentMessage,
   AgentTask,
   ModelPreset,
+  TaskDetail,
 } from "../../../server/src/contracts";
 import { TaskTools } from "./TaskTools";
 import { FolderLocation } from "./FolderLocation";
@@ -55,7 +57,9 @@ export function AgentForm({
     name: string;
     presetId: string | null;
     appearance?: AgentAppearance;
-  }) => Promise<void>;
+    instructions?: string;
+    expectedRevision?: number;
+  }) => Promise<Agent | void>;
 }) {
   const [appearance, setAppearance] = useState<AgentAppearance | null>(null);
   const [appearanceError, setAppearanceError] = useState("");
@@ -81,13 +85,16 @@ export function AgentForm({
   const [defaultError, setDefaultError] = useState("");
   const [defaultAttempt, setDefaultAttempt] = useState(0);
   const [initialPreset, setInitialPreset] = useState<ModelPreset | null>(null);
-  const initial = {
-    name: agent?.name ?? "",
-    presetId: agent?.presetId ?? null,
-  };
-  const [draft, setDraft] = useState(initial),
-    [baseline, setBaseline] = useState(initial),
-    [busy, setBusy] = useState(false),
+  const initial = configurationValues(agent);
+  const [configuration, setConfiguration] = useState({ draft: initial, baseline: initial, revision: agent?.revision ?? 1 });
+  const { draft, baseline } = configuration;
+  const setDraft = useCallback((next: ConfigurationValues | ((value: ConfigurationValues) => ConfigurationValues)) => {
+    setConfiguration(current => ({ ...current, draft: typeof next === "function" ? next(current.draft) : next }));
+  }, []);
+  const setBaseline = useCallback((next: ConfigurationValues | ((value: ConfigurationValues) => ConfigurationValues)) => {
+    setConfiguration(current => ({ ...current, baseline: typeof next === "function" ? next(current.baseline) : next }));
+  }, []);
+  const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const dirty = JSON.stringify(draft) !== JSON.stringify(baseline) || (!agent && appearanceTouched.current);
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
@@ -115,29 +122,32 @@ export function AgentForm({
     return () => {
       alive = false;
     };
-  }, [agent, loadDefault, defaultAttempt]);
+  }, [agent, loadDefault, defaultAttempt, setDraft, setBaseline]);
   useEffect(() => {
-    if (!dirty && agent) {
-      const next = {
-        name: agent.name,
-        presetId: agent.presetId,
-      };
-      setDraft(next);
-      setBaseline(next);
-    }
+    if (agent) setConfiguration(current => refreshConfiguration(current, agent));
   }, [agent, dirty]);
+  const stale = !!agent && dirty && configuration.revision !== agent.revision;
+  function reloadConfiguration() {
+    if (!agent) return;
+    const saved = configurationValues(agent);
+    setConfiguration({ draft: saved, baseline: saved, revision: agent.revision });
+    setError("");
+  }
   function retryDefault() {
     setDefaultAttempt((value) => value + 1);
     void load().catch(() => {});
   }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (busy || !defaultReady || (!agent && !appearance)) return;
+    if (busy || stale || !defaultReady || (!agent && !appearance)) return;
     setBusy(true);
     setError("");
     try {
-      await onSave({ ...draft, ...(!agent && appearance ? { appearance } : {}) });
-      setBaseline(draft);
+      const saved = await onSave({ name: draft.name, presetId: draft.presetId,
+        ...(agent ? { instructions: draft.instructions, expectedRevision: configuration.revision } : {}),
+        ...(!agent && appearance ? { appearance } : {}) });
+      const next = saved ? configurationValues(saved) : draft;
+      setConfiguration({ draft: next, baseline: next, revision: saved?.revision ?? configuration.revision });
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -199,6 +209,12 @@ export function AgentForm({
           </select>
         )}
       </Field>
+      {agent && <Field label="Instructions" hint="Define this agent’s role and lasting guidance. You can also ask it to update these in Chat. Saved changes apply to subsequent turns; running turns keep their starting instructions.">
+        {p => <textarea {...p} name="instructions" autoComplete="off" rows={6} maxLength={8000} disabled={busy} value={draft.instructions} onChange={e => setDraft({ ...draft, instructions: e.target.value })} />}
+      </Field>}
+      {stale && <p className="errorBanner" role="alert">Saved configuration changed while you were editing. Your draft has been kept. Copy any changes you want to keep, then reload before saving.
+        <button type="button" className="textButton" disabled={busy} onClick={reloadConfiguration}>Reload saved configuration</button>
+      </p>}
       {!defaultReady && !defaultError && (
         <p role="status">Loading default preset…</p>
       )}
@@ -229,7 +245,7 @@ export function AgentForm({
         </p>
       )}
       <div className={styles.actions}>
-        <button className="button primary" disabled={busy || !defaultReady || (!agent && !appearance)}>
+        <button className="button primary" disabled={busy || stale || !defaultReady || (!agent && !appearance)}>
           {busy ? "Saving…" : agent ? "Save Agent" : "Create Agent"}
         </button>
       </div>
@@ -244,9 +260,10 @@ function Transcript({
   taskId: string | null;
 }) {
   const store = useAgentStore(),
-    key = taskId ?? `status:${agentId}`;
+    key = taskId ?? `chat:${agentId}`;
   const messages = useAgents((s) => s.messages[key] ?? emptyList),
     total = useAgents((s) => s.messageTotals[key] ?? 0);
+  const executionId = useAgents(s => taskId ?? s.chats[agentId]?.task?.id);
   const version = useAgents((s) => s.eventVersion);
   const [error, setError] = useState("");
   const end = useRef<HTMLDivElement>(null),
@@ -303,7 +320,7 @@ function Transcript({
         <p className={styles.muted}>
           {taskId
             ? "Your task conversation appears here."
-            : "Ask about this agent’s workload without interrupting its tasks."}
+            : "Talk with this agent, ask it to do something, or describe the role you want it to take."}
         </p>
       )}
       {messages.map((m) => (
@@ -327,8 +344,8 @@ function Transcript({
           {error}
         </p>
       )}
-      {taskId && <TaskCommunications key={`communication:${taskId}`} taskId={taskId} />}
-      {taskId && <TaskTools key={`tools:${taskId}`} taskId={taskId} />}
+      {executionId && <TaskCommunications key={`communication:${executionId}`} taskId={executionId} />}
+      {executionId && <TaskTools key={`tools:${executionId}`} taskId={executionId} />}
       <div ref={end} />
     </div>
   );
@@ -487,7 +504,7 @@ export function AgentPanel({
   const store = useAgentStore(),
     guard = useNavigationGuard();
   const [editingCharacter, setEditingCharacter] = useState(false);
-  const [tab, setTab] = useState("Overview"),
+  const [tab, setTab] = useState("Chat"),
     [taskId, setTaskId] = useState<string | null>(null),
     [newTask, setNewTask] = useState(false),
     [error, setError] = useState(""),
@@ -498,7 +515,24 @@ export function AgentPanel({
       taskId: string;
     } | null>(null);
   const requestedTask=useAgents(s=>s.requestedTask?.agentId===agent.id?s.requestedTask:null);
-  useEffect(()=>{if(requestedTask){setTab("Tasks");setTaskId(requestedTask.taskId);setNewTask(false);store.setState({requestedTask:null});}},[requestedTask,store]);
+  const openConversation = useCallback(async (id: string, signal?: AbortSignal) => {
+    const detail = await request<TaskDetail>(`/tasks/${id}`, "GET", undefined, signal);
+    if (detail.task.agentId !== agent.id) return;
+    if (detail.task.kind === "chat") {
+      await store.getState().refreshAgent(agent.id);
+      if (!signal?.aborted) setTab("Chat");
+    } else { setTab("Tasks"); setTaskId(id); setNewTask(false); }
+  }, [agent.id, store]);
+  useEffect(() => {
+    if (!requestedTask) return;
+    const controller = new AbortController();
+    void openConversation(requestedTask.taskId, controller.signal)
+      .catch(e => { if (!controller.signal.aborted) setError(errorMessage(e)); })
+      .finally(() => {
+        if (!controller.signal.aborted) store.setState({ requestedTask: null });
+      });
+    return () => controller.abort();
+  }, [requestedTask, store, openConversation]);
   const hasProcesses = useAgents((s) =>
     taskId
       ? (s.toolData[taskId]?.processes.some((p) =>
@@ -508,8 +542,9 @@ export function AgentPanel({
   );
   const tasks = useAgents((s) => s.tasks[agent.id] ?? emptyList),
     memories = useAgents((s) => s.memories[agent.id] ?? emptyList),
-    workload = useAgents((s) => s.workloads[agent.id]),
+    chat = useAgents((s) => s.chats[agent.id]),
     details = useAgents((s) => (taskId ? s.details[taskId] : undefined));
+  const chatHasProcesses = useAgents(s => chat?.task ? (s.toolData[chat.task.id]?.processes.some(p => ["starting", "running"].includes(p.state)) ?? false) : false);
   const taskTotal = useAgents((s) => s.taskTotals[agent.id] ?? 0),
     memoryTotal = useAgents((s) => s.memoryTotals[agent.id] ?? 0);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -525,12 +560,12 @@ export function AgentPanel({
     setTaskId(id);
     setNewTask(false);
   }, []);
-  async function action(kind: "cancel" | "retry") {
-    if (!taskId) return;
+  async function action(kind: "cancel" | "retry", id = taskId) {
+    if (!id) return;
     try {
-      await request(`/tasks/${taskId}/${kind}`, "POST", {});
+      await request(`/tasks/${id}/${kind}`, "POST", {});
       await store.getState().refreshAgent(agent.id);
-      await store.getState().loadMessages(agent.id, taskId);
+      await store.getState().loadMessages(agent.id, tab === "Chat" ? null : id);
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -546,8 +581,11 @@ export function AgentPanel({
   async function save(values: {
     name: string;
     presetId: string | null;
+    instructions?: string;
+    expectedRevision?: number;
   }) {
-    await store.getState().update(agent.id, values);
+    try { return await store.getState().update(agent.id, values); }
+    catch (failure) { await store.getState().refreshAgent(agent.id); throw failure; }
   }
   return createPortal(
     <section
@@ -594,7 +632,7 @@ export function AgentPanel({
         </button>
       </header>
       <nav className={styles.tabs} aria-label="Agent sections">
-        {["Overview", "Tasks", "Memory", "Configuration"].map((v) => (
+        {["Chat", "Tasks", "Memory", "Configuration"].map((v) => (
           <button
             key={v}
             aria-current={tab === v ? "page" : undefined}
@@ -609,62 +647,18 @@ export function AgentPanel({
           {error}
         </p>
       )}
-      {tab === "Overview" && (
+      {tab === "Chat" && (
         <>
-          <div className={styles.workload}>
-            <p className={styles.muted}>
-              Live workload ·{" "}
-              {workload
-                ? new Date(workload.capturedAt).toLocaleTimeString()
-                : "Loading…"}
-            </p>
-            {workload?.processes?.map((p) => (
-              <button
-                className={styles.taskLink}
-                key={p.id}
-                onClick={() => {
-                  setTab("Tasks");
-                  setTaskId(p.taskId);
-                }}
-              >
-                <span>{p.command}</span>
-                <small>{p.state}</small>
-              </button>
-            ))}
-            {workload?.tasks
-              .filter((t) =>
-                ["running", "waiting", "queued", "blocked", "failed"].includes(
-                  t.status,
-                ),
-              )
-              .map((t) => (
-                <button
-                  key={t.id}
-                  className={styles.taskLink}
-                  onClick={() => {
-                    setTaskId(t.id);
-                    setNewTask(false);
-                    setTab("Tasks");
-                  }}
-                >
-                  <span>{t.title}</span>
-                  <small>{t.status.replaceAll("_", " ")}</small>
-                </button>
-              ))}
-            {workload &&
-              !workload.processes?.length &&
-              !workload.tasks.some((t) =>
-                ["running", "waiting", "queued", "blocked", "failed"].includes(
-                  t.status,
-                ),
-              ) && <p>No active tasks.</p>}
-          </div>
-          {workload?.statusTurn?.error && (
-            <p className="errorBanner" role="alert">
-              {workload.statusTurn.error} Check Configuration and ask again.
-            </p>
-          )}
-          <Transcript agentId={agent.id} taskId={null} />
+          {chat?.task && <div className={styles.chatStatus}>
+            <div className={styles.actions}>
+              <span role="status">{chat.task.status.replaceAll("_", " ")}{chat.turns.find(t => t.status === "running") ? ` · ${chat.turns.find(t => t.status === "running")!.phase}` : ""}</span>
+              {(["running", "waiting", "queued", "blocked", "failed"].includes(chat.task.status) || chatHasProcesses) && <button className="textButton" onClick={() => void action("cancel", chat.task!.id)}><Square size={13} aria-hidden />Stop</button>}
+              {["failed", "blocked"].includes(chat.task.status) && <button className="textButton" onClick={() => void action("retry", chat.task!.id)}><RotateCcw size={13} aria-hidden />Retry</button>}
+            </div>
+            {chat.task.error && <p className="errorBanner" role="alert">{chat.task.error} <a href="#/providers">Providers</a> · <a href="#/agent-presets">Presets</a></p>}
+            {chat.turns[0]?.status === "completed" && chat.turns[0].error && !chat.task.error && <p className={styles.muted}>{chat.turns[0].error}</p>}
+          </div>}
+          <Transcript key={`chat:${agent.id}`} agentId={agent.id} taskId={null} />
           <Composer agentId={agent.id} taskId={null} onCreated={created} />
         </>
       )}
@@ -719,7 +713,7 @@ export function AgentPanel({
                     className="textButton"
                     onClick={() => void action("cancel")}
                   >
-                    <Square size={13} />
+                    <Square size={13} aria-hidden />
                     Stop
                   </button>
                 )}
@@ -728,7 +722,7 @@ export function AgentPanel({
                     className="textButton"
                     onClick={() => void action("retry")}
                   >
-                    <RotateCcw size={13} />
+                    <RotateCcw size={13} aria-hidden />
                     Retry
                   </button>
                 )}
@@ -885,13 +879,11 @@ export function AgentPanel({
           <button
             className="button"
             onClick={() => {
-              setTaskId(source.taskId);
-              setNewTask(false);
-              setTab("Tasks");
+              void openConversation(source.taskId).catch(e => setError(errorMessage(e)));
               setSource(null);
             }}
           >
-            Open Task
+            Open conversation
           </button>
         </Dialog>
       )}

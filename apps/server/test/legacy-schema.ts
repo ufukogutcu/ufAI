@@ -12,7 +12,13 @@ export function restoreOutputColumns(database: Database.Database) {
   `);
 }
 
+export function removeChat(database: Database.Database) {
+  if ((database.pragma("table_info(agent_tasks)") as { name: string }[]).some(column => column.name === "kind"))
+    database.exec("DROP INDEX agent_tasks_chat; ALTER TABLE agent_tasks DROP COLUMN kind");
+}
+
 export function removeCharacters(database: Database.Database) {
+  removeChat(database);
   if ((database.pragma("table_info(agents)") as { name: string }[]).some(column => column.name === "appearance"))
     database.exec("ALTER TABLE agents DROP COLUMN appearance");
   if ((database.pragma("table_info(app_settings)") as { name: string }[]).some(column => column.name === "characterAnimationsPaused"))

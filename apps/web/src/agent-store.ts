@@ -24,6 +24,7 @@ import type {
   DeletionOperation,
   ManagedLocation,
   AgentTask,
+  AgentChat,
   AgentMessage,
   AgentMemory,
   AgentWorkload,
@@ -97,6 +98,7 @@ interface AgentState {
   ) => Promise<void>;
   nodes: Record<string, WorkspaceFlowNode[]>;
   tasks: Record<string, AgentTask[]>;
+  chats: Record<string, AgentChat>;
   taskTotals: Record<string, number>;
   details: Record<string, TaskDetail>;
   messages: Record<string, AgentMessage[]>;
@@ -135,7 +137,7 @@ interface AgentState {
       y?: number;
     },
   ) => Promise<Agent>;
-  update: (id: string, input: Partial<Agent>) => Promise<Agent>;
+  update: (id: string, input: Partial<Agent> & { expectedRevision?: number }) => Promise<Agent>;
   remove: (id: string) => Promise<void>;
   position: (
     id: string,
@@ -180,6 +182,7 @@ export function createAgentStore() {
     function put(agent: Agent) {
       const state = get(),
         existing = state.agents[agent.id];
+      if (existing && existing.revision > agent.revision) return;
       if (equal(existing, agent)) return;
       const agents = { ...state.agents, [agent.id]: agent };
       const old = state.nodes[agent.workspaceId] ?? emptyNodes;
@@ -219,6 +222,7 @@ export function createAgentStore() {
     }
     return {
       agents: {},
+      chats: {},
       fileDrafts: {},
       setFileDraft(key, files) {
         set((s) => {
@@ -284,14 +288,12 @@ export function createAgentStore() {
             try {
               await writeCluster(id, patch);
             } catch (e) {
-              if (
-                !(
-                  e instanceof RequestError &&
-                  e.status &&
-                  e.status >= 400 &&
-                  e.status < 500
-                )
-              )
+              if (!(
+                e instanceof RequestError &&
+                e.status &&
+                e.status >= 400 &&
+                e.status < 500
+              ))
                 pendingClusterLayouts.set(id, {
                   ...patch,
                   ...pendingClusterLayouts.get(id),
@@ -567,7 +569,11 @@ export function createAgentStore() {
                 if (c.workspaceId === id && !cids.has(c.id))
                   delete clusters[c.id];
               for (const a of allAgents)
-                if (!pendingPositions.has(a.id) && !positionWrites.has(a.id))
+                if (
+                  !pendingPositions.has(a.id) &&
+                  !positionWrites.has(a.id) &&
+                  !(agents[a.id] && agents[a.id]!.revision > a.revision)
+                )
                   agents[a.id] = equal(agents[a.id], a) ? agents[a.id]! : a;
               for (const c of allClusters)
                 clusters[c.id] = equal(clusters[c.id], c) ? clusters[c.id]! : c;
@@ -601,12 +607,22 @@ export function createAgentStore() {
       async refreshAgent(id) {
         return single(`agent:${id}`, async () => {
           try {
-            const [a, w] = await Promise.all([
+            const [a, w, chat] = await Promise.all([
               request<Agent>(`/agents/${id}`),
               request<AgentWorkload>(`/agents/${id}/status`),
+              request<AgentChat>(`/agents/${id}/chat`),
             ]);
             if (!pendingPositions.has(id) && !positionWrites.has(id)) put(a);
-            set((s) => ({ workloads: { ...s.workloads, [id]: w } }));
+            set((s) => ({
+              workloads: { ...s.workloads, [id]: w },
+              chats: { ...s.chats, [id]: chat },
+              details: chat.task
+                ? {
+                    ...s.details,
+                    [chat.task.id]: { task: chat.task, turns: chat.turns },
+                  }
+                : s.details,
+            }));
             await Promise.all([get().loadTasks(id), get().loadMemories(id)]);
           } catch (e) {
             set({ error: errorMessage(e) });
@@ -643,11 +659,11 @@ export function createAgentStore() {
       },
       async loadMessages(agentId, taskId, older = false) {
         return single(`messages:${taskId ?? agentId}:${older}`, async () => {
-          const key = taskId ?? `status:${agentId}`,
+          const key = taskId ?? `chat:${agentId}`,
             prior = get().messages[key] ?? [];
           const path = taskId
             ? `/tasks/${taskId}/messages`
-            : `/agents/${agentId}/status/messages`;
+            : `/agents/${agentId}/chat/messages`;
           const p = await request<Page<AgentMessage>>(
             `${path}${older && prior.length ? `?before=${prior[0]!.sequence}` : ""}`,
           );
@@ -695,10 +711,13 @@ export function createAgentStore() {
         await deleteManaged(`/agents/${id}`);
         pendingPositions.delete(id);
         const owned = new Set((get().tasks[id] ?? []).map((t) => t.id));
+        const chatId = get().chats[id]?.task?.id;
+        if (chatId) owned.add(chatId);
         set((s) => ({
           fileDrafts: Object.fromEntries(
             Object.entries(s.fileDrafts).filter(
-              ([key]) => key !== `new:${id}` && !owned.has(key),
+              ([key]) =>
+                key !== `new:${id}` && key !== `chat:${id}` && !owned.has(key),
             ),
           ),
         }));
@@ -781,7 +800,7 @@ export function createAgentStore() {
           ? `/agents/${id}/tasks`
           : taskId
             ? `/tasks/${taskId}/messages`
-            : `/agents/${id}/status/messages`;
+            : `/agents/${id}/chat/messages`;
         const send = files?.attachments.length
           ? () =>
               sendTaskFiles<{ taskId: string | null; turnId: string }>(
@@ -798,7 +817,7 @@ export function createAgentStore() {
         const accepted = await send();
         await get().refreshAgent(id);
         await get()
-          .loadMessages(id, accepted.taskId)
+          .loadMessages(id, !taskId && !newTask ? null : accepted.taskId)
           .catch((e) => set({ error: errorMessage(e) }));
         return accepted.taskId;
       },

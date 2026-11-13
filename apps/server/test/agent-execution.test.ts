@@ -139,7 +139,7 @@ test("submissions are durable, deduplicated, and task contexts include prior rep
   );
 });
 
-test("a reserved read-only status lane answers while ordinary work is running", async (t) => {
+test("Chat answers with current workload while ordinary work is running", async (t) => {
   let release!: () => void;
   const gate = new Promise<void>((r) => {
     release = r;
@@ -147,7 +147,7 @@ test("a reserved read-only status lane answers while ordinary work is running", 
   const calls: TextRequest[] = [];
   const f = setup(async (r) => {
     calls.push(r);
-    if (!r.instructions.includes("Read-only workload")) await gate;
+    if (!r.instructions.includes("Main agent Chat")) await gate;
     return result("Status or answer");
   });
   t.after(() => f.close());
@@ -155,7 +155,7 @@ test("a reserved read-only status lane answers while ordinary work is running", 
   await until(() => calls.length === 1);
   const status = f.engine.submit(
     "a",
-    "status",
+    "chat",
     "What are you doing?",
     "status_request",
   );
@@ -458,7 +458,8 @@ test("manual memory edits during maintenance win over stale automatic output", a
   assert.equal(f.engine.memories("a")[0]!.content, "Manual correction");
 });
 
-test("compaction preserves full transcripts and covers complete exchanges before a later turn", async (t) => {
+for (const target of ["new", "chat"] as const)
+test(`${target}: compaction preserves full transcripts and covers complete exchanges before a later turn`, async (t) => {
   const f = setup(async () => result("A".repeat(700)));
   t.after(() => f.close());
   f.db.prepare("UPDATE provider_models SET contextWindowOverride=8000").run();
@@ -484,7 +485,7 @@ test("compaction preserves full transcripts and covers complete exchanges before
   };
   const x = f.engine.submit(
     "a",
-    "new",
+    target,
     "Question ".repeat(40),
     "compact_request",
   );
@@ -678,3 +679,96 @@ test("SSE reconnects replay changes and expired cursors request a snapshot resyn
   );
   await expiredReader.cancel();
 });
+
+test("Chat follow-ups remain ordered, Stop leaves work running, and Chat can restart after cancellation", async t => {
+  const started: string[] = [];
+  const f = setup(async request => {
+    const text = request.messages.at(-1)!.content;
+    started.push(text);
+    if (text === "Ordinary work" || text === "Hold Chat")
+      await new Promise<void>((_resolve, reject) => request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true }));
+    return result("Answer");
+  });
+  t.after(() => f.close());
+  const work = f.engine.submit("a", "new", "Ordinary work", "ordinary_work");
+  await until(() => started.includes("Ordinary work"));
+  const chat = f.engine.submit("a", "chat", "Hold Chat", "hold_chat_input");
+  await until(() => started.includes("Hold Chat"));
+  f.engine.submit("a", "chat", "Queued follow-up", "queued_chat_input");
+  await delay(20);
+  assert.deepEqual(started, ["Ordinary work", "Hold Chat"]);
+  await f.engine.cancelTask(chat.taskId!);
+  assert.equal(f.engine.task(chat.taskId!).status, "cancelled");
+  assert.equal(f.engine.task(work.taskId!).status, "running");
+  const followup = f.engine.submit("a", "chat", "Fresh request", "fresh_chat_input");
+  assert.equal(followup.taskId, chat.taskId);
+  await until(() => f.engine.task(chat.taskId!).status === "completed");
+  assert.ok(!started.includes("Queued follow-up"));
+  await f.engine.cancelTask(work.taskId!);
+});
+
+test("Chat queue limits and blocked retries use the same durable conversation", async t => {
+  const f = setup(async () => result("Done"), false);
+  t.after(() => f.close());
+  const chat = f.engine.submit("a", "chat", "First", "chat_first_input");
+  for (let n = 0; n < 4; n++) f.engine.submit("a", "chat", `Follow-up ${n}`, `chat_followup_${n}`);
+  assert.throws(() => f.engine.submit("a", "chat", "Overflow", "chat_overflow"), /queue is full/);
+  assert.throws(() => f.engine.submit("a", "status", "Old", "old_status_input"), /retired/);
+  await f.engine.cancelTask(chat.taskId!);
+  f.db.prepare("UPDATE agents SET presetId=NULL WHERE id='a'").run();
+  f.engine.submit("a", "chat", "Blocked", "chat_blocked_input");
+  f.engine.pump();
+  assert.equal(f.engine.task(chat.taskId!).status, "blocked");
+  f.db.prepare("UPDATE agents SET presetId='preset' WHERE id='a'").run();
+  const retried = f.engine.retry(chat.taskId!);
+  assert.equal(retried.taskId, chat.taskId);
+  f.engine.pump();
+  await until(() => f.engine.task(chat.taskId!).status === "completed");
+  assert.equal(f.engine.chat("a")!.id, chat.taskId);
+});
+
+test("an interrupted Chat with queued follow-ups stays failed until explicit Retry after restart", async t => {
+  const inputs: string[] = [];
+  const f = setup(async request => { inputs.push(request.messages.at(-1)!.content); return result("Answer"); }, false);
+  t.after(() => f.close());
+  const first = f.engine.submit("a", "chat", "Interrupted input", "restart_chat_first");
+  f.engine.submit("a", "chat", "Queued follow-up", "restart_chat_second");
+  f.db.prepare("UPDATE agent_turns SET status='running' WHERE id=?").run(first.turnId);
+  const recovered = new AgentExecution(f.db, f.connections, { autoStart: false });
+  try {
+    assert.equal(recovered.task(first.taskId!).status, "failed");
+    recovered.pump();
+    assert.deepEqual(inputs, []);
+    const retry = recovered.retry(first.taskId!);
+    recovered.pump();
+    await until(() => (f.db.prepare("SELECT status FROM agent_turns WHERE id=?").get(retry.turnId) as any).status === "completed");
+    recovered.pump();
+    await until(() => recovered.task(first.taskId!).status === "completed");
+    assert.deepEqual(inputs, ["Interrupted input", "Queued follow-up"]);
+  } finally { await recovered.close(); }
+});
+
+for (const target of ["new", "chat"] as const)
+  test(`${target}: a completed turn asking for missing input still awaits the user`, async t => {
+    const f = setup(async () => result("Which color would you like?"));
+    t.after(() => f.close());
+    const calls: TextRequest[] = [];
+    f.connections.generate = async (_snapshot, request) => {
+      if (request.instructions.startsWith("Maintain this task")) {
+        calls.push(request);
+        return result(JSON.stringify({ status: "awaiting_user", summary: "The user must choose a color before the file can be written.", memories: [] }));
+      }
+      return result("Which color would you like?");
+    };
+    const submitted = f.engine.submit("a", target, "Ask me which color to use before writing the file.", `missing_color_${target}`);
+    await until(() => f.engine.task(submitted.taskId!).status === "awaiting_user");
+    const turn = f.db.prepare("SELECT status,error FROM agent_turns WHERE id=?").get(submitted.turnId) as { status: string; error: string | null };
+    assert.equal(turn.status, "completed");
+    assert.equal(turn.error, null);
+    const exchange = JSON.parse(calls[0]!.messages[0]!.content).messages;
+    assert.deepEqual(exchange.map((m: {role:string;content:string}) => [m.role,m.content]), [
+      ["user", "Ask me which color to use before writing the file."],
+      ["assistant", "Which color would you like?"],
+    ]);
+    assert.equal(f.engine.task(submitted.taskId!).error, null);
+  });
