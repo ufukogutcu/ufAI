@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createCodexUsageStore } from "../src/codex-usage-store.js";
 import { createConnectionStore } from "../src/connection-store.js";
 import { startUsagePolling } from "../src/codex-usage-polling.js";
-import { durationLabel, resetCountdown } from "../src/codex-usage-format.js";
+import { durationLabel, remainingPercent, resetCountdown, usageTooltip } from "../src/codex-usage-format.js";
 import type { CodexUsageSnapshot } from "../src/api.js";
 const snapshot: CodexUsageSnapshot = { planType: "pro", defaultLimit: null, limits: [], resetCredits: { availableCount: 1, credits: null }, ordinaryUsageAllowed: null, fetchedAt: "2026-11-12T12:00:00Z" };
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -103,6 +103,30 @@ test("duration and countdown formatting retain arbitrary quota lengths and never
   assert.equal(durationLabel(null), "Window"); assert.equal(durationLabel(90), "90m");
   assert.match(resetCountdown(100, 100000), /refresh to check/);
   assert.equal(resetCountdown(null, 0), "Reset time unknown");
+});
+
+test("usage tooltips show remaining allowance, including exhausted and over-limit windows", () => {
+  for (const [usedPercent, remaining] of [[0, 100], [20, 80], [100, 0], [120, 0]]) {
+    const limit = { id: "codex", name: null, primary: { usedPercent, windowDurationMins: 300, resetsAt: null }, secondary: null, credits: null, reachedType: null };
+    const current = { ...snapshot, defaultLimit: limit, limits: [limit] };
+    assert.equal(remainingPercent(usedPercent), remaining);
+    const tooltip = usageTooltip("Codex", current, "", 0);
+    assert.ok(tooltip.includes(`5h: ${remaining}% remaining · Reset time unknown`));
+    assert.doesNotMatch(tooltip, /% used/);
+  }
+});
+
+test("usage tooltips preserve missing and stale snapshot information", () => {
+  const missing = usageTooltip("Codex", undefined, "Sign in", 0);
+  assert.match(missing, /Usage unavailable/);
+  assert.match(missing, /Sign in/);
+  assert.doesNotMatch(missing, /% remaining/);
+  const limit = { id: "codex", name: null, primary: null, secondary: { usedPercent: 20, windowDurationMins: 10080, resetsAt: null }, credits: null, reachedType: null };
+  const stale = usageTooltip("Codex", { ...snapshot, defaultLimit: limit, limits: [limit] }, "Retry later", 0);
+  assert.match(stale, /7d: 80% remaining/);
+  assert.match(stale, /Updated /);
+  assert.match(stale, /Stale · Retry later/);
+  assert.doesNotMatch(stale, /5h|% used/);
 });
 
 test("batch usage refresh bounds concurrency and retains detailed reads while a modal is open", async (t) => {

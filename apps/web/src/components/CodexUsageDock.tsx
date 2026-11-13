@@ -4,7 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import { ConnectionContext, useConnections } from "../connection-store";
 import { CodexUsageContext, useCodexUsage } from "../codex-usage-store";
 import { startUsagePolling } from "../codex-usage-polling";
-import { creditsLabel, dateTime, durationLabel, resetCountdown, usageTooltip, usageWindows } from "../codex-usage-format";
+import { creditsLabel, dateTime, durationLabel, remainingPercent, resetCountdown, usageTooltip, usageWindows } from "../codex-usage-format";
 import type { CodexUsageWindow, ProviderConnection } from "../api";
 import { Dialog } from "./Dialog";
 import { GlassMaterial } from "./GlassMaterial";
@@ -52,11 +52,11 @@ const UsageButton = memo(function UsageButton({ provider, onOpen }: { provider: 
       void refresh(provider.id, false, true);
     }
   }, [entry?.snapshot, entry?.loading, now, provider.id, refresh]);
-  const summary = windows.map((window) => `${durationLabel(window.windowDurationMins)} ${window.usedPercent}% used`).join(", ");
+  const summary = windows.map((window) => `${durationLabel(window.windowDurationMins)} ${remainingPercent(window.usedPercent)}% remaining`).join(", ");
   return <Tooltip content={usageTooltip(provider.name, entry?.snapshot, entry?.error ?? "", now)} placement="right" hoverDelayMs={100} live multiline>
     <button className={styles.usageButton} type="button" aria-label={`${provider.name}: ${summary || (entry?.disconnected ? "Sign in to view usage" : "Usage unavailable")}. Open usage details`} aria-haspopup="dialog" onClick={() => onOpen(provider.id)}>
       {windows.length ? windows.map((window) => <span key={entry?.snapshot?.defaultLimit?.primary === window ? "primary" : "secondary"} className={styles.compactWindow}>
-        <span>{durationLabel(window.windowDurationMins)}</span><strong>{window.usedPercent}%</strong>
+        <span>{durationLabel(window.windowDurationMins)}</span><strong>{remainingPercent(window.usedPercent)}%</strong>
       </span>) : entry?.disconnected ? <LogIn size={18} aria-hidden="true" /> : entry?.loading ? <LoaderCircle size={18} aria-hidden="true" /> : <span aria-hidden="true">—</span>}
       {entry?.error && !!windows.length && <AlertCircle className={styles.staleMark} size={10} aria-hidden="true" />}
     </button>
@@ -64,7 +64,7 @@ const UsageButton = memo(function UsageButton({ provider, onOpen }: { provider: 
 });
 function UsageWindow({ window, now }: { window: CodexUsageWindow; now: number }) {
   return <div className={styles.window}>
-    <div><strong>{durationLabel(window.windowDurationMins)} usage</strong><span>{window.usedPercent}% used · {Math.max(0, 100 - window.usedPercent)}% remaining</span></div>
+    <div><strong>{durationLabel(window.windowDurationMins)} usage</strong><span>{remainingPercent(window.usedPercent)}% remaining</span></div>
     <p>{resetCountdown(window.resetsAt, now)}<br />{dateTime(window.resetsAt)}</p>
   </div>;
 }

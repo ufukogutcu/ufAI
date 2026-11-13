@@ -1,4 +1,7 @@
 import type { CodexCredits, CodexUsageSnapshot, CodexUsageWindow } from "./api";
+export function remainingPercent(usedPercent: number): number {
+  return Math.max(0, 100 - usedPercent);
+}
 export function durationLabel(minutes: number | null): string {
   if (!minutes) return "Window";
   if (minutes % 1440 === 0) return `${minutes / 1440}d`;
@@ -26,7 +29,7 @@ export const usageWindows = (snapshot?: CodexUsageSnapshot): CodexUsageWindow[] 
   [snapshot?.defaultLimit?.primary, snapshot?.defaultLimit?.secondary].filter((window): window is CodexUsageWindow => !!window);
 export function usageTooltip(name: string, snapshot: CodexUsageSnapshot | undefined, error: string, now: number): string {
   return [name, snapshot?.planType ? `Plan: ${snapshot.planType}` : "Plan unavailable",
-    ...usageWindows(snapshot).map((window) => `${durationLabel(window.windowDurationMins)}: ${window.usedPercent}% used · ${resetCountdown(window.resetsAt, now)}`),
+    ...usageWindows(snapshot).map((window) => `${durationLabel(window.windowDurationMins)}: ${remainingPercent(window.usedPercent)}% remaining · ${resetCountdown(window.resetsAt, now)}`),
     creditsLabel(snapshot?.defaultLimit?.credits ?? null),
     snapshot ? `Updated ${dateTime(Date.parse(snapshot.fetchedAt) / 1000)}` : "Usage unavailable",
     error ? `${snapshot ? "Stale · " : ""}${error}` : "",
