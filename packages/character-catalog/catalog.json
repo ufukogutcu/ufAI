@@ -32,10 +32,98 @@
     }
   },
   "accessories": {
-    "glasses": "Glasses",
-    "headphones": "Headphones",
-    "cap": "Cap",
-    "badge": "Star badge"
+    "glasses": {
+      "name": "Round glasses",
+      "slot": "face"
+    },
+    "headphones": {
+      "name": "Headphones",
+      "slot": "ears"
+    },
+    "cap": {
+      "name": "Cap",
+      "slot": "head"
+    },
+    "badge": {
+      "name": "Star badge",
+      "slot": "marking"
+    },
+    "beanie": {
+      "name": "Beanie",
+      "slot": "head"
+    },
+    "bow": {
+      "name": "Bow",
+      "slot": "head"
+    },
+    "wizard": {
+      "name": "Wizard hat",
+      "slot": "head"
+    },
+    "crown": {
+      "name": "Crown",
+      "slot": "head"
+    },
+    "headband": {
+      "name": "Rune headband",
+      "slot": "head"
+    },
+    "visor": {
+      "name": "Visor",
+      "slot": "face"
+    },
+    "earmuffs": {
+      "name": "Earmuffs",
+      "slot": "ears"
+    },
+    "communicator": {
+      "name": "Communicator",
+      "slot": "ears"
+    },
+    "scarf": {
+      "name": "Scarf",
+      "slot": "neck"
+    },
+    "bowtie": {
+      "name": "Bow tie",
+      "slot": "neck"
+    },
+    "pendant": {
+      "name": "Pendant",
+      "slot": "neck"
+    },
+    "backpack": {
+      "name": "Backpack",
+      "slot": "back"
+    },
+    "cape": {
+      "name": "Cape",
+      "slot": "back"
+    },
+    "wings": {
+      "name": "Wings",
+      "slot": "back"
+    },
+    "battery": {
+      "name": "Battery pack",
+      "slot": "back"
+    },
+    "antenna-pack": {
+      "name": "Antenna pack",
+      "slot": "back"
+    },
+    "vest": {
+      "name": "Utility vest",
+      "slot": "body"
+    },
+    "stars": {
+      "name": "Star markings",
+      "slot": "marking"
+    },
+    "circuits": {
+      "name": "Circuit detail",
+      "slot": "marking"
+    }
   },
   "activities": {
     "idle": {
@@ -75,5 +163,160 @@
     "clusterHeader": 48,
     "legacyWidth": 224,
     "legacyHeight": 104
+  },
+  "slots": {
+    "head": "Headwear",
+    "face": "Eyewear",
+    "ears": "Earwear",
+    "neck": "Neckwear",
+    "back": "Back",
+    "body": "Body",
+    "marking": "Details"
+  },
+  "looks": {
+    "cozy-pebble": {
+      "name": "Cozy Pebble",
+      "collection": "Cute",
+      "appearance": {
+        "kind": "pebble",
+        "color": "sage",
+        "accessories": [
+          "beanie",
+          "scarf"
+        ]
+      }
+    },
+    "garden-friend": {
+      "name": "Garden Friend",
+      "collection": "Cute",
+      "appearance": {
+        "kind": "sprout",
+        "color": "honey",
+        "accessories": [
+          "bow",
+          "badge"
+        ]
+      }
+    },
+    "polite-bot": {
+      "name": "Polite Bot",
+      "collection": "Cute",
+      "appearance": {
+        "kind": "bot",
+        "color": "sky",
+        "accessories": [
+          "glasses",
+          "bowtie"
+        ]
+      }
+    },
+    "winter-wanderer": {
+      "name": "Winter Wanderer",
+      "collection": "Cute",
+      "appearance": {
+        "kind": "droplet",
+        "color": "lilac",
+        "accessories": [
+          "earmuffs",
+          "backpack"
+        ]
+      }
+    },
+    "pocket-wizard": {
+      "name": "Pocket Wizard",
+      "collection": "Fantasy",
+      "appearance": {
+        "kind": "pebble",
+        "color": "sage",
+        "accessories": [
+          "wizard",
+          "cape"
+        ]
+      }
+    },
+    "forest-royal": {
+      "name": "Forest Royal",
+      "collection": "Fantasy",
+      "appearance": {
+        "kind": "sprout",
+        "color": "honey",
+        "accessories": [
+          "crown",
+          "pendant"
+        ]
+      }
+    },
+    "rune-keeper": {
+      "name": "Rune Keeper",
+      "collection": "Fantasy",
+      "appearance": {
+        "kind": "bot",
+        "color": "sky",
+        "accessories": [
+          "headband",
+          "cape"
+        ]
+      }
+    },
+    "moon-sprite": {
+      "name": "Moon Sprite",
+      "collection": "Fantasy",
+      "appearance": {
+        "kind": "droplet",
+        "color": "lilac",
+        "accessories": [
+          "wings",
+          "stars"
+        ]
+      }
+    },
+    "signal-scout": {
+      "name": "Signal Scout",
+      "collection": "Tech",
+      "appearance": {
+        "kind": "pebble",
+        "color": "sage",
+        "accessories": [
+          "visor",
+          "communicator"
+        ]
+      }
+    },
+    "circuit-gardener": {
+      "name": "Circuit Gardener",
+      "collection": "Tech",
+      "appearance": {
+        "kind": "sprout",
+        "color": "honey",
+        "accessories": [
+          "communicator",
+          "circuits"
+        ]
+      }
+    },
+    "field-engineer": {
+      "name": "Field Engineer",
+      "collection": "Tech",
+      "appearance": {
+        "kind": "bot",
+        "color": "sky",
+        "accessories": [
+          "vest",
+          "battery"
+        ]
+      }
+    },
+    "orbit-listener": {
+      "name": "Orbit Listener",
+      "collection": "Tech",
+      "appearance": {
+        "kind": "droplet",
+        "color": "lilac",
+        "accessories": [
+          "headphones",
+          "antenna-pack"
+        ]
+      }
+    }
   }
 }

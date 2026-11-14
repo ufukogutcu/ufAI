@@ -3,45 +3,60 @@ import { test } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { allAppearances, appearanceCandidates, appearanceKey, generateAppearance, validateAppearance, type AppearanceCount } from "../src/agent-appearance.js";
+import { appearanceAt, appearanceSpaceSize, createAppearanceAllocator, appearanceCandidates, appearanceKey, generateAppearance, validateAppearance, type AppearanceCount } from "../src/agent-appearance.js";
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
 import type { Agent } from "../src/contracts.js";
 import { removeChat, removeCharacters } from "./legacy-schema.js";
 
-test("384 canonical choices preserve accessory-count probabilities and penalize similar identities", () => {
-  const candidates = appearanceCandidates([]);
-  assert.equal(candidates.length, 384);
-  assert.equal(new Set(allAppearances.map(appearanceKey)).size, 384);
-  const total = candidates.reduce((sum, item) => sum + item.weight, 0);
-  for (const [count, expected] of [0.1, 0.4, 0.35, 0.12, 0.03].entries()) {
-    const sum = candidates.filter(item => item.appearance.accessories.length === count).reduce((sum, item) => sum + item.weight, 0);
-    assert.ok(Math.abs(sum / total - expected) < 1e-12);
+function seededRandom(seed = 42) {
+  return () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+}
+
+test("expanded wardrobe uses a bounded candidate pool and canonical, single-slot appearances", () => {
+  assert.equal(appearanceSpaceSize, 387072);
+  const candidates = appearanceCandidates([], seededRandom());
+  assert.ok(candidates.length > 1 && candidates.length <= 64);
+  assert.equal(new Set(candidates.map(item => appearanceKey(item.appearance))).size, candidates.length);
+  for (const item of candidates) {
+    assert.deepEqual(validateAppearance(item.appearance), item.appearance);
+    assert.ok(Number.isFinite(item.weight) && item.weight > 0);
   }
+  assert.deepEqual(appearanceAt(0), { kind: "pebble", color: "sage", accessories: [] });
+  assert.deepEqual(validateAppearance(appearanceAt(appearanceSpaceSize - 1)), appearanceAt(appearanceSpaceSize - 1));
+  assert.throws(() => appearanceAt(appearanceSpaceSize), RangeError);
   assert.deepEqual(validateAppearance({ kind: "droplet", color: "sage", accessories: ["badge", "glasses"] }), { kind: "droplet", color: "sage", accessories: ["glasses", "badge"] });
-  const used = [{ appearance: { kind: "droplet", color: "sage", accessories: ["glasses"] } as const, count: 1 }];
-  const weighted = appearanceCandidates(used as unknown as AppearanceCount[]);
-  assert.equal(weighted.length, 383);
-  const weight = (kind: string, color: string) => weighted.find(item => item.appearance.kind === kind && item.appearance.color === color && item.appearance.accessories.join() === "cap")!.weight;
-  assert.ok(weight("droplet", "sage") < weight("droplet", "sky"));
-  assert.ok(weight("droplet", "sky") < weight("bot", "sky"));
-  const repeatedSet = weighted.find(item => item.appearance.kind === "bot" && item.appearance.color === "sky" && item.appearance.accessories.join() === "glasses")!;
-  assert.ok(repeatedSet.weight < weight("bot", "sky"));
+  assert.throws(() => validateAppearance({ kind: "pebble", color: "sage", accessories: ["cap", "beanie"] }));
+  assert.throws(() => validateAppearance({ kind: "pebble", color: "sage", accessories: ["satchel"] }));
 });
 
-test("allocation reaches the last unused choice and exhaustion reuses only the least-used combinations", () => {
-  const used: AppearanceCount[] = [];
-  let seed = 42;
-  const random = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-  for (let index = 0; index < 384; index++) {
-    const appearance = generateAppearance(used, random);
-    assert.ok(!used.some(item => appearanceKey(item.appearance) === appearanceKey(appearance)));
-    used.push({ appearance, count: 1 });
+test("stalled random draws still find an unused appearance without enumerating the wardrobe", () => {
+  const used = Array.from({ length: 100 }, (_, index) => ({ appearance: appearanceAt(index), count: 1 }));
+  assert.deepEqual(generateAppearance(used, () => 0), appearanceAt(100));
+  const random = seededRandom();
+  for (let index = 0; index < 200; index++) {
+    const value = generateAppearance(used, random);
+    assert.ok(!used.some(item => appearanceKey(item.appearance) === appearanceKey(value)));
+    used.push({ appearance: value, count: 1 });
   }
-  assert.equal(appearanceCandidates(used.slice(0, -1)).length, 1);
+});
+
+test("allocator exhaustion only reuses least-used appearances", () => {
+  const allocator = createAppearanceAllocator({ kinds: ["pebble"], colors: ["sage"], groups: [["glasses"], ["badge"]] });
+  assert.equal(allocator.total, 4);
+  const used: AppearanceCount[] = [];
+  for (let index = 0; index < allocator.total; index++) {
+    const value = allocator.generate(used, () => 0);
+    assert.ok(!used.some(item => appearanceKey(item.appearance) === appearanceKey(value)));
+    used.push({ appearance: value, count: 1 });
+  }
   used[0]!.count = 2;
-  assert.equal(appearanceCandidates(used).length, 383);
-  assert.notEqual(appearanceKey(generateAppearance(used, () => 0)), appearanceKey(used[0]!.appearance));
+  const choices = allocator.candidates(used, seededRandom());
+  assert.equal(choices.length, 3);
+  assert.ok(choices.every(item => appearanceKey(item.appearance) !== appearanceKey(used[0]!.appearance)));
+  for (const item of used) item.count = 3;
+  used[1]!.count = 1;
+  assert.deepEqual(allocator.generate(used, () => 0), used[1]!.appearance);
 });
 
 test("agent appearance API isolates workspaces, permits manual duplicates and preserves unrelated fields", async t => {
@@ -80,12 +95,20 @@ test("agent appearance API isolates workspaces, permits manual duplicates and pr
   assert.deepEqual(updated.appearance.accessories, ["cap", "badge"]);
   const renamed = (await app.inject({ method: "PATCH", url: `/api/agents/${first.id}`, payload: { name: "New name" } })).json<Agent>();
   assert.deepEqual(renamed.appearance, updated.appearance);
-  for (const appearance of [null, {}, { ...manual, kind: "other" }, { ...manual, color: "other" }, { ...manual, accessories: ["bad"] }, { ...manual, accessories: ["cap", "cap"] }, { ...manual, extra: true }]) {
+  for (const appearance of [null, {}, { ...manual, kind: "other" }, { ...manual, color: "other" }, { ...manual, accessories: ["bad"] }, { ...manual, accessories: ["cap", "cap"] }, { ...manual, accessories: ["cap", "beanie"] }, { ...manual, accessories: ["satchel"] }, { ...manual, extra: true }]) {
     const response = await create(workspace, { name: "Invalid", appearance });
     assert.equal(response.statusCode, 400, response.body);
     assert.ok(response.json().fields.appearance);
     assert.equal((await app.inject({ method: "PATCH", url: `/api/agents/${first.id}`, payload: { appearance } })).statusCode, 400);
   }
+  const expanded = { kind: "bot", color: "lilac", accessories: ["glasses", "headphones", "badge", "wizard", "scarf", "cape", "vest"] };
+  const modern = (await create(workspace, { name: "Expanded wardrobe", appearance: expanded })).json<Agent>();
+  assert.deepEqual(modern.appearance, expanded);
+  assert.deepEqual((await app.inject(`/api/agents/${modern.id}`)).json<Agent>().appearance, expanded);
+  const changed = (await app.inject({ method: "PATCH", url: `/api/agents/${modern.id}`, payload: { appearance: { ...expanded, accessories: ["visor", "communicator", "crown", "pendant", "wings", "circuits"] } } })).json<Agent>();
+  assert.equal(changed.appearance.accessories.length, 6);
+  assert.equal(changed.revision, modern.revision);
+  assert.deepEqual((await app.inject(`/api/agents/${modern.id}`)).json<Agent>().appearance, changed.appearance);
   assert.equal((await app.inject("/api/workspaces/missing/agents/appearance-suggestion")).statusCode, 404);
   const cluster = (await app.inject({ method: "POST", url: `/api/workspaces/${workspace}/clusters`, payload: { name: "Boundary", x: 0, y: 0, width: 320, height: 200 } })).json();
   const boundary = await create(workspace, { name: "At content edge", x: -72, y: -48, clusterId: cluster.id });

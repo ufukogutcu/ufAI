@@ -1,0 +1,10 @@
+.wardrobe { pointer-events: none; }
+.warm { fill: var(--character-accent); }
+.prop { fill: var(--character-prop); }
+.paper { fill: var(--character-paper); }
+.ink { fill: var(--character-ink); stroke: none; }
+.line { fill: none; }
+.lightLine { fill: none; stroke: var(--character-paper); stroke-width: 2.5; }
+.band { fill: none; stroke: var(--character-prop); stroke-width: 7; }
+.glass { fill: var(--character-paper); fill-opacity: .35; stroke: none; }
+.circuit { fill: none; stroke: var(--character-ink); stroke-width: 2.5; }

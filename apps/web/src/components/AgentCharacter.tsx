@@ -1,6 +1,7 @@
 import { memo, useContext, useEffect, useRef, useState, type CSSProperties } from "react";
 import { CharacterVisibilityContext } from "./CharacterMotion";
 import { activities, accessories, characterNames, colors, type Appearance, type Activity, type CharacterKind } from "../agent-appearance";
+import { WardrobeLayers } from "./WardrobeLayers";
 import styles from "./AgentCharacter.module.scss";
 
 function Body({ kind }: { kind: CharacterKind }) {
@@ -26,6 +27,7 @@ export const AgentCharacter = memo(function AgentCharacter({ appearance, activit
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
+  const headwear = accessories.some(item => item.slot === "head" && items.includes(item.id));
   const reading = activity === "studying" || activity === "studying-hard";
   return <svg ref={element} viewBox="0 0 240 240" className={`${styles.character} ${className}`}
     style={{ "--character-body": colors.find(item => item.id === color)!.variable } as CSSProperties}
@@ -34,17 +36,19 @@ export const AgentCharacter = memo(function AgentCharacter({ appearance, activit
     aria-label={decorative ? undefined : `${characterNames[kind]}, ${color}, ${activities.find(a => a.id === activity)!.name}${items.length ? `, wearing ${items.map(id => accessories.find(a => a.id === id)!.name).join(" and ")}` : ""}`}>
     <ellipse className={styles.shadow} cx="120" cy="207" rx="49" ry="7" />
     <g className={styles.actor}>
+      <WardrobeLayers items={items} kind={kind} layer="back" />
       <g className={styles.feet}><rect x="88" y="178" width="22" height="17" rx="8" /><rect x="134" y="178" width="22" height="17" rx="8" /></g>
       <g className={styles.body}><Body kind={kind} /></g>
+      <WardrobeLayers items={items} kind={kind} layer="body" />
       <g className={styles.face}>
         {activity === "dreaming" ? <g className={styles.closedEyes}><path d="M98 124Q104 130 110 124M131 124Q137 130 143 124" /></g> :
           <g className={styles.eyes}><ellipse cx="104" cy="124" rx={kind === "bot" ? 6 : 3.5} ry={kind === "bot" ? 2 : 4} /><ellipse cx="137" cy="124" rx={kind === "bot" ? 6 : 3.5} ry={kind === "bot" ? 2 : 4} /></g>}
         {activity === "studying-hard" && <path className={styles.brows} d="M97 113L110 117M131 117L144 113" />}
         {items.includes("glasses") && <g className={styles.glasses}><circle cx="104" cy="124" r="13" /><circle cx="137" cy="124" r="13" /><path d="M117 123Q120 120 124 123M85 122H91M150 122H156" /></g>}
       </g>
-      {items.includes("headphones") && <g className={styles.headphones}><path d="M65 133V113C65 53 175 53 175 113V133" /><rect x="60" y="115" width="15" height="30" rx="7" /><rect x="165" y="115" width="15" height="30" rx="7" /></g>}
-      {items.includes("cap") && <g className={styles.cap}><path d="M81 83Q84 49 117 51Q150 51 155 83Z" /><path d="M105 83H172Q180 91 167 94H105Z" /><path d="M118 57V76" fill="none" /></g>}
-      {items.includes("badge") && <path className={styles.badge} d="M149 147L152 154L160 155L154 160L155 168L149 164L142 168L144 160L138 155L146 154Z" />}
+      {items.includes("headphones") && <g className={styles.headphones}><path d={headwear ? "M65 133V109Q65 101 76 101M164 101Q175 101 175 109V133" : "M65 133V113C65 53 175 53 175 113V133"} /><rect x="60" y="115" width="15" height="30" rx="7" /><rect x="165" y="115" width="15" height="30" rx="7" /></g>}
+      {items.includes("cap") && <g className={styles.cap}><path d="M82 83Q85 49 120 51Q155 49 158 83Z" /><path d="M108 83H174Q182 91 169 94H108Z" /><path d="M120 57V76" fill="none" /></g>}
+      <WardrobeLayers items={items} kind={kind} layer="front" />
       <g className={styles.leftHand}><circle cx={reading || activity === "working" ? 86 : 64} cy={reading ? 169 : activity === "working" ? 173 : 151} r="10" /></g>
       <g className={styles.rightHand}><circle cx={activity === "thinking" ? 131 : reading || activity === "working" ? 155 : 177} cy={activity === "thinking" ? 146 : reading ? 169 : activity === "working" ? 173 : 151} r="10" /></g>
       {activity === "working" && <g className={styles.laptop}>
@@ -59,7 +63,7 @@ export const AgentCharacter = memo(function AgentCharacter({ appearance, activit
       </g>}
       {activity === "studying-hard" && <>
         <g className={styles.bookStack}><rect x="166" y="191" width="33" height="9" rx="2" /><rect className={styles.paper} x="170" y="181" width="34" height="9" rx="2" /><rect x="167" y="171" width="28" height="9" rx="2" /></g>
-        <g className={styles.pencil}><path d="M155 157L170 133L175 136L160 160L154 164Z" /><path d="M155 157L160 160" /></g>
+        <g className={styles.pencil}><path d="M155 179L170 155L175 158L160 182L154 186Z" /><path d="M155 179L160 182" /></g>
         <g className={styles.focusMarks}><path d="M53 93L45 86M51 105H40M184 93L192 85" /></g>
       </>}
     </g>

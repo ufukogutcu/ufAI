@@ -9,7 +9,7 @@
 body { margin: 0; }
 button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
 button:disabled { cursor: default; opacity: .5; }
-button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+button:focus-visible, a:focus-visible, select:focus-visible, section:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
 h1, h2, p { margin: 0; }
 button, a { -webkit-tap-highlight-color: transparent; }
