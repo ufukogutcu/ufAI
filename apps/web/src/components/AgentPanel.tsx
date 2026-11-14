@@ -28,7 +28,7 @@ import {
 import { useAgents, useAgentStore, emptyList } from "../agent-store";
 import { useDashboard } from "../store";
 import { useNavigationGuard, useUnsavedChanges } from "../navigation-guard";
-import { request, errorMessage } from "../api";
+import { request, errorMessage, RequestError } from "../api";
 import type {
   Agent,
   AgentMemory,
@@ -85,6 +85,32 @@ export function AgentForm({
   const [initialPreset, setInitialPreset] = useState<ModelPreset | null>(null);
   const initial = configurationValues(agent);
   const [configuration, setConfiguration] = useState({ draft: initial, baseline: initial, revision: agent?.revision ?? 1 });
+  const nameTouched = useRef(false);
+  const nameInput = useRef<HTMLInputElement>(null);
+  const nameRequest = useRef<{ workspaceId: string; attempt: number; promise: Promise<{ name: string }> } | null>(null);
+  const [nameAttempt, setNameAttempt] = useState(0);
+  const [nameSuggestionError, setNameSuggestionError] = useState("");
+  const [nameError, setNameError] = useState("");
+  useEffect(() => {
+    if (agent || !workspaceId || nameTouched.current) return;
+    let alive = true;
+    setNameSuggestionError("");
+    // Reuse the request when Strict Mode replays this effect.
+    if (nameRequest.current?.workspaceId !== workspaceId || nameRequest.current.attempt !== nameAttempt) {
+      nameRequest.current = { workspaceId, attempt: nameAttempt,
+        promise: request<{ name: string }>(`/workspaces/${workspaceId}/agents/name-suggestion`) };
+    }
+    void nameRequest.current.promise.then(result => {
+      if (!alive || nameTouched.current) return;
+      setConfiguration(current => ({ ...current,
+        draft: { ...current.draft, name: result.name },
+        baseline: { ...current.baseline, name: result.name },
+      }));
+    }).catch(failure => {
+      if (alive && !nameTouched.current) setNameSuggestionError(errorMessage(failure));
+    });
+    return () => { alive = false; };
+  }, [agent, workspaceId, nameAttempt]);
   const { draft, baseline } = configuration;
   const setDraft = useCallback((next: ConfigurationValues | ((value: ConfigurationValues) => ConfigurationValues)) => {
     setConfiguration(current => ({ ...current, draft: typeof next === "function" ? next(current.draft) : next }));
@@ -94,6 +120,9 @@ export function AgentForm({
   }, []);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  useEffect(() => {
+    if (nameError && !busy) nameInput.current?.focus();
+  }, [nameError, busy]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(baseline) || (!agent && appearanceTouched.current);
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
   useUnsavedChanges(dirty);
@@ -130,6 +159,7 @@ export function AgentForm({
     const saved = configurationValues(agent);
     setConfiguration({ draft: saved, baseline: saved, revision: agent.revision });
     setError("");
+    setNameError("");
   }
   function retryDefault() {
     setDefaultAttempt((value) => value + 1);
@@ -140,6 +170,7 @@ export function AgentForm({
     if (busy || stale || !defaultReady || (!agent && !appearance)) return;
     setBusy(true);
     setError("");
+    setNameError("");
     try {
       const saved = await onSave({ name: draft.name, presetId: draft.presetId,
         ...(agent ? { instructions: draft.instructions, expectedRevision: configuration.revision } : {}),
@@ -147,7 +178,8 @@ export function AgentForm({
       const next = saved ? configurationValues(saved) : draft;
       setConfiguration({ draft: next, baseline: next, revision: saved?.revision ?? configuration.revision });
     } catch (err) {
-      setError(errorMessage(err));
+      if (err instanceof RequestError && err.fields.name) setNameError(err.fields.name);
+      else setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -161,20 +193,31 @@ export function AgentForm({
       </div>}
       {editingCharacter && <CharacterEditor initial={appearance ?? defaultAppearance} creating onClose={() => setEditingCharacter(false)} onSave={async value => { appearanceTouched.current = true; setAppearance(value); setAppearanceError(""); }} />}
 
-      <Field label="Agent name">
+      <Field label="Agent name" error={nameError || undefined}
+        hint={!agent && !draft.name && !nameTouched.current && !nameSuggestionError ? "Choosing a name…" : "Names must be unique within this workspace."}>
         {(p) => (
           <input
             {...p}
+            ref={nameInput}
             disabled={busy}
             name="agentName"
             autoComplete="off"
             maxLength={120}
             required
             value={draft.name}
-            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+            onChange={(e) => {
+              nameTouched.current = true;
+              setNameError("");
+              setNameSuggestionError("");
+              setDraft({ ...draft, name: e.target.value });
+            }}
           />
         )}
       </Field>
+      {nameSuggestionError && <p role="alert" className="errorBanner">
+        Could not suggest a name: {nameSuggestionError} Enter a name or try again.
+        <button type="button" className="textButton" disabled={busy} onClick={() => setNameAttempt(value => value + 1)}>Retry name</button>
+      </p>}
       <Field
         label="Agent Preset (optional)"
         hint="You can leave this empty and choose later. A complete preset and known context window are required to run tasks."

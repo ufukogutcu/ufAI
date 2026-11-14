@@ -1,5 +1,6 @@
 import catalog from "@ufai/character-catalog" with { type: "json" };
 import { generateAppearance, validateAppearance, workspaceAppearanceCounts } from "./agent-appearance.js";
+import { assertAgentNameAvailable, generateAgentName, workspaceAgentNameKeys } from "./agent-names.js";
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
@@ -130,6 +131,11 @@ export function registerAgents(
     reply.header("Cache-Control", "no-store");
     return { appearance: generateAppearance(workspaceAppearanceCounts(db, req.params.id)) };
   });
+  app.get<{ Params: { id: string } }>("/api/workspaces/:id/agents/name-suggestion", async (req, reply) => {
+    workspace(req.params.id);
+    reply.header("Cache-Control", "no-store");
+    return { name: generateAgentName(workspaceAgentNameKeys(db, req.params.id)) };
+  });
   app.post<{ Params: { id: string } }>(
     "/api/workspaces/:id/agents",
     async (req, reply) => {
@@ -173,21 +179,24 @@ export function registerAgents(
       v.appearance ??= generateAppearance(workspaceAppearanceCounts(db, req.params.id));
       const id = randomUUID(),
         ts = time();
-      db.prepare(
-        "INSERT INTO agents(id,workspaceId,name,instructions,presetId,x,y,clusterId,appearance,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-      ).run(
-        id,
-        req.params.id,
-        v.name,
-        v.instructions,
-        v.presetId,
-        v.x,
-        v.y,
-        v.clusterId,
-        JSON.stringify(v.appearance),
-        ts,
-        ts,
-      );
+      db.transaction(() => {
+        assertAgentNameAvailable(db, req.params.id, v.name);
+        db.prepare(
+          "INSERT INTO agents(id,workspaceId,name,instructions,presetId,x,y,clusterId,appearance,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        ).run(
+          id,
+          req.params.id,
+          v.name,
+          v.instructions,
+          v.presetId,
+          v.x,
+          v.y,
+          v.clusterId,
+          JSON.stringify(v.appearance),
+          ts,
+          ts,
+        );
+      }).immediate();
       execution.event(id);
       files.kick();
       return reply.code(201).send(execution.requiredAgent(id));
@@ -236,24 +245,29 @@ export function registerAgents(
     }
     files.assertAvailable(old.workspaceId, old.id, old.clusterId);
     files.assertAvailable(old.workspaceId, old.id, v.clusterId);
-    db.prepare(
-      "UPDATE agents SET name=?,instructions=?,presetId=?,x=?,y=?,clusterId=?,appearance=?,revision=revision+?,updatedAt=? WHERE id=?",
-    ).run(
-      v.name,
-      v.instructions,
-      v.presetId,
-      v.x,
-      v.y,
-      v.clusterId,
-      JSON.stringify(v.appearance),
-      Number(
-        v.name !== old.name ||
-          v.instructions !== old.instructions ||
-          v.presetId !== old.presetId,
-      ),
-      time(),
-      old.id,
-    );
+    db.transaction(() => {
+      if (["name", "instructions", "presetId"].some(key => Object.hasOwn(req.body as object, key))) {
+        assertAgentNameAvailable(db, old.workspaceId, v.name, old.id);
+      }
+      db.prepare(
+        "UPDATE agents SET name=?,instructions=?,presetId=?,x=?,y=?,clusterId=?,appearance=?,revision=revision+?,updatedAt=? WHERE id=?",
+      ).run(
+        v.name,
+        v.instructions,
+        v.presetId,
+        v.x,
+        v.y,
+        v.clusterId,
+        JSON.stringify(v.appearance),
+        Number(
+          v.name !== old.name ||
+            v.instructions !== old.instructions ||
+            v.presetId !== old.presetId,
+        ),
+        time(),
+        old.id,
+      );
+    }).immediate();
     execution.event(old.id);
     return execution.requiredAgent(old.id);
   });
