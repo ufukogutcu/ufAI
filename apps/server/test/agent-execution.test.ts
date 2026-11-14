@@ -508,7 +508,9 @@ for (const target of ["new", "chat"] as const)
 test(`${target}: compaction preserves full transcripts and covers complete exchanges before a later turn`, async (t) => {
   const f = setup(async () => result("A".repeat(700)));
   t.after(() => f.close());
-  f.db.prepare("UPDATE provider_models SET contextWindowOverride=8000").run();
+  // This fixture counts bytes as tokens; leave room for the shared prompt while
+  // the low compaction threshold below still forces complete-exchange compaction.
+  f.db.prepare("UPDATE provider_models SET contextWindowOverride=16000").run();
   f.db
     .prepare(
       "UPDATE model_presets SET compactionMode='tokens',compactionValue=2200",
