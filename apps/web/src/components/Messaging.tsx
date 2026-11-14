@@ -20,6 +20,7 @@ import { Dialog } from "./Dialog";
 import { MessageAttachments } from "./MessageAttachments";
 import { Tooltip } from "./Tooltip";
 import styles from "./Messaging.module.scss";
+import { RichText } from "./RichText";
 function AttachedFiles({ ids }: { ids: string[] }) {
   return (
     <MessageAttachments
@@ -417,7 +418,7 @@ export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
                   <span className={styles.meta}>
                     {new Date(entry.createdAt).toLocaleString()}
                   </span>
-                  <p className={styles.content}>{entry.content}</p>
+                  <RichText content={entry.content} instanceId={`inbox-${entry.id}`} />
                   <AttachedFiles ids={entry.attachments} />
                   <div className={styles.actions}>
                     <button

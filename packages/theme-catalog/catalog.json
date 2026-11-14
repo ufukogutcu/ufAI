@@ -22,6 +22,201 @@
     }
   ],
   "tokens": {
+    "rich-code-surface": {
+      "cssVariable": "--rich-code-surface",
+      "label": "Code background",
+      "description": "Background of inline code and code blocks.",
+      "components": [
+        "Rich text messages",
+        "Message formatting preview"
+      ],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#f0f0f3",
+      "dark": "#1c1d22"
+    },
+    "rich-code-text": {
+      "cssVariable": "--rich-code-text",
+      "label": "Code text",
+      "description": "Default foreground of inline code and code blocks.",
+      "components": [
+        "Rich text messages",
+        "Message formatting preview"
+      ],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#292a33",
+      "dark": "#e1e2e9"
+    },
+    "rich-syntax-comment": {
+      "cssVariable": "--rich-syntax-comment",
+      "label": "Code comments",
+      "description": "Comments and quoted text in highlighted code.",
+      "components": [
+        "Rich text messages",
+        "Message formatting preview"
+      ],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#646773",
+      "dark": "#a1a5b3"
+    },
+    "rich-syntax-keyword": {
+      "cssVariable": "--rich-syntax-keyword",
+      "label": "Code keywords",
+      "description": "Keywords and language directives in highlighted code.",
+      "components": [
+        "Rich text messages",
+        "Message formatting preview"
+      ],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#7940a0",
+      "dark": "#cfa4ee"
+    },
+    "rich-syntax-string": {
+      "cssVariable": "--rich-syntax-string",
+      "label": "Code strings",
+      "description": "Strings and attributes in highlighted code.",
+      "components": [
+        "Rich text messages",
+        "Message formatting preview"
+      ],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#246339",
+      "dark": "#a0d3ac"
+    },
+    "rich-syntax-number": {
+      "cssVariable": "--rich-syntax-number",
+      "label": "Code numbers",
+      "description": "Numbers and constants in highlighted code.",
+      "components": [
+        "Rich text messages",
+        "Message formatting preview"
+      ],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#98511d",
+      "dark": "#e7b185"
+    },
+    "rich-syntax-function": {
+      "cssVariable": "--rich-syntax-function",
+      "label": "Code functions",
+      "description": "Functions, types and section names in highlighted code.",
+      "components": [
+        "Rich text messages",
+        "Message formatting preview"
+      ],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#275b96",
+      "dark": "#9fc5f0"
+    },
+    "rich-table-header": {
+      "cssVariable": "--rich-table-header",
+      "label": "Message table headers",
+      "description": "Header cells in formatted message tables.",
+      "components": [
+        "Rich text messages",
+        "Message formatting preview"
+      ],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#e9e9ed",
+      "dark": "#292a31"
+    },
+    "rich-table-stripe": {
+      "cssVariable": "--rich-table-stripe",
+      "label": "Message table stripes",
+      "description": "Alternating rows in formatted message tables.",
+      "components": [
+        "Rich text messages",
+        "Message formatting preview"
+      ],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#f5f5f7",
+      "dark": "#1d1e23"
+    },
+    "rich-callout-surface": {
+      "cssVariable": "--rich-callout-surface",
+      "label": "Message callout background",
+      "description": "Background of note, tip, important, warning and caution callouts.",
+      "components": [
+        "Rich text messages",
+        "Message formatting preview"
+      ],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#f0f0f4",
+      "dark": "#23242b"
+    },
+    "rich-callout-border": {
+      "cssVariable": "--rich-callout-border",
+      "label": "Message callout edge",
+      "description": "Leading border of message callouts.",
+      "components": [
+        "Rich text messages",
+        "Message formatting preview"
+      ],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#7e7f91",
+      "dark": "#989ab0"
+    },
+    "rich-diagram-surface": {
+      "cssVariable": "--rich-diagram-surface",
+      "label": "Diagram background",
+      "description": "Background and node fills of generated diagram previews.",
+      "components": [
+        "Rich text messages",
+        "Message formatting preview"
+      ],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#f6f6f8",
+      "dark": "#202127"
+    },
+    "rich-diagram-text": {
+      "cssVariable": "--rich-diagram-text",
+      "label": "Diagram text",
+      "description": "Labels and titles in generated diagram previews.",
+      "components": [
+        "Rich text messages",
+        "Message formatting preview"
+      ],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#2b2c35",
+      "dark": "#e5e6ed"
+    },
+    "rich-diagram-border": {
+      "cssVariable": "--rich-diagram-border",
+      "label": "Diagram borders",
+      "description": "Node and group outlines in generated diagram previews.",
+      "components": [
+        "Rich text messages",
+        "Message formatting preview"
+      ],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#787b8b",
+      "dark": "#a2a6bb"
+    },
+    "rich-diagram-line": {
+      "cssVariable": "--rich-diagram-line",
+      "label": "Diagram lines",
+      "description": "Connectors and arrowheads in generated diagram previews.",
+      "components": [
+        "Rich text messages",
+        "Message formatting preview"
+      ],
+      "group": "Text",
+      "region": "dashboard",
+      "light": "#555968",
+      "dark": "#b5bacf"
+    },
     "usage-track": {
       "cssVariable": "--usage-track",
       "label": "Usage bar track",

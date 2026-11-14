@@ -35,6 +35,7 @@ import { GlassMaterial } from "../components/GlassMaterial";
 import { CodexUsageBar } from "../components/CodexUsageBar";
 import { AgentCharacter } from "../components/AgentCharacter";
 import { defaultAppearance } from "../agent-appearance";
+import { RichText } from "../components/RichText";
 
 const characterPreviewColors = [
   "var(--character-sage)", "var(--character-honey)", "var(--character-sky)",
@@ -93,6 +94,7 @@ function ThemePreview({
   selected: ThemeColorKey | null;
   onInspect: (key: ThemeColorKey) => void;
 }) {
+  const formattingId = useId();
   const preview = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!selected || !preview.current) return;
@@ -151,6 +153,12 @@ function ThemePreview({
                     Raised panel <span>Shared surface</span>
                   </div>
                   <span className={styles.selectionSample}>Selected text</span>
+                  <RichText instanceId={`${formattingId}-formatting`} content={'**Formatted messages**\n\n> [!NOTE]\n> A useful detail.\n\n| Item | Status |\n| --- | --- |\n| Draft | Ready |\n| Review | Next |\n\n```js\n// A helpful example\nfunction greet(name) {\n  return "Hello " + name + 1;\n}\n```'} />
+                  <svg className={styles.diagramSample} viewBox="0 0 240 64" role="img" aria-label="Diagram color preview">
+                    <rect x="1" y="1" width="238" height="62" rx="6" />
+                    <path d="M80 32h80m-8-6 8 6-8 6" />
+                    <text x="16" y="37">Idea</text><text x="172" y="37">Result</text>
+                  </svg>
                 </div>
               )}
               {region.id === "navigation" && (

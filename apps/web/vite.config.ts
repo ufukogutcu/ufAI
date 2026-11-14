@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import catalog from "@ufai/theme-catalog";
 import { relayFavicon } from "./src/branding.ts";
+import { fileURLToPath } from "node:url";
+import { enforceChunkLimit, mermaidGrammarChunks } from "./build/mermaid-grammars";
 
 function defaultColors(mode: "light" | "dark") {
   return `:root{color-scheme:${mode};color:var(--text);background:var(--root-background);${Object.values(
@@ -12,8 +14,28 @@ function defaultColors(mode: "light" | "dark") {
 }
 
 export default defineConfig({
+  resolve: {
+    alias: [{ find: /^elkjs\/lib\/elk\.bundled\.js$/, replacement: fileURLToPath(new URL("./src/mermaid-elk.ts", import.meta.url)) }],
+  },
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: "preload", test: /vite\/preload-helper/ },
+            { name: "react", test: /\/node_modules\/(?:react|react-dom|scheduler)\// },
+            { name: "canvas", test: /\/node_modules\/@xyflow\// },
+            { name: "syntax-highlighting", test: /\/node_modules\/(?:highlight\.js|lowlight|rehype-highlight)\// },
+            { name: "mermaid-grammars", test: /^\0ufai:mermaid-grammars$/ },
+          ],
+        },
+      },
+    },
+  },
   plugins: [
     react(),
+    mermaidGrammarChunks(),
+    enforceChunkLimit(),
     {
       name: "ufai-theme-defaults",
       transformIndexHtml() {

@@ -6,6 +6,7 @@ import { LiveAgentCharacter } from "./LiveAgentCharacter";
 import { CharacterEditor } from "./CharacterEditor";
 import { useSettings } from "../settings-store";
 import { TaskTimeline } from "./TaskTimeline";
+import { RichText } from "./RichText";
 import { TaskComposer as Composer } from "./TaskComposer";
 import {
   useCallback,
@@ -368,7 +369,7 @@ function MemoryCard({
           />
         </>
       ) : (
-        <p className={styles.messageText}>{memory.content}</p>
+        <RichText content={memory.content} instanceId={`memory-${memory.id}`} />
       )}
       <div className={styles.actions}>
         {editing ? (
@@ -831,7 +832,7 @@ export function AgentPanel({
       )}
       {source && (
         <Dialog title="Memory source" onClose={() => setSource(null)}>
-          <p className={styles.messageText}>{source.message.content}</p>
+          <RichText content={source.message.content} instanceId={`memory-source-${source.message.id}`} streaming={source.message.state === "streaming"} />
           <button
             className="button"
             onClick={() => {

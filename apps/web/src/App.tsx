@@ -34,6 +34,7 @@ import styles from "./App.module.scss";
 import { CodexUsageDock } from "./components/CodexUsageDock";
 import { CodexUsageContext, createCodexUsageStore } from "./codex-usage-store";
 import { Appearance } from "./components/Appearance";
+import { RichTextProvider } from "./components/RichText";
 
 const pages = [
   { id: "home", label: "Home", icon: HomeIcon },
@@ -233,7 +234,7 @@ export default function App({ initial }: { initial: SettingsResponse }) {
           <CodexUsageContext.Provider value={usage}>
           <DashboardProvider>
             <UnsavedChangesProvider>
-              <Shell />
+              <RichTextProvider><Shell /></RichTextProvider>
             </UnsavedChangesProvider>
           </DashboardProvider>
           </CodexUsageContext.Provider>

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 import {
   ArrowDown,
@@ -20,6 +20,7 @@ import { MessageAttachments } from "./MessageAttachments";
 import { ArtifactCard, ProcessActivity } from "./TaskTools";
 import { AgentCharacter } from "./AgentCharacter";
 import styles from "./TaskTimeline.module.scss";
+import { RichText } from "./RichText";
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
@@ -139,7 +140,7 @@ function TimelineRow({
           </div>
         )}
         {own && <span className={styles.srOnly}>You: </span>}
-        {m.content && <div className={styles.text}>{m.content}</div>}
+        {m.content && <RichText content={m.content} instanceId={`timeline-${taskId}-${item.id}`} streaming={m.state === "streaming"} />}
         <MessageAttachments parts={m.parts} />
       </article>
     );
@@ -241,7 +242,7 @@ function TimelineRow({
           {typeof item.arguments?.content === "string" &&
             ["agent_send", "agent_message", "user_notify"].includes(
               item.name ?? "",
-            ) && <p className={styles.text}>{item.arguments.content}</p>}
+            ) && <RichText content={item.arguments.content} instanceId={`arguments-${taskId}-${item.id}`} />}
           {Array.isArray(item.arguments?.versionIds) && (
             <MessageAttachments
               parts={item.arguments.versionIds
@@ -255,7 +256,7 @@ function TimelineRow({
           )}
           {communication && (
             <>
-              <p className={styles.text}>{communication.content}</p>
+              <RichText content={communication.content} instanceId={`communication-${taskId}-${item.id}`} />
               <MessageAttachments
                 parts={communication.attachments.map((versionId) => ({
                   type: "artifact",
@@ -345,27 +346,73 @@ function TimelineContent({
     more = useStore(store, (s) => s.more);
   const version = useAgents((s) => s.timelineVersion);
   const viewport = useRef<HTMLDivElement>(null),
+    content = useRef<HTMLDivElement>(null),
     nearEnd = useRef(true),
     anchor = useRef<{ id: string; top: number } | null>(null);
   const [unseen, setUnseen] = useState(false);
   const previousItems = useRef(items);
-  function scrollViewport() {
+  const scrollViewport = useCallback(() => {
     const el = viewport.current;
     if (!el) return null;
     return getComputedStyle(el).overflowY === "visible"
       ? (el.closest<HTMLElement>("[data-agent-panel]") ?? el)
       : el;
-  }
+  }, []);
   useEffect(() => {
-    const el = scrollViewport();
-    if (!el) return;
+    const transcript = viewport.current;
+    if (!transcript) return;
+    const panel = transcript.closest<HTMLElement>("[data-agent-panel]");
+    let reader: { row: HTMLElement; top: number } | null = null;
+    let adjustedScroll: number | null = null;
+    function rememberReader() {
+      if (!viewport.current) return;
+      const el = scrollViewport();
+      if (!el) return;
+      const bounds = el.getBoundingClientRect();
+      const top = bounds.top;
+      const row = Array.from(viewport.current!.querySelectorAll<HTMLElement>("[data-timeline-id]")).find((node) => node.getBoundingClientRect().bottom > top);
+      // Anchor a visible block inside a long message, so an image earlier in that same
+      // message cannot move the paragraph being read. Prefer a fully visible block.
+      const blocks = row ? Array.from(row.querySelectorAll<HTMLElement>("[data-rich-text] p, [data-rich-text] h1, [data-rich-text] h2, [data-rich-text] h3, [data-rich-text] h4, [data-rich-text] h5, [data-rich-text] h6, [data-rich-text] pre, [data-rich-text] table, [data-rich-text] summary")) : [];
+      const focused = document.activeElement instanceof HTMLElement && viewport.current.contains(document.activeElement) && document.activeElement.closest("[data-rich-text]") ? document.activeElement : null;
+      const focusBounds = focused?.getBoundingClientRect();
+      const visible = (focused && focusBounds!.bottom > top && focusBounds!.top < bounds.bottom ? focused : null) ?? blocks.find((node) => {
+        const rect = node.getBoundingClientRect();
+        return rect.top >= top && rect.top < bounds.bottom;
+      }) ?? blocks.find((node) => node.getBoundingClientRect().bottom > top) ?? row;
+      reader = visible ? { row: visible, top: visible.getBoundingClientRect().top } : null;
+    }
     const update = () => {
+      const el = scrollViewport();
+      if (!el) return;
       nearEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
       if (nearEnd.current) setUnseen(false);
+      if (adjustedScroll === null || Math.abs(el.scrollTop - adjustedScroll) > 1) rememberReader();
+      adjustedScroll = null;
     };
-    el.addEventListener("scroll", update, { passive: true });
-    return () => el.removeEventListener("scroll", update);
-  });
+    // Images, fonts and diagrams can change height after a timeline refresh has settled.
+    const observer = new ResizeObserver(() => {
+      const el = scrollViewport();
+      if (!el) return;
+      if (nearEnd.current) el.scrollTop = el.scrollHeight;
+      else if (reader?.row.isConnected) {
+        el.scrollTop += reader.row.getBoundingClientRect().top - reader.top;
+        reader.top = reader.row.getBoundingClientRect().top;
+        adjustedScroll = el.scrollTop;
+      } else rememberReader();
+    });
+    if (content.current) observer.observe(content.current);
+    observer.observe(transcript);
+    if (panel) observer.observe(panel);
+    rememberReader();
+    transcript.addEventListener("scroll", update, { passive: true });
+    panel?.addEventListener("scroll", update, { passive: true });
+    return () => {
+      transcript.removeEventListener("scroll", update);
+      panel?.removeEventListener("scroll", update);
+      observer.disconnect();
+    };
+  }, [scrollViewport]);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -453,6 +500,7 @@ function TimelineContent({
           if (nearEnd.current) setUnseen(false);
         }}
       >
+        <div ref={content}>
         {before && (
           <button
             type="button"
@@ -486,6 +534,7 @@ function TimelineContent({
         {loading && !items.length && (
           <p className={styles.meta}>Loading conversation…</p>
         )}
+        </div>
       </div>
       <p
         className={styles.srOnly}

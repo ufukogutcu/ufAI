@@ -147,6 +147,16 @@ One local installation holds one shared setup across browser sessions. There are
 - **Behavior:** Chat has the same tools, files, memory, context compaction, and recovery controls as ordinary tasks. Work requested here runs in Chat. Tasks remains for separately created conversations. Chat history survives closing the panel/browser and restarting ufAI. Chat can run alongside a separate task. Stop cancels only Chat and its processes; Retry resumes a failed or blocked Chat request.
 - **Limitations:** Each agent has one active Chat turn; different agents can chat concurrently, including on a shared Provider. Provider capacity can still delay replies. Closing the browser does not stop work. Unsupported tools/media, missing configuration, or context limits can block execution. Long histories may be summarized for model context while original messages remain available through Load earlier messages. Existing status-only exchanges are not part of the new Chat.
 
+### message-formatting
+
+- **Status:** implemented
+- **Purpose:** Read formatted user and agent messages in Chat, Tasks, expanded agent communications, Inbox, and read-only memory/source views.
+- **Behavior:** Messages support headings, emphasis, strikethrough, line breaks, nested lists, read-only checklists, quotes and callouts, tables, links, images, footnotes, and code. Code blocks show a language label and Copy control; recognized languages have syntax highlighting. Heading and footnote links stay within their message. Wide tables, code, equations, and diagrams scroll within the view. The original text stays saved, including for older messages.
+- **Equations and diagrams:** Dollar or bracket LaTeX delimiters display inline or block equations. Mermaid code blocks show diagram previews once the message finishes, with the source available below. Unsupported or invalid expressions and diagrams keep readable source. Diagram previews have size limits and do not provide interactive links.
+- **Images and links:** External images load automatically when near the visible area and contact their hosting websites. Missing or blocked images show their description. Web links open in a separate tab. A link to a host file path does not grant browser access to that file; published files and their attachment controls remain the way to share local outputs.
+- **Limitations:** Basic HTML formatting includes disclosures, line breaks, keyboard labels, superscript/subscript, and highlighting. Active HTML, scripts, embedded pages, and custom styling do not run. Formatting does not interpret provider-specific widgets or verify linked content. Editors, compact labels, tool arguments/results, and process logs retain their literal text.
+- **Related references:** [Agent Chat](#agent-chat), [Agent messaging](#agent-messaging), [Workspace Inbox](#workspace-inbox), [Agent memory](#agent-memory).
+
 ### agent-status
 
 - **Status:** implemented

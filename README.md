@@ -6,6 +6,8 @@ An open-source, local-first application for one user to organize AI agents in mu
 
 Agents run with the backend’s OS permissions. Their folders organize work and are not sandboxes. Published versions survive agent deletion and are permanently removed with their workspace. Background processes stop on task cancellation, owner deletion, or server shutdown; deliberately detached host daemons are outside guaranteed supervision.
 
+Messages in Chat, Tasks, agent communications, Inbox, and memory views support Markdown, tables, highlighted code with Copy controls, equations, Mermaid diagrams, and sanitized basic HTML. External images load automatically. Original message text stays saved; invalid equations or diagrams retain readable source. See [message formatting](docs/platform.md#message-formatting) for details and limitations.
+
 PTY support uses native bindings. A platform without a matching prebuilt binding needs the native build prerequisites required by `node-pty`.
 
 Select files in the task composer, then press Send once. Images default to Inspect image; File only sends a durable file reference without visual input. Model image/PDF capabilities can be discovered or overridden in Providers. Unknown capability does not enable inspection. PDF opening depends on the selected model and adapter; the pinned Codex protocol accepts images, not PDFs. ufAI does not install conversion tools or provide OCR/page rendering. Native inspection is limited to ten items, 20 MiB per item and 32 MiB combined, with tighter provider limits applied. Browser image previews cover PNG/JPEG/WebP; other formats remain downloadable.

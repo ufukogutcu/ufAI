@@ -53,6 +53,21 @@ function legacyTheme(theme: Theme): Theme {
   return { ...theme, colors };
 }
 
+test("older custom themes inherit rich formatting scopes without changing existing overrides", () => {
+  const formattingKeys = colorKeys.filter((key) => key.startsWith("rich-"));
+  assert.ok(formattingKeys.length > 0);
+  for (const mode of ["light", "dark"] as const) {
+    const colors = { ...custom.colors };
+    for (const key of formattingKeys) delete (colors as Partial<Theme["colors"]>)[key];
+    const theme = resolveTheme({ ...custom, mode, colors });
+    for (const key of formattingKeys) assert.equal(theme.colors[key], catalog.tokens[key][mode]);
+    assert.equal(theme.colors.text, custom.colors.text);
+    assert.equal(theme.builtIn, false);
+    assert.equal(theme.id, custom.id);
+    assert.equal((colors as Partial<Theme["colors"]>)[formattingKeys[0]!], undefined);
+  }
+});
+
 test("older settings responses gain missing theme colors on startup, refresh and writes", async (t) => {
   for (const mode of ["light", "dark"] as const) {
     const older = legacyTheme({ ...custom, mode });

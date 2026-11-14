@@ -1,0 +1,101 @@
+.content {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.65;
+  white-space: normal;
+  overflow-wrap: anywhere;
+
+  > :first-child { margin-top: 0; }
+  > :last-child { margin-bottom: 0; }
+  p, ul, ol, blockquote, pre, details, .scroll { margin-block: 12px; }
+  h1, h2, h3, h4, h5, h6 {
+    margin: 24px 0 8px;
+    line-height: 1.3;
+    font-weight: 600;
+    text-wrap: balance;
+    scroll-margin-block: 16px;
+  }
+  h1 { font-size: 24px; }
+  h2 { font-size: 21px; }
+  h3 { font-size: 18px; }
+  h4, h5, h6 { font-size: 16px; }
+  ul, ol { padding-left: 24px; }
+  li { margin-block: 4px; }
+  li > ul, li > ol { margin-block: 4px; }
+  a { color: var(--accent-light); text-decoration: underline; text-underline-offset: 3px; }
+  a:hover { color: var(--text); }
+  blockquote {
+    margin-inline: 0;
+    padding: 4px 16px;
+    border-left: 3px solid var(--border-strong);
+  }
+  blockquote[data-callout] {
+    background: var(--rich-callout-surface);
+    border-color: var(--rich-callout-border);
+    border-radius: var(--radius-compact);
+  }
+  hr { border: 0; border-top: 1px solid var(--border); margin-block: 20px; }
+  code, kbd { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+  code, kbd { background: var(--rich-code-surface); color: var(--rich-code-text); border-radius: 4px; padding: 2px 4px; }
+  kbd { border: 1px solid var(--border-strong); }
+  mark { background: var(--selection); color: var(--text); }
+  pre { overflow: auto; white-space: pre; overflow-wrap: normal; margin: 0; padding: 12px; }
+  pre code { padding: 0; border: 0; background: transparent; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border: 1px solid var(--border-strong); padding: 8px 12px; min-width: 96px; }
+  th { background: var(--rich-table-header); font-weight: 600; white-space: nowrap; }
+  tbody tr:nth-child(even) { background: var(--rich-table-stripe); }
+  summary { cursor: pointer; padding-block: 8px; }
+  input[type="checkbox"] { display: inline-block; width: auto; min-height: 0; padding: 0; opacity: 1; accent-color: var(--accent); margin-right: 6px; vertical-align: middle; }
+  :global(.contains-task-list) { list-style: none; padding-left: 4px; }
+  :global(.footnotes) { font-size: 12px; border-top: 1px solid var(--border); margin-top: 20px; }
+  :global(.katex-display) { max-width: 100%; overflow-x: auto; overflow-y: hidden; padding-block: 8px; }
+  :global(.katex-error) { color: var(--error-text); }
+  pre:focus-visible, summary:focus-visible, :global(.katex-display):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  :global(.hljs-comment), :global(.hljs-quote) { color: var(--rich-syntax-comment); }
+  :global(.hljs-keyword), :global(.hljs-selector-tag), :global(.hljs-literal), :global(.hljs-meta) { color: var(--rich-syntax-keyword); }
+  :global(.hljs-string), :global(.hljs-regexp), :global(.hljs-attr), :global(.hljs-template-tag) { color: var(--rich-syntax-string); }
+  :global(.hljs-number), :global(.hljs-symbol), :global(.hljs-bullet) { color: var(--rich-syntax-number); }
+  :global(.hljs-title), :global(.hljs-built_in), :global(.hljs-type), :global(.hljs-section) { color: var(--rich-syntax-function); }
+}
+.codeBlock, .diagram {
+  min-width: 0;
+  margin-block: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--rich-code-surface);
+  color: var(--rich-code-text);
+  overflow: hidden;
+}
+.codeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.copy { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: end; }
+.copy button { min-height: 32px; }
+.feedback { color: var(--muted); font-size: 12px; }
+.diagram > .feedback { padding-inline: 12px; }
+.scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.codeBlock pre { max-height: 480px; }
+.source { max-height: 360px; }
+.diagram { background: var(--rich-diagram-surface); color: var(--rich-diagram-text); border-color: var(--rich-diagram-border); }
+.diagram .scroll { margin: 0; padding: 12px; }
+.diagram summary { padding-inline: 12px; }
+.diagramImage { display: block; width: auto; min-width: 100%; height: auto; }
+.image { max-width: 100%; height: auto; max-height: 600px; object-fit: contain; border-radius: var(--radius-compact); }
+.imageFailure { display: inline-block; color: var(--muted); padding-block: 8px; }
+.staging { position: fixed; left: -100000px; top: 0; visibility: hidden; pointer-events: none; }
+.fallback { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.65; }
+@media (any-pointer: coarse) { .copy button, .content summary { min-height: 44px; } }

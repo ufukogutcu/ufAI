@@ -805,3 +805,10 @@
 .clusterPalette { display: flex; flex-wrap: wrap; gap: 8px; span { width: 10px; height: 10px; border-radius: 50%; } }
 
 .terminalSample { background:var(--terminal-background); color:var(--terminal-foreground); border:1px solid var(--border); border-radius:8px; padding:10px; white-space:pre-wrap; }
+.diagramSample {
+  width: 100%;
+  max-width: 300px;
+  rect { fill: var(--rich-diagram-surface); stroke: var(--rich-diagram-border); }
+  path { fill: none; stroke: var(--rich-diagram-line); }
+  text { fill: var(--rich-diagram-text); font-size: 14px; }
+}
