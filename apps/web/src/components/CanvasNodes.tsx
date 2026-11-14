@@ -275,6 +275,11 @@ export const AgentNode = memo(function AgentNode({
             {agent.name}
           </button>
         </Tooltip>
+        <div className={agentStyles.nodeIssues}>
+          {(["warning", "error"] as const).map(severity => agent.issueCounts[severity] > 0 && (
+            <AgentIssueBubble key={severity} agentId={agent.id} agentName={agent.name} severity={severity} count={agent.issueCounts[severity]} />
+          ))}
+        </div>
       </div>
       <Tooltip content="Canvas controls">
         <button
@@ -304,9 +309,6 @@ export const AgentNode = memo(function AgentNode({
             </span>
           </Tooltip>
         )}
-        {(["warning", "error"] as const).map(severity => agent.issueCounts[severity] > 0 && (
-          <AgentIssueBubble key={severity} agentId={agent.id} agentName={agent.name} severity={severity} count={agent.issueCounts[severity]} />
-        ))}
       </div>
       {menu && (
         <NodeActions agentId={agent.id} onClose={() => setMenu(false)} />

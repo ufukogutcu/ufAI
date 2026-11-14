@@ -72,8 +72,8 @@ function IssueList({ agentId, severity, count }: { agentId: string; severity: Ag
       {busy && <p>Loading issues…</p>}
       {error && <p className="error">{error}</p>}
     </div>
-    {error ? <button type="button" className="button secondary" onClick={tryAgain}>Retry</button>
-      : page.items.length < page.total && <button type="button" className="button secondary" disabled={busy} onClick={more}>Load more</button>}
+    {error ? <button type="button" className={`button secondary ${styles.action}`} onClick={tryAgain}>Retry</button>
+      : page.items.length < page.total && <button type="button" className={`button secondary ${styles.action}`} disabled={busy} onClick={more}>Load more</button>}
   </>;
 }
 
@@ -220,8 +220,8 @@ export function AgentIssueBubble({ agentId, agentName, severity, count }: {
         onPointerLeave={event => { if (event.pointerType === "mouse") leave(); }}
         onFocus={() => clearTimeout(closing.current)}
         onBlur={event => { if (!popup.current?.contains(event.relatedTarget) && event.relatedTarget !== trigger.current) leave(); }}>
-        <header><Icon size={16} aria-hidden="true" /><h3>{severity === "warning" ? "Warnings" : "Errors"} ({count})</h3>
-          <button type="button" className="iconButton" aria-label="Close issues" onClick={close}><X size={16} aria-hidden="true" /></button>
+        <header><Icon size={12} aria-hidden="true" /><h3>{severity === "warning" ? "Warnings" : "Errors"} ({count})</h3>
+          <button type="button" className={`iconButton ${styles.close}`} aria-label="Close issues" onClick={close}><X size={14} aria-hidden="true" /></button>
         </header>
         <IssueList agentId={agentId} severity={severity} count={count} />
       </div>

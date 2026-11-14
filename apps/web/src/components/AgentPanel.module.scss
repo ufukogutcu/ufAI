@@ -244,6 +244,13 @@
   text-overflow: ellipsis;
 }
 .nodeMenu { position: absolute; top: 0; right: 0; }
+.nodeIssues {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  display: flex;
+  align-items: flex-end;
+}
 .nodeIndicators {
   display: flex;
   align-items: center;
@@ -274,8 +281,9 @@
 .node :global(.react-flow__handle) { top: 96px; }
 @media (any-pointer: coarse) {
   .node[data-issues="true"] {
-    height: 216px;
-    .nodeIndicators { top: 12px; }
+    height: 232px;
+    .canvasCharacter { margin-bottom: 48px; }
+    .nodeIssues { gap: 8px; }
   }
 }
 .nodeSpinner {
