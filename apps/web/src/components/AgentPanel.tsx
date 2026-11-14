@@ -5,9 +5,8 @@ import { AgentCharacter } from "./AgentCharacter";
 import { LiveAgentCharacter } from "./LiveAgentCharacter";
 import { CharacterEditor } from "./CharacterEditor";
 import { useSettings } from "../settings-store";
-import { TaskCommunications } from "./Messaging";
+import { TaskTimeline } from "./TaskTimeline";
 import { TaskComposer as Composer } from "./TaskComposer";
-import { MessageAttachments } from "./MessageAttachments";
 import {
   useCallback,
   useEffect,
@@ -38,7 +37,6 @@ import type {
   ModelPreset,
   TaskDetail,
 } from "../../../server/src/contracts";
-import { TaskTools } from "./TaskTools";
 import { FolderLocation } from "./FolderLocation";
 import { Field } from "./FormField";
 import { Dialog } from "./Dialog";
@@ -252,101 +250,15 @@ export function AgentForm({
     </form>
   );
 }
-function Transcript({
-  agentId,
-  taskId,
-}: {
-  agentId: string;
-  taskId: string | null;
-}) {
-  const store = useAgentStore(),
-    key = taskId ?? `chat:${agentId}`;
-  const messages = useAgents((s) => s.messages[key] ?? emptyList),
-    total = useAgents((s) => s.messageTotals[key] ?? 0);
+function Transcript({ agentId, taskId }: { agentId: string; taskId: string | null }) {
   const executionId = useAgents(s => taskId ?? s.chats[agentId]?.task?.id);
-  const version = useAgents((s) => s.eventVersion);
-  const [error, setError] = useState("");
-  const end = useRef<HTMLDivElement>(null),
-    nearEnd = useRef(true);
-  useEffect(() => {
-    let alive = true;
-    void store
-      .getState()
-      .loadMessages(agentId, taskId)
-      .catch((e) => {
-        if (alive) setError(errorMessage(e));
-      });
-    return () => {
-      alive = false;
-    };
-  }, [agentId, taskId, store, version]);
-  useEffect(() => {
-    if (nearEnd.current && end.current?.parentElement) {
-      const viewport = end.current.parentElement;
-      viewport.scrollTop = viewport.scrollHeight;
-    }
-  }, [messages]);
-  return (
-    <div
-      className={styles.transcript}
-      onScroll={(e) => {
-        const el = e.currentTarget;
-        nearEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
-      }}
-    >
-      {messages.length < total && (
-        <button
-          type="button"
-          className="textButton"
-          onClick={() => {
-            nearEnd.current = false;
-            void store
-              .getState()
-              .loadMessages(agentId, taskId, true)
-              .catch((e) => setError(errorMessage(e)));
-          }}
-        >
-          Load earlier messages
-        </button>
-      )}
-      <p className={styles.srStatus} role="status" aria-live="polite">
-        {messages.at(-1)?.role === "assistant"
-          ? messages.at(-1)?.state === "streaming"
-            ? "Agent is responding."
-            : "Agent reply ready."
-          : ""}
+  return executionId ? (
+    <TaskTimeline key={executionId} taskId={executionId} />
+  ) : (
+    <div className={styles.transcript}>
+      <p className={styles.muted}>
+        Talk with this agent, ask it to do something, or describe the role you want it to take.
       </p>
-      {!messages.length && (
-        <p className={styles.muted}>
-          {taskId
-            ? "Your task conversation appears here."
-            : "Talk with this agent, ask it to do something, or describe the role you want it to take."}
-        </p>
-      )}
-      {messages.map((m) => (
-        <article key={m.id} className={styles.message} data-role={m.role}>
-          <div className={styles.messageLabel}>
-            {m.role === "user" ? (m.authorType === "agent" ? (m.authorName ?? "Collaborator") : m.authorType === "system" ? "System" : "You") : "Agent"}{" "}
-            <span>
-              {m.state === "incomplete"
-                ? "· Incomplete reply"
-                : m.state === "streaming"
-                  ? "· Writing…"
-                  : ""}
-            </span>
-          </div>
-          <div className={styles.messageText}>{m.content || (m.parts?.some(p=>p.type==="artifact") ? "" : "…")}</div>
-          <MessageAttachments parts={m.parts} />
-        </article>
-      ))}
-      {error && (
-        <p role="alert" className="errorBanner">
-          {error}
-        </p>
-      )}
-      {executionId && <TaskCommunications key={`communication:${executionId}`} taskId={executionId} />}
-      {executionId && <TaskTools key={`tools:${executionId}`} taskId={executionId} />}
-      <div ref={end} />
     </div>
   );
 }
@@ -590,6 +502,7 @@ export function AgentPanel({
   return createPortal(
     <section
       className={styles.panel}
+      data-agent-panel
       aria-labelledby="agent-panel-heading"
       onKeyDown={(e) => {
         if (

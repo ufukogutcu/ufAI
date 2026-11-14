@@ -499,3 +499,39 @@ export interface MessageTransit {
   arrivesAt: string;
   state: "in_flight" | "arrived" | "cancelled";
 }
+
+/** Read-only presentation of a task conversation; never used as model context. */
+export type TimelineStatus =
+  | "running"
+  | "waiting"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
+export interface TimelineEntry {
+  id: string;
+  /** Stable ordering cursor, scoped to this task. */
+  order: string;
+  turnId: string | null;
+  createdAt: string;
+  kind: "message" | "action" | "communication" | "checkin" | "file";
+  message?: AgentMessage;
+  name?: string;
+  arguments?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  status?: TimelineStatus;
+  error?: string;
+  process?: OwnedProcess;
+  request?: AgentRequest;
+  communication?: CommunicationMessage;
+  checkin?: TaskCheckIn;
+  file?: ArtifactVersion;
+  contextName?: string;
+}
+export interface TimelinePage {
+  items: TimelineEntry[];
+  before: string | null;
+  /** Current snapshots of explicitly watched, previously loaded entries. */
+  updates: TimelineEntry[];
+  removed: string[];
+}

@@ -24,7 +24,7 @@ export function ArtifactCard({ version }: { version: ArtifactVersion }) {
     <div className={styles.file}>
       <div>
         <strong>{version.name}</strong>
-        <ImagePreview version={version}/>
+        <ImagePreview version={version} />
         <span className={styles.meta}>
           {version.mediaType} · {new Intl.NumberFormat().format(version.size)}{" "}
           bytes · {version.state}
@@ -306,185 +306,91 @@ function TerminalSession({
     </>
   );
 }
-export function TaskTools({ taskId }: { taskId: string }) {
-  const snapshot = useAgents((s) => s.toolData[taskId]),
-    load = useAgents((s) => s.loadToolData),
-    loadMore = useAgents((s) => s.loadMoreToolData),
-    version = useAgents((s) => s.eventVersion);
-  const [error, setError] = useState(""),
-    [open, setOpen] = useState<string | null>(null);
-  const [stopping, setStopping] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    const timer = setTimeout(() => {
-      void load(taskId).catch((e) => {
-        if (alive) setError(errorMessage(e));
-      });
-    }, 150);
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
-  }, [taskId, load, version]);
-  const processes = snapshot?.processes ?? [],
-    artifacts = snapshot?.artifacts ?? [],
-    activity = snapshot?.activity ?? [];
-  async function stop(id: string) {
-    if (stopping) return;
-    setStopping(id);
+export function ProcessActivity({
+  process: owned,
+  onChange,
+}: {
+  process: OwnedProcess;
+  onChange: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState("");
+  const [stopping, setStopping] = useState(false);
+  const outputButton = useRef<HTMLButtonElement>(null);
+  const active = ["starting", "running"].includes(owned.state);
+  async function stop() {
+    setStopping(true);
     setError("");
     try {
-      await request(`/processes/${id}/stop`, "POST");
-      await load(taskId);
+      await request(`/processes/${owned.id}/stop`, "POST");
+      onChange();
+      outputButton.current?.focus();
     } catch (e) {
       setError(errorMessage(e));
     } finally {
-      setStopping(null);
+      setStopping(false);
     }
   }
   return (
-    <section className={styles.section} aria-label="Tools, processes and files">
-      <details>
-        <summary>Tool activity · {snapshot?.activityTotal ?? 0}</summary>
-        <div className={styles.list}>
-          {activity.map((item) => (
-            <details key={item.id}>
-              <summary>
-                {item.kind.replaceAll("_", " ")} ·{" "}
-                {new Date(item.createdAt).toLocaleTimeString()}
-              </summary>
-              <pre className={styles.output}>{item.content}</pre>
-            </details>
-          ))}
-          {activity.length < (snapshot?.activityTotal ?? 0) && (
-            <button
-              className="textButton"
-              onClick={() =>
-                void load(taskId, true).catch((e) => setError(errorMessage(e)))
-              }
-            >
-              Load earlier activity
-            </button>
-          )}
-        </div>
-      </details>
-      {processes.length > 0 && (
-        <>
-          <h4>Processes</h4>
-          {processes.length < (snapshot?.processTotal ?? 0) && (
-            <button
-              className="textButton"
-              onClick={() =>
-                void loadMore(taskId, "processes").catch((e) =>
-                  setError(errorMessage(e)),
-                )
-              }
-            >
-              Load more processes
-            </button>
-          )}
-          <div className={styles.list}>
-            {processes.map((p) => (
-              <div className={styles.process} key={p.id}>
-                <code className={styles.command}>{p.command}</code>
-                <span className={styles.meta}>{p.cwd}</span>
-                <span className={styles.meta}>
-                  {p.pty ? "PTY · " : ""}
-                  {p.state}
-                  {p.exitCode !== null ? ` · exit ${p.exitCode}` : ""}
-                </span>
-                <div className={styles.controls}>
-                  <button
-                    className="textButton"
-                    aria-haspopup="dialog"
-                    aria-expanded={open === p.id}
-                    onClick={() => setOpen(open === p.id ? null : p.id)}
-                  >
-                    <TerminalIcon size={14} aria-hidden="true" />
-                    Output
-                  </button>
-                  {["starting", "running"].includes(p.state) && (
-                    <button
-                      className="textButton"
-                      disabled={stopping !== null}
-                      onClick={() => void stop(p.id)}
-                    >
-                      <Square size={13} aria-hidden="true" />
-                      {stopping === p.id ? "Stopping…" : "Stop process"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-      {artifacts.length > 0 && (
-        <>
-          <h4>Published files</h4>
-          {artifacts.length < (snapshot?.artifactTotal ?? 0) && (
-            <button
-              className="textButton"
-              onClick={() =>
-                void loadMore(taskId, "artifacts").catch((e) =>
-                  setError(errorMessage(e)),
-                )
-              }
-            >
-              Load more files
-            </button>
-          )}
-          <div className={styles.list}>
-            {artifacts.map((v) => (
-              <ArtifactCard key={v.id} version={v} />
-            ))}
-          </div>
-        </>
-      )}
-      {open && processes.find((p) => p.id === open) && (
-        <Dialog title="Process output" onClose={() => setOpen(null)}>
+    <>
+      <code className={styles.command}>{owned.command}</code>
+      <span className={styles.meta}>{owned.cwd}</span>
+      <span className={styles.meta}>
+        Process {owned.state}
+        {owned.exitCode !== null ? ` · exit ${owned.exitCode}` : ""}
+      </span>
+      <div className={styles.controls}>
+        <button
+          ref={outputButton}
+          type="button"
+          className="textButton"
+          aria-haspopup="dialog"
+          onClick={() => setOpen(true)}
+        >
+          <TerminalIcon size={14} aria-hidden="true" />
+          Output
+        </button>
+        {active && (
+          <button
+            type="button"
+            className="textButton"
+            disabled={stopping}
+            onClick={() => void stop()}
+          >
+            <Square size={13} aria-hidden="true" />
+            {stopping ? "Stopping…" : "Stop process"}
+          </button>
+        )}
+      </div>
+      {open && (
+        <Dialog title="Process output" onClose={() => setOpen(false)}>
           <div className={styles.panel}>
-            <code className={styles.command}>
-              {processes.find((p) => p.id === open)!.command}
-            </code>
-            <span className={styles.meta}>
-              {processes.find((p) => p.id === open)!.state}
-            </span>
-            <TerminalSession
-              key={open}
-              process={processes.find((p) => p.id === open)!}
-              onError={setError}
-            />
-            {["starting", "running"].includes(
-              processes.find((p) => p.id === open)!.state,
-            ) && (
-              <button className="button" disabled={stopping !== null} onClick={() => void stop(open)}>
-                {stopping === open ? "Stopping…" : "Stop process"}
+            <code className={styles.command}>{owned.command}</code>
+            <TerminalSession process={owned} onError={setError} />
+            {active && (
+              <button
+                type="button"
+                className="button"
+                disabled={stopping}
+                onClick={() => void stop()}
+              >
+                {stopping ? "Stopping…" : "Stop process"}
               </button>
             )}
             {error && (
-              <p role="alert" className="errorBanner">
+              <p className="errorBanner" role="alert">
                 {error}
               </p>
             )}
           </div>
         </Dialog>
       )}
-      {error && (
+      {error && !open && (
         <p className="errorBanner" role="alert">
           {error}
-          <button
-            className="textButton"
-            onClick={() => {
-              setError("");
-              void load(taskId).catch((e) => setError(errorMessage(e)));
-            }}
-          >
-            Retry
-          </button>
         </p>
       )}
-    </section>
+    </>
   );
 }
 export function PublishedFiles({

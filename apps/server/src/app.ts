@@ -14,6 +14,7 @@ import { ProcessService, type ProcessOptions } from "./process-service.js";
 import { ArtifactService, type ArtifactOptions } from "./artifact-service.js";
 import { AgentTools } from "./agent-tools.js";
 import { registerTools } from "./tool-routes.js";
+import { registerTimeline } from "./task-timeline.js";
 import { ManagedFiles } from "./managed-files.js";
 import { registerLocations } from "./locations.js";
 import { registerAgents } from "./agents.js";
@@ -207,6 +208,7 @@ export function createApp(
   registerAgents(app, database, execution, files, incoming);
   registerLocations(app, database, execution, files);
   registerTools(app, database, execution, processes, artifacts);
+  registerTimeline(app, database, execution);
   app.addHook("preClose", async () => {
     await incoming.close();
     await artifacts.quiesce();

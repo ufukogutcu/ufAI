@@ -1,0 +1,197 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 80px;
+  min-width: 0;
+  position: relative;
+}
+.transcript {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px 20px;
+  overflow-anchor: none;
+}
+.message {
+  min-width: 0;
+  margin: 12px 0 20px;
+}
+.user {
+  width: fit-content;
+  max-width: 88%;
+  margin-left: auto;
+  padding: 10px 14px;
+  background: var(--panel);
+  border-radius: var(--radius-panel);
+}
+.agent {
+  padding: 0;
+}
+.author {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.65;
+}
+.activity {
+  min-width: 0;
+  margin: 4px 0;
+  color: var(--muted);
+}
+.action {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 4px;
+  min-height: 32px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-compact);
+  text-align: left;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+  &:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+  > svg {
+    flex-shrink: 0;
+  }
+}
+.actionLabel {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.state {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.meta {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.processState {
+  margin: 0 0 4px 27px;
+  font-size: 12px;
+}
+.failure {
+  color: var(--error-text);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  margin: 4px 0;
+}
+.details {
+  margin: 4px 0 12px 11px;
+  padding: 8px 0 8px 15px;
+  border-left: 1px solid var(--border);
+  min-width: 0;
+  color: var(--text);
+  > time {
+    display: block;
+    margin-bottom: 8px;
+  }
+  summary {
+    padding: 8px 0;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--muted);
+  }
+}
+.output {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+.checkin p {
+  margin: 4px 0;
+}
+.chevron {
+  transform: rotate(0);
+}
+.chevronOpen {
+  transform: rotate(90deg);
+}
+.spinner {
+  animation: spin 1s linear infinite;
+}
+.jump {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  padding: 4px 20px 8px;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (max-width: 640px) {
+  .transcript {
+    padding: 12px 16px;
+  }
+  .user {
+    max-width: 94%;
+  }
+}
+@media (any-pointer: coarse) {
+  .action {
+    min-height: 44px;
+  }
+  .controls button,
+  .checkin button {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+@media (max-height: 520px) {
+  .container {
+    flex: none;
+    min-height: 80px;
+  }
+  .transcript {
+    flex: none;
+    overflow: visible;
+  }
+}

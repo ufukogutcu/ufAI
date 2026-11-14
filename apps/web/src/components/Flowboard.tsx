@@ -182,7 +182,11 @@ function Board({ workspaceId }: { workspaceId: string }) {
     const refreshTransits = () => {
       if (!closed) void transitStore.getState().refresh(workspaceId);
     };
+    const invalidateTimeline = () => {
+      if (!closed) agentStore.setState(s => ({ timelineVersion: s.timelineVersion + 1 }));
+    };
     const changed = (event: MessageEvent) => {
+      invalidateTimeline();
       try {
         if (JSON.parse(event.data).kind === "message-transit") {
           refreshTransits();
@@ -191,16 +195,18 @@ function Board({ workspaceId }: { workspaceId: string }) {
       } catch { /* Ordinary snapshots still refresh for malformed invalidations. */ }
       refresh();
     };
-    const resync = () => { refreshTransits(); refresh(); };
+    const resync = () => { invalidateTimeline(); refreshTransits(); refresh(); };
     events.addEventListener("change", changed);
     events.addEventListener("resync", resync);
     events.onopen = () => {
       agentStore.setState({ connected: true });
+      invalidateTimeline();
       refreshTransits();
       refresh();
     };
     events.onerror = () => agentStore.setState({ connected: false });
     const unfocus = refreshOnFocus(async () => {
+      invalidateTimeline();
       refreshTransits();
       refresh();
     });

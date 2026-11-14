@@ -826,6 +826,14 @@ test("durable messaging wait survives restart and embeds the delegated image wit
         .prepare("SELECT 1 FROM messaging_waits WHERE state='waiting'")
         .get(),
   );
+  // The parent can park before the helper is admitted. Start the helper before
+  // simulating interruption; a still-queued helper correctly needs no Retry.
+  await until(() => {
+    const helper = s.db
+      .prepare("SELECT targetTaskId FROM agent_requests WHERE sourceTaskId=?")
+      .get(s.owner.taskId) as { targetTaskId: string } | undefined;
+    return !!helper && s.engine.task(helper.targetTaskId).status === "running";
+  });
   await s.engine.close();
   await s.messaging.close();
   const oldWait = s.db

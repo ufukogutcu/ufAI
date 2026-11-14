@@ -115,6 +115,7 @@ interface AgentState {
   submissionIds: Record<string, { content: string; id: string }>;
   submissionId: (key: string, content: string) => string;
   eventVersion: number;
+  timelineVersion: number;
   error: string;
   connected: boolean;
   loadWorkspace: (id: string, layoutMutation?: boolean) => Promise<void>;
@@ -583,6 +584,7 @@ export function createAgentStore() {
       positionError: "",
       submissionIds: {},
       eventVersion: 0,
+      timelineVersion: 0,
       error: "",
       connected: true,
       async loadWorkspace(id, layoutMutation = false) {
