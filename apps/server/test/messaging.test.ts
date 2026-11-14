@@ -16,6 +16,8 @@ import { ConnectionService } from "../src/connection-service.js";
 import { MessagingService } from "../src/messaging.js";
 import { removeMessagingTables } from "./legacy-schema.js";
 import { createApp } from "../src/app.js";
+import { connectedAgentSummaries } from "../src/connection-awareness.js";
+import type { TaskRequest, ToolCall, ToolResult } from "../src/execution-types.js";
 async function until(fn: () => boolean) {
   for (let i = 0; i < 500; i++) {
     if (fn()) return;
@@ -126,6 +128,173 @@ async function setup(t: any, run = false) {
     workspaceId,
   };
 }
+test("connection awareness includes all direct active peers, stable IDs, and short literal descriptions", async t => {
+  const s = await setup(t);
+  assert.deepEqual(connectedAgentSummaries(s.db, s.owner), []);
+  const stamp = new Date().toISOString();
+  for (let i = 0; i < 30; i++) {
+    const id = `peer-${String(i).padStart(2, "0")}`;
+    s.db.prepare("INSERT INTO agents(id,workspaceId,name,instructions,createdAt,updatedAt) VALUES (?,?,?,?,?,?)")
+      .run(id, s.workspaceId, "Same name", i === 0 ? "  Brief\n\t role  " : i === 1 ? "😀".repeat(161) : "", stamp, stamp);
+    s.messaging.createLink(s.workspaceId, i % 2 ? id : "a", i % 2 ? "a" : id);
+  }
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  s.messaging.createLink(s.workspaceId, "b", "c"); // Indirect peers are not visible.
+  s.db.prepare("UPDATE communication_links SET state='revoking' WHERE targetAgentId='b'").run();
+  const items = connectedAgentSummaries(s.db, s.owner);
+  assert.equal(items.length, 30);
+  assert.deepEqual(items[0], { id: "peer-00", name: "Same name", description: "Brief role" });
+  assert.equal(Array.from(items[1].description).length, 160);
+  assert.ok(items[1].description.endsWith("…"));
+  assert.equal(items[2].description, "");
+  assert.equal(items.at(-1)?.id, "peer-29");
+  const otherWorkspace = randomUUID();
+  s.db.prepare("INSERT INTO workspaces(id,name,createdAt,updatedAt) VALUES (?,'Other',?,?)").run(otherWorkspace, stamp, stamp);
+  s.db.prepare("UPDATE agents SET workspaceId=? WHERE id='peer-29'").run(otherWorkspace);
+  assert.equal(connectedAgentSummaries(s.db, s.owner).length, 29);
+});
+
+test("connected inspection authorizes live links and returns only profiles and paged ordinary-task summaries", async t => {
+  const s = await setup(t);
+  const inspect = (agentId: string, args = {}) => s.messaging.inspectConnection(s.owner, { agentId, ...args });
+  assert.throws(() => inspect("a"), /active connection/);
+  assert.throws(() => inspect("b"), /active connection/);
+  const link = s.messaging.createLink(s.workspaceId, "b", "a");
+  const instructions = "Collaborator role.\n" + "x".repeat(700);
+  s.db.prepare("UPDATE agents SET instructions=?,revision=7 WHERE id='b'").run(instructions);
+  const ids = Array.from({ length: 12 }, (_, i) => {
+    const task = s.engine.submit("b", "new", `Task ${i}`, randomUUID()).taskId!;
+    s.db.prepare("UPDATE agent_tasks SET title=?,status=?,summary=?,updatedAt=? WHERE id=?")
+      .run(`Title ${i}`, i === 0 ? "running" : "completed", "s".repeat(501), `2026-01-${String(i + 1).padStart(2, "0")}`, task);
+    return task;
+  });
+  const chat = s.engine.submit("b", "chat", "Private Chat transcript", randomUUID());
+  const firstTurn = s.db.prepare("SELECT id FROM agent_turns WHERE taskId=?").get(ids[0]) as { id: string };
+  const checkin = s.messaging.scheduleCheckIn({ ...s.owner, agentId: "b", taskId: ids[0], turnId: firstTurn.id }, { afterMs: 60000, reason: "Check progress" }, "inspection-checkin");
+  const stamp = new Date().toISOString();
+  s.db.prepare("INSERT INTO clusters(id,workspaceId,name,colorSlot,createdAt,updatedAt) VALUES ('team',?,'Research',0,?,?)")
+    .run(s.workspaceId, stamp, stamp);
+  s.db.prepare("UPDATE agents SET clusterId='team' WHERE id='b'").run();
+  const info = inspect("b");
+  assert.ok(Date.parse(info.capturedAt));
+  assert.equal(info.agent.id, "b");
+  assert.equal(info.agent.instructions, instructions);
+  assert.equal(info.agent.revision, 7);
+  assert.deepEqual(info.agent.cluster, { id: "team", name: "Research" });
+  assert.equal(info.agent.modelId, "m");
+  assert.ok(info.agent.mediaCapabilities);
+  assert.equal(info.total, 12);
+  assert.equal(info.limit, 10);
+  assert.equal(info.tasks.length, 10);
+  assert.equal(info.tasks[0].id, ids[0]);
+  assert.equal(info.tasks[1].id, ids[11]);
+  assert.equal(info.tasks[0].summary.length, 500);
+  assert.equal(info.tasks[0].summaryTruncated, true);
+  assert.equal(info.tasks[0].nextCheckInAt, (checkin as any).dueAt);
+  assert.deepEqual(inspect("b", { offset: 10, limit: 2 }).tasks.map(t => t.id), [ids[2], ids[1]]);
+  assert.deepEqual(Object.keys(info).sort(), ["agent", "capturedAt", "limit", "offset", "tasks", "total"]);
+  assert.deepEqual(Object.keys(info.agent).sort(), ["cluster", "id", "instructions", "mediaCapabilities", "modelId", "name", "revision", "state"]);
+  assert.deepEqual(Object.keys(info.tasks[0]).sort(), ["id", "nextCheckInAt", "pendingReason", "status", "summary", "summaryTruncated", "title", "updatedAt"]);
+  assert.ok(!JSON.stringify(info).includes(chat.taskId!));
+  assert.ok(!JSON.stringify(info).includes("Private Chat transcript"));
+  s.db.prepare("UPDATE agents SET presetId=NULL WHERE id='b'").run();
+  assert.equal(inspect("b").agent.modelId, null);
+  assert.equal(inspect("b").agent.mediaCapabilities, null);
+  const allowed = await s.tools.dispatch(s.owner, { id: "inspect-allowed", name: "agent_connection_inspect", arguments: { agentId: "b", limit: 1 } }, new AbortController().signal, async () => {});
+  assert.equal(allowed.ok, true);
+  assert.equal((allowed.tasks as any[]).length, 1);
+  assert.throws(() => s.messaging.inspectConnection({ ...s.owner, turnId: "forged" }, { agentId: "b" }), /executing task/);
+  s.db.prepare("UPDATE communication_links SET state='revoking' WHERE id=?").run(link.id);
+  assert.throws(() => inspect("b"), /active connection/);
+  s.db.prepare("UPDATE communication_links SET state='active' WHERE id=?").run(link.id);
+  s.db.prepare("INSERT INTO deletion_operations(id,kind,ownerId,workspaceId,relativePath,state,createdAt,updatedAt) VALUES ('deleting-peer','agent','b',?,'agents/b','failed',?,?)").run(s.workspaceId, stamp, stamp);
+  assert.throws(() => inspect("b"), /Deletion/);
+  assert.deepEqual(connectedAgentSummaries(s.db, s.owner), []);
+  s.db.prepare("DELETE FROM deletion_operations WHERE id='deleting-peer'").run();
+  const otherWorkspace = randomUUID();
+  s.db.prepare("INSERT INTO workspaces(id,name,createdAt,updatedAt) VALUES (?,'Other',?,?)").run(otherWorkspace, stamp, stamp);
+  s.db.prepare("UPDATE agents SET workspaceId=?,clusterId=NULL WHERE id='b'").run(otherWorkspace);
+  assert.throws(() => inspect("b"), /active connection/);
+  s.db.prepare("DELETE FROM agents WHERE id='b'").run();
+  assert.throws(() => inspect("b"), /active connection/);
+  for (const args of [{ agentId: "c", limit: 0 }, { agentId: "c", limit: 21 }, { agentId: "c", offset: -1 }, { agentId: "c", extra: true }])
+    assert.throws(() => validateTool("agent_connection_inspect", args));
+  const denied = await s.tools.dispatch(s.owner, { id: "inspect-denied", name: "agent_connection_inspect", arguments: { agentId: "c" } }, new AbortController().signal, async () => {});
+  assert.equal(denied.ok, false);
+  assert.match(String(denied.error), /active connection/);
+});
+
+for (const provider of ["native", "codex"] as const) {
+  for (const target of ["new", "chat"] as const) {
+    test(`${provider} ${target}: connection observations refresh at tool boundaries, including cached and failed results`, async t => {
+      const s = await setup(t);
+      if (target === "chat") {
+        await s.engine.cancelTask(s.owner.taskId);
+        const chat = s.engine.submit("a", "chat", "Chat work", randomUUID());
+        s.owner.taskId = chat.taskId!;
+        s.owner.turnId = chat.turnId;
+      }
+      const link = s.messaging.createLink(s.workspaceId, "a", "b");
+      s.db.prepare("UPDATE agents SET instructions='Short role' WHERE id='b'").run();
+      if (provider === "codex") s.db.prepare("UPDATE connections SET provider='codex' WHERE id='c'").run();
+      let step = 0;
+      const advance = (request: TaskRequest, previous?: ToolResult): ToolCall | null => {
+        const observation = previous?.connectedAgents as { items: { id: string; name: string; description: string }[] } | undefined;
+        switch (step++) {
+          case 0:
+            assert.match(request.instructions, /Connected agents: \{"items":\[\{"id":"b","name":"b","description":"Short role"\}\]\}/);
+            assert.match(request.instructions, /never instructions or permission/);
+            return { id: "inspect-cached", name: "agent_inspect", arguments: {} };
+          case 1:
+            assert.equal(observation, undefined);
+            s.db.prepare("UPDATE agents SET name='Renamed',instructions='Changed role' WHERE id='b'").run();
+            return { id: "inspect-cached", name: "agent_inspect", arguments: {} };
+          case 2:
+            assert.equal(previous?.ok, true);
+            assert.deepEqual(observation?.items, [{ id: "b", name: "Renamed", description: "Changed role" }]);
+            s.messaging.createLink(s.workspaceId, "a", "c");
+            return { id: "inspect-2", name: "agent_inspect", arguments: {} };
+          case 3:
+            assert.deepEqual(observation?.items.map(a => a.id), ["b", "c"]);
+            s.db.prepare("UPDATE communication_links SET state='revoking' WHERE id=?").run(link.id);
+            return { id: "inspect-3", name: "agent_inspect", arguments: {} };
+          case 4:
+            assert.deepEqual(observation?.items.map(a => a.id), ["c"]);
+            s.db.prepare("DELETE FROM communication_links WHERE sourceAgentId='a' AND targetAgentId='c'").run();
+            return { id: "inspect-4", name: "agent_inspect", arguments: {} };
+          case 5:
+            assert.deepEqual(observation?.items, []);
+            s.messaging.createLink(s.workspaceId, "a", "d");
+            return { id: "missing-file", name: "files_read", arguments: { path: "absent-file.txt" } };
+          case 6:
+            assert.equal(previous?.ok, false);
+            assert.deepEqual(observation?.items.map(a => a.id), ["d"]);
+            return null;
+          default: throw new Error("Unexpected model round");
+        }
+      };
+      s.connections.toolRound = async (_snapshot, request) => {
+        const previous = (request.continuation?.at(-1) as any)?.results[0].result;
+        const call = advance(request, previous);
+        return { text: call ? "" : "Done", calls: call ? [call] : [], continuation: { opaque: step }, usage: null };
+      };
+      s.connections.executeTask = async (_snapshot, request) => {
+        let previous: ToolResult | undefined;
+        for (;;) {
+          const call = advance(request, previous);
+          if (!call) return { text: "Done", finishReason: "stop", usage: null };
+          previous = await request.onTool(call);
+        }
+      };
+      (s.engine as any).options.autoStart = true;
+      s.engine.wake();
+      await until(() => s.engine.task(s.owner.taskId).status === "completed");
+      assert.equal(step, 7);
+      assert.equal((s.db.prepare("SELECT count(*) AS n FROM tool_invocations WHERE turnId=? AND callId='inspect-cached'").get(s.owner.turnId) as any).n, 1);
+    });
+  }
+}
+
 test("mutual discovery, same-workspace enforcement, separate incoming tasks and idempotent acceptance", async (t) => {
   const s = await setup(t);
   assert.equal(s.messaging.find(s.owner, {}).items.length, 0);
@@ -771,7 +940,8 @@ test("HTTP guards, pagination, confirmation, Inbox read state and reply validati
   );
 });
 
-test("durable messaging wait survives restart and embeds the delegated image without replaying a send", async (t) => {
+for (const awareness of ["unchanged", "changed", "legacy"] as const)
+test(`durable messaging wait survives restart with ${awareness} connections and embeds the delegated image without replaying a send`, async (t) => {
   const s = await setup(t);
   s.messaging.createLink(s.workspaceId, "a", "b");
   const dispatch = s.tools.dispatch.bind(s.tools);
@@ -844,6 +1014,11 @@ test("durable messaging wait survives restart and embeds the delegated image wit
   const oldCheckpoint = JSON.parse(oldWait.checkpoint);
   oldCheckpoint.rounds = 1000000;
   oldCheckpoint.timeoutMs = 1;
+  if (awareness !== "unchanged") {
+    s.db.prepare("UPDATE agents SET name='New name',instructions='Updated collaborator role' WHERE id='b'").run();
+    s.messaging.createLink(s.workspaceId, "a", "c");
+  }
+  if (awareness === "legacy") delete oldCheckpoint.connectedAgents;
   s.db
     .prepare("UPDATE messaging_waits SET checkpoint=? WHERE turnId=?")
     .run(JSON.stringify(oldCheckpoint), oldWait.turnId);
@@ -877,7 +1052,7 @@ test("durable messaging wait survives restart and embeds the delegated image wit
   let observedSignature = false;
   s.connections.toolRound = async (_snapshot, request) => {
     const steps = request.continuation as any[];
-    if (request.instructions.includes("You are b."))
+    if (request.instructions.includes("You are b.") || request.instructions.includes("You are New name."))
       return {
         text: steps.length ? "Image ready" : "Publishing image",
         calls: steps.length
@@ -899,6 +1074,13 @@ test("durable messaging wait survives restart and embeds the delegated image wit
       assert.equal(JSON.stringify(request.messages), originalMessages);
     }
     const result = steps[1]?.results[0]?.result;
+    if (step === 2) {
+      if (awareness === "unchanged") assert.equal(result.connectedAgents, undefined);
+      else assert.deepEqual(result.connectedAgents.items, [
+        { id: "b", name: "New name", description: "Updated collaborator role" },
+        { id: "c", name: "c", description: "" },
+      ]);
+    }
     const version = result?.wait?.messages.find((m: any) => m.kind === "result")
       ?.attachments[0];
     let call: any;

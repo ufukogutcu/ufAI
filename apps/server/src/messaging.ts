@@ -8,7 +8,7 @@ import type { ToolOwner } from "./process-service.js";
 import { ConnectionError } from "./model-providers.js";
 import { guard } from "./connections.js";
 import { pagination, objectBody } from "./validation.js";
-import type { TaskCheckIn } from "./contracts.js";
+import type { AgentTask, TaskCheckIn } from "./contracts.js";
 
 const now = () => new Date().toISOString();
 const fail = (message: string, code = 409): never => {
@@ -457,6 +457,45 @@ export class MessagingService {
       }),
       offset,
       limit,
+    };
+  }
+  inspectConnection(owner: ToolOwner, args: { agentId: string; offset?: number; limit?: number }) {
+    this.assertOwner(owner);
+    const link = this.db.prepare(`SELECT 1 FROM communication_links l JOIN agents a ON a.id=?
+      WHERE l.state='active' AND l.workspaceId=? AND a.workspaceId=? AND
+        ((l.sourceAgentId=? AND l.targetAgentId=a.id) OR (l.targetAgentId=? AND l.sourceAgentId=a.id))`).get(
+      args.agentId, owner.workspaceId, owner.workspaceId, owner.agentId, owner.agentId,
+    );
+    if (args.agentId === owner.agentId || !link)
+      fail("Inspection requires an active connection to another agent in this workspace.", 403);
+    const a = this.owner(args.agentId);
+    let modelId: string | null = null;
+    let mediaCapabilities: unknown = null;
+    try {
+      const snapshot = this.connections.snapshot(a);
+      modelId = snapshot.modelId;
+      mediaCapabilities = snapshot.mediaCapabilities ?? null;
+    } catch {
+      // A collaborator remains inspectable while its model is unconfigured.
+    }
+    const cluster = a.clusterId
+      ? this.db.prepare("SELECT id,name FROM clusters WHERE id=?").get(a.clusterId) ?? null
+      : null;
+    const offset = args.offset ?? 0, limit = args.limit ?? 10;
+    const tasks = this.db.prepare(`SELECT id,title,status,pendingReason,
+      (SELECT min(dueAt) FROM task_checkins WHERE taskId=t.id AND state='scheduled') AS nextCheckInAt,
+      substr(summary,1,500) AS summary,length(summary)>500 AS summaryTruncated,updatedAt
+      FROM agent_tasks t WHERE agentId=? AND kind='task'
+      ORDER BY (status IN ('running','waiting','queued','blocked','failed')) DESC,updatedAt DESC,id LIMIT ? OFFSET ?`
+    ).all(a.id, limit, offset) as (Pick<AgentTask, "id" | "title" | "status" | "pendingReason" | "summary" | "updatedAt"> & {
+      nextCheckInAt: string | null; summaryTruncated: number;
+    })[];
+    const total = (this.db.prepare("SELECT count(*) AS n FROM agent_tasks WHERE agentId=? AND kind='task'").get(a.id) as { n: number }).n;
+    return {
+      capturedAt: now(),
+      agent: { id: a.id, name: a.name, instructions: a.instructions, revision: a.revision, cluster, state: a.state, modelId, mediaCapabilities },
+      tasks: tasks.map(t => ({ ...t, summaryTruncated: Boolean(t.summaryTruncated) })),
+      total, offset, limit,
     };
   }
   send(owner: ToolOwner, args: any, key: string) {

@@ -258,6 +258,26 @@ test("task isolation, per-agent serialization, cross-connection concurrency, and
   assert.ok(!("credential" in snapshot));
 });
 
+test("retry refreshes connected-agent context after a failed attempt", async t => {
+  let attempts = 0;
+  const f = setup(async request => {
+    if (attempts++ === 0) {
+      assert.match(request.instructions, /Connected agents: \{"items":\[\]\}/);
+      throw new Error("Fixture generation interrupted");
+    }
+    assert.match(request.instructions, /Connected agents: \{"items":\[\{"id":"b","name":"New colleague","description":"Be useful\."\}\]\}/);
+    return result("Recovered");
+  });
+  t.after(() => f.close());
+  const first = f.engine.submit("a", "new", "Work", "awareness_retry_request");
+  await until(() => f.engine.task(first.taskId!).status === "failed");
+  f.db.prepare("INSERT INTO communication_links(id,workspaceId,sourceAgentId,targetAgentId,createdAt) VALUES ('awareness-retry',?,'a','b','now')").run(f.workspace);
+  f.db.prepare("UPDATE agents SET name='New colleague' WHERE id='b'").run();
+  f.engine.retry(first.taskId!);
+  await until(() => f.engine.task(first.taskId!).status === "completed");
+  assert.equal(attempts, 2);
+});
+
 test("cancellation rejects late results and preserves partial output", async (t) => {
   let release!: () => void;
   const gate = new Promise<void>((r) => {
@@ -511,6 +531,7 @@ test(`${target}: compaction preserves full transcripts and covers complete excha
   // This fixture counts bytes as tokens; leave room for the shared prompt while
   // the low compaction threshold below still forces complete-exchange compaction.
   f.db.prepare("UPDATE provider_models SET contextWindowOverride=16000").run();
+  f.db.prepare("INSERT INTO communication_links(id,workspaceId,sourceAgentId,targetAgentId,createdAt) VALUES ('awareness',?,'a','b','now')").run(f.workspace);
   f.db
     .prepare(
       "UPDATE model_presets SET compactionMode='tokens',compactionValue=2200",
@@ -529,6 +550,8 @@ test(`${target}: compaction preserves full transcripts and covers complete excha
       return result(maintenance);
     if (r.instructions.startsWith("Select up to"))
       return result('{"taskIds":[]}');
+    const peer = f.engine.requiredAgent("b");
+    assert.ok(r.instructions.includes(`Connected agents: ${JSON.stringify({ items: [{ id: "b", name: peer.name, description: "Be useful." }] })}`));
     return result("A".repeat(700));
   };
   const x = f.engine.submit(
@@ -565,6 +588,7 @@ test(`${target}: compaction preserves full transcripts and covers complete excha
     .prepare("INSERT INTO artifact_grants VALUES (?,'delegated-version',NULL)")
     .run(x.taskId);
   for (let i = 0; i < 4; i++) {
+    f.db.prepare("UPDATE agents SET name=? WHERE id='b'").run(`Peer ${i}`);
     f.engine.submit(
       "a",
       x.taskId!,

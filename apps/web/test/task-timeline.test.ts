@@ -212,7 +212,7 @@ test("missing peers retain readable copy without inventing an identity", () => {
 });
 
 test("only agent messaging actions receive peer portraits and bounded split copy", () => {
-  for (const name of ["user_notify", "agent_request_status", "agents_find", "files_read", "agent_inspect"]) {
+  for (const name of ["user_notify", "agent_request_status", "agents_find", "files_read", "agent_inspect", "agent_connection_inspect"]) {
     assert.equal(messageActionLabel({ ...item(name), name, request, contextName: "Researcher" }, "source-task"), undefined);
   }
   const action = { ...item("send"), name: "agent_send", arguments: { agentId: "helper" }, contextName: "Researcher\n" + "x".repeat(200) };

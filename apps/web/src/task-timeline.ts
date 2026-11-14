@@ -179,6 +179,7 @@ type ActionCopy = readonly [string, string];
 export const toolLabels: Record<string, ActionCopy> = {
   agent_update_instructions: ["Updating instructions", "Updated instructions"],
   agent_inspect: ["Checking agent status", "Checked agent status"],
+  agent_connection_inspect: ["Inspecting connected agent", "Inspected connected agent"],
   agent_task_read: ["Reading task conversation", "Read task conversation"],
   agents_find: ["Finding connected agents", "Found connected agents"],
   agent_send: ["Sending a message", "Sent a message"],
