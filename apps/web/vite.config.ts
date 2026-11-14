@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import catalog from "@ufai/theme-catalog";
 import { relayFavicon } from "./src/branding.ts";
 import { fileURLToPath } from "node:url";
-import { enforceChunkLimit, mermaidGrammarChunks } from "./build/mermaid-grammars";
+import { enforceChunkLimit, mermaidGrammarChunks } from "./build/mermaid-grammars.ts";
 
 function defaultColors(mode: "light" | "dark") {
   return `:root{color-scheme:${mode};color:var(--text);background:var(--root-background);${Object.values(
@@ -16,6 +16,11 @@ function defaultColors(mode: "light" | "dark") {
 export default defineConfig({
   resolve: {
     alias: [{ find: /^elkjs\/lib\/elk\.bundled\.js$/, replacement: fileURLToPath(new URL("./src/mermaid-elk.ts", import.meta.url)) }],
+  },
+  optimizeDeps: {
+    // Keep the worker adapter in Vite's normal source pipeline, which handles ?url.
+    exclude: ["elkjs/lib/elk.bundled.js"],
+    include: ["elkjs/lib/elk-api.js"],
   },
   build: {
     rolldownOptions: {
