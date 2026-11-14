@@ -245,11 +245,21 @@
 }
 .nodeMenu { position: absolute; top: 0; right: 0; }
 .nodeIssues {
+  --issue-gap: 0px;
   position: absolute;
-  right: 0;
-  bottom: calc(100% + 10px);
-  display: flex;
-  align-items: flex-end;
+  // Include the card border when centering the 16px badge on its outer edge.
+  right: -1px;
+  bottom: calc(100% - 7px);
+  z-index: 1;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  width: max-content;
+  gap: var(--issue-gap);
+  pointer-events: none;
+  // Equal columns anchor the last badge's center even when counts grow.
+  transform: translateX(calc(25% - var(--issue-gap) / 4));
+  &:has(> :only-child) { transform: translateX(50%); }
 }
 .nodeIndicators {
   display: flex;
@@ -283,7 +293,7 @@
   .node[data-issues="true"] {
     height: 232px;
     .canvasCharacter { margin-bottom: 48px; }
-    .nodeIssues { gap: 8px; }
+    .nodeIssues { --issue-gap: 8px; }
   }
 }
 .nodeSpinner {

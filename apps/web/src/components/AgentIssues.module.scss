@@ -9,6 +9,7 @@
   border: 0;
   background: transparent;
   cursor: pointer;
+  pointer-events: auto;
   touch-action: manipulation;
   border-radius: 50%;
   &:hover .bubble { box-shadow: 0 0 0 2px currentColor; }
