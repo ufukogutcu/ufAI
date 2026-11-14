@@ -13,35 +13,83 @@ export function restoreOutputColumns(database: Database.Database) {
 }
 
 // Reconstruct v18 state before any older-schema fixture is assembled.
+export function removeCheckIns(database: Database.Database) {
+  database.exec("DROP TABLE IF EXISTS task_checkins");
+  const columns = database.pragma("table_info(agent_tasks)") as {
+    name: string;
+  }[];
+  for (const name of ["pendingReason", "resumeEnvelope"])
+    if (columns.some((c) => c.name === name))
+      database.exec(`ALTER TABLE agent_tasks DROP COLUMN ${name}`);
+  if (
+    (database.pragma("table_info(agent_requests)") as { name: string }[]).some(
+      (c) => c.name === "returnEnvelope",
+    )
+  )
+    database.exec("ALTER TABLE agent_requests DROP COLUMN returnEnvelope");
+}
 export function restoreWorkDeadlines(database: Database.Database) {
+  removeCheckIns(database);
   database.exec("DROP TABLE IF EXISTS provider_output_metadata");
-  for (const table of ["agent_requests", "messaging_waits", "owned_processes"]) {
-    const columns = database.pragma(`table_info(${table})`) as { name: string }[];
-    if (columns.length && !columns.some(c => c.name === "deadline"))
-      database.exec(`ALTER TABLE ${table} ADD COLUMN deadline TEXT${table === "owned_processes" ? "" : " NOT NULL DEFAULT '2999-01-01T00:00:00.000Z'"}`);
+  for (const table of [
+    "agent_requests",
+    "messaging_waits",
+    "owned_processes",
+  ]) {
+    const columns = database.pragma(`table_info(${table})`) as {
+      name: string;
+    }[];
+    if (columns.length && !columns.some((c) => c.name === "deadline"))
+      database.exec(
+        `ALTER TABLE ${table} ADD COLUMN deadline TEXT${table === "owned_processes" ? "" : " NOT NULL DEFAULT '2999-01-01T00:00:00.000Z'"}`,
+      );
   }
   if ((database.pragma("table_info(agent_requests)") as unknown[]).length)
-    database.exec("CREATE INDEX IF NOT EXISTS requests_deadline ON agent_requests(state,deadline)");
+    database.exec(
+      "CREATE INDEX IF NOT EXISTS requests_deadline ON agent_requests(state,deadline)",
+    );
 }
 
 export function removeChat(database: Database.Database) {
   restoreWorkDeadlines(database);
-  if ((database.pragma("table_info(agent_tasks)") as { name: string }[]).some(column => column.name === "kind"))
-    database.exec("DROP INDEX agent_tasks_chat; ALTER TABLE agent_tasks DROP COLUMN kind");
+  if (
+    (database.pragma("table_info(agent_tasks)") as { name: string }[]).some(
+      (column) => column.name === "kind",
+    )
+  )
+    database.exec(
+      "DROP INDEX agent_tasks_chat; ALTER TABLE agent_tasks DROP COLUMN kind",
+    );
 }
 
 export function removeCharacters(database: Database.Database) {
   removeChat(database);
-  if ((database.pragma("table_info(agents)") as { name: string }[]).some(column => column.name === "appearance"))
+  if (
+    (database.pragma("table_info(agents)") as { name: string }[]).some(
+      (column) => column.name === "appearance",
+    )
+  )
     database.exec("ALTER TABLE agents DROP COLUMN appearance");
-  if ((database.pragma("table_info(app_settings)") as { name: string }[]).some(column => column.name === "characterAnimationsPaused"))
-    database.exec("ALTER TABLE app_settings DROP COLUMN characterAnimationsPaused");
+  if (
+    (database.pragma("table_info(app_settings)") as { name: string }[]).some(
+      (column) => column.name === "characterAnimationsPaused",
+    )
+  )
+    database.exec(
+      "ALTER TABLE app_settings DROP COLUMN characterAnimationsPaused",
+    );
 }
 
 export function removePresetDefault(database: Database.Database) {
   removeCharacters(database);
-  if ((database.pragma("table_info(model_presets)") as { name: string }[]).some((column) => column.name === "isDefault")) {
-    database.exec("DROP INDEX model_presets_default; ALTER TABLE model_presets DROP COLUMN isDefault");
+  if (
+    (database.pragma("table_info(model_presets)") as { name: string }[]).some(
+      (column) => column.name === "isDefault",
+    )
+  ) {
+    database.exec(
+      "DROP INDEX model_presets_default; ALTER TABLE model_presets DROP COLUMN isDefault",
+    );
   }
 }
 
@@ -53,9 +101,17 @@ export function removeMessagingTables(database: Database.Database) {
     DROP TABLE IF EXISTS task_output_selections; DROP TABLE IF EXISTS messaging_waits;
     DROP TABLE IF EXISTS artifact_grants; DROP TABLE IF EXISTS communication_deliveries;
     DROP TABLE IF EXISTS communication_messages; DROP TABLE IF EXISTS agent_requests; DROP TABLE IF EXISTS communication_links;`);
-  for (const [table,columns] of [["agent_messages",["authorType","authorId"]],["agent_turns",["envelope"]],["agent_tasks",["source","rootWorkflowId","parentRequestId"]]] as const) {
-    const existing=(database.pragma(`table_info(${table})`) as {name:string}[]).map(c=>c.name);
-    for(const column of columns) if(existing.includes(column)) database.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+  for (const [table, columns] of [
+    ["agent_messages", ["authorType", "authorId"]],
+    ["agent_turns", ["envelope"]],
+    ["agent_tasks", ["source", "rootWorkflowId", "parentRequestId"]],
+  ] as const) {
+    const existing = (
+      database.pragma(`table_info(${table})`) as { name: string }[]
+    ).map((c) => c.name);
+    for (const column of columns)
+      if (existing.includes(column))
+        database.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
   }
 }
 export function removeToolTables(database: Database.Database) {
@@ -100,7 +156,11 @@ export function removeExecutionTables(database: Database.Database) {
 
 // Migrations 16 and 17 add appearance and preserve centers through both node-size changes.
 export function assertCharacterUpgrade(actual: any, previous: any) {
-  if (Object.hasOwn(actual, "appearance")) assert.deepEqual(validateAppearance(JSON.parse(actual.appearance)), JSON.parse(actual.appearance));
+  if (Object.hasOwn(actual, "appearance"))
+    assert.deepEqual(
+      validateAppearance(JSON.parse(actual.appearance)),
+      JSON.parse(actual.appearance),
+    );
   const { appearance: _actual, ...after } = actual;
   const { appearance: _previous, ...before } = previous;
   assert.deepEqual(after, { ...before, x: before.x + 40, y: before.y - 44 });

@@ -11,7 +11,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   const threadId=r.params.threadId,turnId='turn-'+threadId,id=100+thread;reply({turn:{id:turnId}});pending.set(id,{threadId,turnId,remaining:r.params.input[0].text.includes("many-tools")?130:1});
   send({method:'item/agentMessage/delta',params:{threadId,turnId,itemId:'comment',delta:'Reading the file.'}});
   send({method:'item/started',params:{threadId,turnId,item:{id:'tool',type:'dynamicToolCall'}}});
-  send({id,method:'item/tool/call',params:{threadId,turnId,callId:'call-'+thread,namespace:null,tool:toolKinds.get(threadId)?'agent_send':'files_read',arguments:toolKinds.get(threadId)?{agentId:'helper',content:'Help'}:{path:'a.txt'}}});return;
+  send({id,method:'item/tool/call',params:{threadId,turnId,callId:'call-'+thread,namespace:null,tool:r.params.input[0].text.includes('yield-fixture')?'task_yield':toolKinds.get(threadId)?'agent_send':'files_read',arguments:r.params.input[0].text.includes('yield-fixture')?{summary:'Waiting for messages'}:toolKinds.get(threadId)?{agentId:'helper',content:'Help'}:{path:'a.txt'}}});return;
  }
  if(r.method==='turn/interrupt'){send({method:'item/agentMessage/delta',params:{threadId:r.params.threadId,delta:'late output'}});reply({});return send({method:'turn/completed',params:{threadId:r.params.threadId,turn:{id:r.params.turnId,status:'interrupted'}}});}
  if(r.method==='thread/unsubscribe'||r.method==='thread/archive')return reply({});

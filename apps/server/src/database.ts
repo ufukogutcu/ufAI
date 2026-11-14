@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { migrateLocations } from "./locations-schema.js";
 import { migrateExecution } from "./execution-schema.js";
 import { migrateMessaging } from "./messaging-schema.js";
+import { migrateCheckIns, migrateCheckInRoutes } from "./checkin-schema.js";
 import { migrateMedia } from "./media-schema.js";
 import { migrateTools } from "./tools-schema.js";
 
@@ -24,7 +25,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 19)
+    if (version > 21)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -259,6 +260,16 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
           );
         `);
         database.pragma("user_version = 19");
+      })();
+    if (version < 20)
+      database.transaction(() => {
+        migrateCheckIns(database);
+        database.pragma("user_version = 20");
+      })();
+    if (version < 21)
+      database.transaction(() => {
+        migrateCheckInRoutes(database);
+        database.pragma("user_version = 21");
       })();
   } catch (error) {
     database.close();

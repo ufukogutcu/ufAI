@@ -62,6 +62,7 @@ export interface TaskMessage extends TextMessage {
   media?: MediaReference[];
 }
 export interface TaskRequest extends TextRequest {
+  shouldYield?: () => boolean;
   messages: TaskMessage[];
   resolveMedia?: (refs: MediaReference[]) => Promise<NativeMedia[]>;
   tools: ToolSpec[];

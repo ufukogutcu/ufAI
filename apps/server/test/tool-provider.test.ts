@@ -299,6 +299,7 @@ for (const provider of [
               result: {
                 ok: true,
                 text: "contents",
+                incomingMessages: [{messageId:"collaborator-message",requestId:"request",authorType:"agent",authorId:"helper",kind:"question",content:"Which version?"}],
                 media: [
                   {
                     versionId: "image-2",
@@ -325,6 +326,8 @@ for (const provider of [
       if (provider === "ollama") assert.equal(body.options.num_predict, -1);
     }
     const replay = JSON.stringify(bodies[1]);
+    assert.match(replay,/collaborator-message/);
+    assert.match(replay,/Which version/);
     assert.match(replay, /contents/);
     assert.ok(
       JSON.stringify(bodies[0]).includes("AQID"),
@@ -340,7 +343,9 @@ for (const provider of [
     if (provider === "google") assert.match(replay, /opaque-signature/);
     assert.equal(bodies[0].tools.length > 0, true);
     assert.match(JSON.stringify(bodies[0]), /agent_send/);
-    assert.match(JSON.stringify(bodies[0]), /agent_wait/);
+    assert.doesNotMatch(JSON.stringify(bodies[0]), /"name":"agent_wait"/);
+    assert.match(JSON.stringify(bodies[0]), /task_yield/);
+    assert.match(JSON.stringify(bodies[0]), /task_schedule_checkin/);
   });
 }
 test("malformed tool arguments and unsupported models fail without fallback", async () => {

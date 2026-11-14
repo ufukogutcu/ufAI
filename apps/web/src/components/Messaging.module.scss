@@ -28,6 +28,17 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.checkin {
+  display: grid;
+  gap: 8px;
+  p,
+  .meta {
+    margin: 0;
+  }
+  button {
+    justify-self: start;
+  }
+}
 .actions {
   display: flex;
   gap: 8px;

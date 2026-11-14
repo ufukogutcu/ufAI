@@ -257,6 +257,8 @@ export interface Agent {
   runningTaskCount: number;
 }
 export interface AgentTask {
+  pendingReason?: "message" | "check_in" | null;
+  nextCheckInAt?: string | null;
   kind: "task" | "chat";
   source?: "user" | "agent";
   rootWorkflowId?: string;
@@ -440,6 +442,17 @@ export interface ArtifactVersion {
 export interface CommunicationLink {
   id: string; workspaceId: string; sourceAgentId: string; targetAgentId: string;
   state: "active" | "revoking"; createdAt: string;
+}
+export interface TaskCheckIn {
+  id: string;
+  taskId: string;
+  requestId: string | null;
+  reason: string;
+  dueAt: string;
+  state: "scheduled" | "fired" | "cancelled";
+  deliveredTurnId: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 export interface AgentRequest {
   id: string; workspaceId: string; sourceAgentId: string | null; targetAgentId: string | null;

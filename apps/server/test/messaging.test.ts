@@ -480,7 +480,11 @@ test("unbounded helper requests retain ancestor checks and complete-before-wait 
   for (let i = 0; i < 70; i++)
     s.messaging.send(s.owner, { agentId: "b", content: "More" }, `more-${i}`);
   for (let i = 0; i < 260; i++)
-    s.messaging.message(s.owner, { requestId: sent.requestId, kind: "progress", content: "Still working" }, `progress-${i}`);
+    s.messaging.message(
+      s.owner,
+      { requestId: sent.requestId, kind: "progress", content: "Still working" },
+      `progress-${i}`,
+    );
   assert.throws(
     () =>
       s.messaging.send(
@@ -522,15 +526,19 @@ test("unbounded helper requests retain ancestor checks and complete-before-wait 
     /choice/,
   );
 });
-test("automatic tool loop parks requester, runs helper and unrelated work, then routes one result to user task", async (t) => {
+test("automatic tool loop yields requester, runs helper and unrelated work, then routes one result to user task", async (t) => {
   const s = await setup(t, true);
   s.messaging.createLink(s.workspaceId, "a", "b");
   const ran: string[] = [];
-  let sawWaiting = false, sawResumedEvent = false;
+  let sawWaiting = false,
+    sawResumedEvent = false;
   s.engine.events.on("change", () => {
-    const turn = s.db.prepare("SELECT status FROM agent_turns WHERE id=?").get(s.owner.turnId) as { status: string };
-    if (turn.status === "waiting") sawWaiting = true;
-    if (sawWaiting && turn.status === "running") sawResumedEvent = true;
+    const turn = s.db
+      .prepare("SELECT status FROM agent_turns WHERE id=?")
+      .get(s.owner.turnId) as { status: string };
+    if (s.engine.task(s.owner.taskId).status === "waiting") sawWaiting = true;
+    if (sawWaiting && s.engine.task(s.owner.taskId).status === "running")
+      sawResumedEvent = true;
   });
   s.connections.toolRound = async (_snapshot, request) => {
     const agent = request.instructions.includes("You are a.") ? "a" : "b";
@@ -538,9 +546,18 @@ test("automatic tool loop parks requester, runs helper and unrelated work, then 
     const steps = request.continuation as any[];
     if (agent === "b") {
       await until(() => s.engine.task(s.owner.taskId).status === "waiting");
-      assert.equal(s.engine.requiredAgent("a").state, "waiting");
+      assert.equal(s.engine.requiredAgent("a").runningTaskCount, 0);
       return {
         text: "Helper result",
+        calls: [],
+        continuation: [],
+        usage: null,
+      };
+    }
+    if (request.messages.some((m) => m.content.includes("Helper result"))) {
+      assert.ok(sawResumedEvent);
+      return {
+        text: "User final with helper result",
         calls: [],
         continuation: [],
         usage: null,
@@ -565,14 +582,19 @@ test("automatic tool loop parks requester, runs helper and unrelated work, then 
         calls: [
           {
             id: "wait",
-            name: "agent_wait",
-            arguments: { requestIds: [steps[0].results[0].result.requestId] },
+            name: "task_yield",
+            arguments: {
+              summary: "Independent work complete; resume with helper result.",
+            },
           },
         ],
         continuation: [],
         usage: null,
       };
-    assert.ok(sawResumedEvent, "messaging resumption must invalidate activity before the next model round");
+    assert.ok(
+      sawResumedEvent,
+      "messaging resumption must invalidate activity before the next model round",
+    );
     return {
       text: "User final with helper result",
       calls: [],
@@ -652,11 +674,16 @@ test("v13 upgrade preserves populated records and stable paths while backfilling
   s.db.pragma("user_version=13");
   const upgraded = openDatabase(s.path);
   for (const table of tables) {
-    const rows = upgraded.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all();
-    if (table === "agents") rows.forEach((row, index) => assertCharacterUpgrade(row, retained[table]![index]));
+    const rows = upgraded
+      .prepare(`SELECT * FROM ${table} ORDER BY rowid`)
+      .all();
+    if (table === "agents")
+      rows.forEach((row, index) =>
+        assertCharacterUpgrade(row, retained[table]![index]),
+      );
     else assert.deepEqual(rows, retained[table], table);
   }
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 19);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 21);
   assert.deepEqual(
     (upgraded.prepare("SELECT content FROM agent_messages").all() as any[]).map(
       (r) => r.content,
@@ -734,6 +761,9 @@ test("HTTP guards, pagination, confirmation, Inbox read state and reply validati
 test("durable messaging wait survives restart and embeds the delegated image without replaying a send", async (t) => {
   const s = await setup(t);
   s.messaging.createLink(s.workspaceId, "a", "b");
+  const dispatch = s.tools.dispatch.bind(s.tools);
+  s.tools.dispatch = (owner, call, signal, wait, waitAgent) =>
+    dispatch(owner, call, signal, wait, waitAgent, true);
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL9sAAAAASUVORK5CYII=",
     "base64",
@@ -785,11 +815,17 @@ test("durable messaging wait survives restart and embeds the delegated image wit
   );
   await s.engine.close();
   await s.messaging.close();
-  const oldWait = s.db.prepare("SELECT turnId,checkpoint FROM messaging_waits WHERE state='waiting'").get() as any;
+  const oldWait = s.db
+    .prepare(
+      "SELECT turnId,checkpoint FROM messaging_waits WHERE state='waiting'",
+    )
+    .get() as any;
   const oldCheckpoint = JSON.parse(oldWait.checkpoint);
   oldCheckpoint.rounds = 1000000;
   oldCheckpoint.timeoutMs = 1;
-  s.db.prepare("UPDATE messaging_waits SET checkpoint=? WHERE turnId=?").run(JSON.stringify(oldCheckpoint),oldWait.turnId);
+  s.db
+    .prepare("UPDATE messaging_waits SET checkpoint=? WHERE turnId=?")
+    .run(JSON.stringify(oldCheckpoint), oldWait.turnId);
   assert.equal(
     (
       s.db
@@ -1131,20 +1167,33 @@ test("confirmed pending revocation resumes on startup and requests have no expir
       "revoked",
     );
     resumed.createLink(s.workspaceId, "a", "b");
-    const unbounded = resumed.send(s.owner, { agentId: "b", content: "Long task" }, "unbounded");
+    const unbounded = resumed.send(
+      s.owner,
+      { agentId: "b", content: "Long task" },
+      "unbounded",
+    );
     const originalNow = Date.now;
     Date.now = () => originalNow() + 7 * 86400000;
     try {
       (resumed as any).tick();
-      assert.equal((s.db.prepare("SELECT state FROM agent_requests WHERE id=?").get(unbounded.requestId) as any).state, "open");
+      assert.equal(
+        (
+          s.db
+            .prepare("SELECT state FROM agent_requests WHERE id=?")
+            .get(unbounded.requestId) as any
+        ).state,
+        "open",
+      );
       assert.equal(s.engine.task(unbounded.taskId!).status, "queued");
-    } finally { Date.now = originalNow; }
+    } finally {
+      Date.now = originalNow;
+    }
   } finally {
     await resumed.close();
   }
 });
 
-test("a helper completing during requester generation is consumed by a later wait without duplicate continuation", async (t) => {
+test("a helper completing during requester generation is consumed at the next tool boundary without duplicate continuation", async (t) => {
   const s = await setup(t);
   s.messaging.createLink(s.workspaceId, "a", "b");
   // Independent provider capacity, while retaining the real installation/agent scheduler.
@@ -1184,14 +1233,12 @@ test("a helper completing during requester generation is consumed by a later wai
       );
       return {
         text: "",
-        calls: [
-          { id: "wait", name: "agent_wait", arguments: { requestIds: [id] } },
-        ],
+        calls: [{ id: "inspect", name: "agent_inspect", arguments: {} }],
         continuation: [],
         usage: null,
       };
     }
-    sawResult = steps[1].results[0].result.wait.messages.some(
+    sawResult = steps[1].results[0].result.incomingMessages.some(
       (m: any) => m.content === "Early helper result",
     );
     return { text: "User final", calls: [], continuation: [], usage: null };
@@ -1433,61 +1480,1165 @@ test("unfinished permission removal preserves its retry path by fencing endpoint
 test("a permitted agent request lets only its recipient update its own saved instructions", async (t) => {
   const s = await setup(t);
   const signal = new AbortController().signal;
-  const send = { id: "request-role", name: "agent_send", arguments: { agentId: "b", content: "Please remember to answer with short paragraphs." } };
-  assert.equal((await s.tools.dispatch(s.owner, send, signal, async () => {})).ok, false);
+  const send = {
+    id: "request-role",
+    name: "agent_send",
+    arguments: {
+      agentId: "b",
+      content: "Please remember to answer with short paragraphs.",
+    },
+  };
+  assert.equal(
+    (await s.tools.dispatch(s.owner, send, signal, async () => {})).ok,
+    false,
+  );
   s.messaging.createLink(s.workspaceId, "a", "b");
-  const sent = await s.tools.dispatch(s.owner, { ...send, id: "permitted-role" }, signal, async () => {});
+  const sent = await s.tools.dispatch(
+    s.owner,
+    { ...send, id: "permitted-role" },
+    signal,
+    async () => {},
+  );
   assert.equal(sent.ok, true);
   const helper = s.helper((sent as any).requestId);
-  const update = await s.tools.dispatch(helper, { id: "save-role", name: "agent_update_instructions", arguments: { instructions: "Answer with short paragraphs.", expectedRevision: s.engine.requiredAgent("b").revision } }, signal, async () => {});
+  const update = await s.tools.dispatch(
+    helper,
+    {
+      id: "save-role",
+      name: "agent_update_instructions",
+      arguments: {
+        instructions: "Answer with short paragraphs.",
+        expectedRevision: s.engine.requiredAgent("b").revision,
+      },
+    },
+    signal,
+    async () => {},
+  );
   assert.equal(update.ok, true);
-  assert.equal(s.engine.requiredAgent("b").instructions, "Answer with short paragraphs.");
+  assert.equal(
+    s.engine.requiredAgent("b").instructions,
+    "Answer with short paragraphs.",
+  );
   assert.equal(s.engine.requiredAgent("a").instructions, "");
 });
 
-test("more than sixteen durable waits can park and remain cancellable without expiry", async t => {
+test("more than sixteen yielded tasks can remain pending and remain cancellable without expiry", async (t) => {
   const s = await setup(t);
   s.messaging.createLink(s.workspaceId, "a", "b");
   const tasks: string[] = [s.owner.taskId];
-  for (let i = 0; i < 19; i++) tasks.push(s.engine.submit("a", "new", `Wait ${i}`, `wait-many-${i}`).taskId!);
+  for (let i = 0; i < 19; i++)
+    tasks.push(
+      s.engine.submit("a", "new", `Wait ${i}`, `wait-many-${i}`).taskId!,
+    );
   s.connections.toolRound = async (_snapshot, request) => {
     if (request.instructions.includes("You are b.")) {
-      await new Promise<void>((_, reject) => request.signal.addEventListener("abort", () => reject(new Error("Cancelled")), { once: true }));
+      await new Promise<void>((_, reject) =>
+        request.signal.addEventListener(
+          "abort",
+          () => reject(new Error("Cancelled")),
+          { once: true },
+        ),
+      );
     }
     const steps = request.continuation as any[];
     return {
-      text: "", calls: steps.length ? [{ id:"wait",name:"agent_wait",arguments:{requestIds:[steps[0].results[0].result.requestId]} }] :
-        [{id:"send",name:"agent_send",arguments:{agentId:"b",content:"Help"}}],
-      continuation: [], usage:null,
+      text: "",
+      calls: steps.length
+        ? [
+            {
+              id: "yield",
+              name: "task_yield",
+              arguments: { summary: "Await helper result" },
+            },
+          ]
+        : [
+            {
+              id: "send",
+              name: "agent_send",
+              arguments: { agentId: "b", content: "Help" },
+            },
+          ],
+      continuation: [],
+      usage: null,
     };
   };
   (s.engine as any).options.autoStart = true;
   s.engine.wake();
-  await until(() => (s.db.prepare("SELECT count(*) n FROM messaging_waits WHERE state='waiting'").get() as any).n === 20);
-  t.mock.timers.enable({apis:["setTimeout","Date"]});
+  await until(
+    () =>
+      (
+        s.db
+          .prepare(
+            "SELECT count(*) n FROM agent_tasks WHERE agentId='a' AND status='waiting'",
+          )
+          .get() as any
+      ).n === 20,
+  );
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
   try {
     t.mock.timers.tick(7 * 86400000);
     (s.messaging as any).tick();
-    s.engine.events.emit("change",s.workspaceId);
-    assert.equal((s.db.prepare("SELECT count(*) n FROM messaging_waits WHERE state='waiting'").get() as any).n,20);
-    assert.equal((s.db.prepare("SELECT count(*) n FROM agent_requests WHERE state='open'").get() as any).n,20);
-  } finally { t.mock.timers.reset(); }
+    s.engine.events.emit("change", s.workspaceId);
+    assert.equal(
+      (
+        s.db
+          .prepare(
+            "SELECT count(*) n FROM agent_tasks WHERE agentId='a' AND status='waiting'",
+          )
+          .get() as any
+      ).n,
+      20,
+    );
+    assert.equal(
+      (
+        s.db
+          .prepare("SELECT count(*) n FROM agent_requests WHERE state='open'")
+          .get() as any
+      ).n,
+      20,
+    );
+  } finally {
+    t.mock.timers.reset();
+  }
   await s.engine.cancelTask(tasks[0]);
-  assert.equal(s.engine.task(tasks[0]).status,"cancelled");
+  assert.equal(s.engine.task(tasks[0]).status, "cancelled");
 });
 
-test("unbounded delegation depth retains ancestor-cycle prevention and wait schema accepts large sets", async t => {
+test("unbounded delegation depth retains ancestor-cycle prevention and wait schema accepts large sets", async (t) => {
   const s = await setup(t);
   let owner = s.owner;
   for (let i = 0; i < 10; i++) {
     const id = `deep-${i}`;
-    s.db.prepare("INSERT INTO agents(id,workspaceId,name,presetId,createdAt,updatedAt) VALUES (?,?,?,'p','now','now')").run(id,s.workspaceId,id);
-    s.messaging.createLink(s.workspaceId,owner.agentId,id);
-    const sent = s.messaging.send(owner,{agentId:id,content:"Help"},`depth-${i}`);
+    s.db
+      .prepare(
+        "INSERT INTO agents(id,workspaceId,name,presetId,createdAt,updatedAt) VALUES (?,?,?,'p','now','now')",
+      )
+      .run(id, s.workspaceId, id);
+    s.messaging.createLink(s.workspaceId, owner.agentId, id);
+    const sent = s.messaging.send(
+      owner,
+      { agentId: id, content: "Help" },
+      `depth-${i}`,
+    );
     owner = s.helper(sent.requestId);
   }
-  s.messaging.createLink(s.workspaceId,owner.agentId,"a");
-  assert.throws(() => s.messaging.send(owner,{agentId:"a",content:"Cycle"},"deep-cycle"),/ancestor/);
-  validateTool("agent_wait",{requestIds:Array.from({length:120},(_,i)=>`request-${i}`)});
-  for (const tool of ["agent_send","agent_wait","process_start"]) assert.throws(() => validateTool(tool,{timeoutMs:1}),/unknown|unexpected|required|missing/i);
+  s.messaging.createLink(s.workspaceId, owner.agentId, "a");
+  assert.throws(
+    () =>
+      s.messaging.send(owner, { agentId: "a", content: "Cycle" }, "deep-cycle"),
+    /ancestor/,
+  );
+  validateTool("agent_wait", {
+    requestIds: Array.from({ length: 120 }, (_, i) => `request-${i}`),
+  });
+  for (const tool of ["agent_send", "agent_wait", "process_start"])
+    assert.throws(
+      () => validateTool(tool, { timeoutMs: 1 }),
+      /unknown|unexpected|required|missing/i,
+    );
+});
+
+test("fresh waits are retired; check-ins are owned, validated, journaled and cancel on relevant replies", async (t) => {
+  const s = await setup(t);
+  const { taskTools } = await import("../src/agent-tools.js");
+  assert.ok(!taskTools.some((tool) => tool.name === "agent_wait"));
+  const signal = new AbortController().signal;
+  const call = (name: string, args: any, id = randomUUID()) =>
+    s.tools.dispatch(
+      s.owner,
+      { id, name, arguments: args },
+      signal,
+      async () => {},
+    );
+  assert.match(
+    String((await call("agent_wait", { requestIds: ["anything"] })).error),
+    /retired/,
+  );
+  assert.equal(
+    (await call("task_yield", { summary: "No dependencies" })).ok,
+    false,
+  );
+  for (const afterMs of [0, -1, 0.5, Number.MAX_SAFE_INTEGER])
+    assert.equal(
+      (
+        await call("task_schedule_checkin", {
+          afterMs,
+          reason: "Check progress",
+        })
+      ).ok,
+      false,
+    );
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  const sent = s.messaging.send(
+    s.owner,
+    { agentId: "b", content: "Help" },
+    "checkin-send",
+  );
+  const args = {
+    afterMs: 60000,
+    reason: "Check helper",
+    requestId: sent.requestId,
+  };
+  const scheduled = await call("task_schedule_checkin", args, "schedule-once");
+  assert.equal(scheduled.ok, true);
+  assert.deepEqual(
+    await call("task_schedule_checkin", args, "schedule-once"),
+    scheduled,
+  );
+  assert.equal(s.messaging.checkIns(s.owner.taskId).total, 1);
+  assert.throws(
+    () =>
+      s.messaging.cancelCheckIn(
+        s.helper(sent.requestId).taskId,
+        String(scheduled.checkinId),
+      ),
+    /not found/,
+  );
+  s.messaging.message(
+    s.helper(sent.requestId),
+    { requestId: sent.requestId, kind: "progress", content: "Working" },
+    "checkin-progress",
+  );
+  assert.equal(
+    s.messaging.checkIns(s.owner.taskId).items[0].state,
+    "scheduled",
+  );
+  s.messaging.message(
+    s.helper(sent.requestId),
+    { requestId: sent.requestId, kind: "question", content: "Which format?" },
+    "checkin-question",
+  );
+  assert.equal(
+    s.messaging.checkIns(s.owner.taskId).items[0].state,
+    "cancelled",
+  );
+  assert.equal(
+    (await call("task_schedule_checkin", args)).state,
+    "cancelled",
+    "a reply before registration suppresses a stale reminder",
+  );
+  const generic = await call("task_schedule_checkin", {
+    afterMs: 60000,
+    reason: "Other independent check",
+  });
+  assert.equal(
+    (await call("task_cancel_checkin", { checkinId: generic.checkinId })).ok,
+    true,
+  );
+  assert.equal(
+    (await call("task_cancel_checkin", { checkinId: generic.checkinId })).ok,
+    true,
+  );
+});
+
+test("two collaborators, independent work, a released lane and fresh reply continuations", async (t) => {
+  const s = await setup(t);
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  s.messaging.createLink(s.workspaceId, "a", "c");
+  const replies: (() => void)[] = [];
+  let independent = false,
+    otherRan = false;
+  s.connections.toolRound = async (_snapshot, request) => {
+    const steps = request.continuation as any[];
+    if (
+      request.instructions.includes("You are b.") ||
+      request.instructions.includes("You are c.")
+    ) {
+      await new Promise<void>((resolve, reject) => {
+        replies.push(resolve);
+        request.signal.addEventListener(
+          "abort",
+          () => reject(new Error("Stopped")),
+          { once: true },
+        );
+      });
+      return {
+        text: "Collaborator finished",
+        calls: [],
+        continuation: [],
+        usage: null,
+      };
+    }
+    if (request.messages[0]?.content === "Other task") {
+      otherRan = true;
+      return {
+        text: "Other work done",
+        calls: [],
+        continuation: [],
+        usage: null,
+      };
+    }
+    if (
+      request.messages.some((m) => m.content.includes("Collaborator finished"))
+    ) {
+      const open = s.db
+        .prepare(
+          "SELECT count(*) n FROM agent_requests WHERE sourceTaskId=? AND state='open'",
+        )
+        .get(s.owner.taskId) as any;
+      return open.n
+        ? {
+            text: "",
+            calls: [
+              {
+                id: "yield-again",
+                name: "task_yield",
+                arguments: { summary: "One collaborator still pending" },
+              },
+            ],
+            continuation: [],
+            usage: null,
+          }
+        : { text: "Combined result", calls: [], continuation: [], usage: null };
+    }
+    const calls =
+      steps.length === 0
+        ? [
+            {
+              id: "send-b",
+              name: "agent_send",
+              arguments: { agentId: "b", content: "First task" },
+            },
+            {
+              id: "send-c",
+              name: "agent_send",
+              arguments: { agentId: "c", content: "Second task" },
+            },
+          ]
+        : steps.length === 1
+          ? [
+              {
+                id: "work",
+                name: "files_write",
+                arguments: {
+                  path: "independent.txt",
+                  text: "Independent work done",
+                  expectedSha256: null,
+                },
+              },
+            ]
+          : [
+              {
+                id: "yield",
+                name: "task_yield",
+                arguments: {
+                  summary:
+                    "Independent work done; combine collaborator results when they arrive",
+                },
+              },
+            ];
+    if (steps.length === 2) {
+      assert.equal(steps[1].results[0].result.ok, true);
+      independent = true;
+    }
+    return { text: "", calls, continuation: [], usage: null };
+  };
+  (s.engine as any).options.autoStart = true;
+  s.engine.wake();
+  await until(
+    () =>
+      s.engine.task(s.owner.taskId).status === "waiting" &&
+      replies.length === 2,
+  );
+  assert.ok(independent);
+  assert.equal((s.engine as any).active.has(s.owner.turnId), false);
+  assert.equal(s.engine.requiredAgent("a").runningTaskCount, 0);
+  s.engine.submit("a", "new", "Other task", "other-while-pending");
+  await until(() => otherRan);
+  replies[0]();
+  await until(
+    () =>
+      s.engine.task(s.owner.taskId).status === "waiting" &&
+      (
+        s.db
+          .prepare("SELECT count(*) n FROM agent_turns WHERE taskId=?")
+          .get(s.owner.taskId) as any
+      ).n === 2,
+  );
+  replies[1]();
+  await until(() => s.engine.task(s.owner.taskId).status === "completed");
+  assert.equal(
+    (
+      s.db
+        .prepare(
+          "SELECT count(*) n FROM communication_messages WHERE kind='result'",
+        )
+        .get() as any
+    ).n,
+    2,
+  );
+  assert.equal(
+    (
+      s.db
+        .prepare(
+          "SELECT count(*) n FROM execution_items WHERE taskId=? AND kind='final'",
+        )
+        .get(s.owner.taskId) as any
+    ).n,
+    1,
+  );
+  assert.equal(
+    await readFile(
+      join(s.files.location("task", s.owner.taskId).path, "independent.txt"),
+      "utf8",
+    ),
+    "Independent work done",
+  );
+});
+
+test("one-time timer yields, resumes once and cancels remaining reminders on completion", async (t) => {
+  const s = await setup(t);
+  let resumed = 0;
+  s.connections.toolRound = async (_snapshot, request) => {
+    const steps = request.continuation as any[];
+    if (request.messages.some((m) => m.content.includes("[check_in"))) {
+      resumed++;
+      return {
+        text: "Checked progress",
+        calls: [],
+        continuation: [],
+        usage: null,
+      };
+    }
+    return {
+      text: "",
+      calls: steps.length
+        ? [
+            {
+              id: "yield",
+              name: "task_yield",
+              arguments: { summary: "Resume for planned check" },
+            },
+          ]
+        : [
+            {
+              id: "timer",
+              name: "task_schedule_checkin",
+              arguments: { afterMs: 60000, reason: "Review progress" },
+            },
+            {
+              id: "later",
+              name: "task_schedule_checkin",
+              arguments: { afterMs: 120000, reason: "Later check" },
+            },
+          ],
+      continuation: [],
+      usage: null,
+    };
+  };
+  (s.engine as any).options.autoStart = true;
+  s.engine.wake();
+  await until(() => s.engine.task(s.owner.taskId).status === "waiting");
+  assert.equal(s.engine.task(s.owner.taskId).pendingReason, "check_in");
+  assert.ok(s.engine.task(s.owner.taskId).nextCheckInAt);
+  const first = s.messaging.checkIns(s.owner.taskId).items[0];
+  s.db
+    .prepare("UPDATE task_checkins SET dueAt=? WHERE id=?")
+    .run(new Date(Date.now() - 1000).toISOString(), first.id);
+  (s.messaging as any).tick();
+  await until(() => s.engine.task(s.owner.taskId).status === "completed");
+  (s.messaging as any).tick();
+  assert.equal(resumed, 1);
+  const rows = s.messaging.checkIns(s.owner.taskId).items;
+  assert.equal(rows.filter((row) => row.state === "fired").length, 1);
+  assert.equal(rows.filter((row) => row.state === "cancelled").length, 1);
+});
+
+test("a timer racing a reply produces one continuation containing the current reply", async (t) => {
+  const s = await setup(t);
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  const sent = s.messaging.send(
+    s.owner,
+    { agentId: "b", content: "Help" },
+    "race-send",
+  );
+  const timer = s.messaging.scheduleCheckIn(
+    s.owner,
+    { afterMs: 60000, reason: "Check reply", requestId: sent.requestId },
+    "race-timer",
+  );
+  s.db
+    .prepare(
+      "UPDATE agent_turns SET status='completed',phase='yielded' WHERE id=?",
+    )
+    .run(s.owner.turnId);
+  s.db
+    .prepare(
+      "UPDATE agent_tasks SET status='waiting',pendingReason='message' WHERE id=?",
+    )
+    .run(s.owner.taskId);
+  s.db
+    .prepare("UPDATE task_checkins SET dueAt=? WHERE id=?")
+    .run(new Date(Date.now() - 1000).toISOString(), timer.checkinId);
+  (s.messaging as any).tick();
+  s.messaging.final(
+    s.helper(sent.requestId),
+    { requestId: sent.requestId, replyKind: "result" },
+    "Race result",
+    [],
+  );
+  assert.equal(
+    (
+      s.db
+        .prepare(
+          "SELECT count(*) n FROM agent_turns WHERE taskId=? AND status='queued'",
+        )
+        .get(s.owner.taskId) as any
+    ).n,
+    1,
+  );
+  s.connections.toolRound = async (_snapshot, request) => {
+    if (request.instructions.includes("You are a."))
+      assert.ok(
+        request.messages.some((m) => m.content.includes("Race result")),
+      );
+    return { text: "Done", calls: [], continuation: [], usage: null };
+  };
+  (s.engine as any).options.autoStart = true;
+  s.engine.wake();
+  await until(() => s.engine.task(s.owner.taskId).status === "completed");
+  assert.equal(
+    (
+      s.db
+        .prepare("SELECT count(*) n FROM agent_turns WHERE taskId=?")
+        .get(s.owner.taskId) as any
+    ).n,
+    2,
+  );
+});
+
+test("cancelled tasks never resume from timers and removing a last timer releases pending state", async (t) => {
+  const s = await setup(t);
+  const timer = s.messaging.scheduleCheckIn(
+    s.owner,
+    { afterMs: 1000, reason: "Check later" },
+    "cancel-last",
+  );
+  s.db
+    .prepare(
+      "UPDATE agent_turns SET status='completed',phase='yielded' WHERE id=?",
+    )
+    .run(s.owner.turnId);
+  s.db
+    .prepare(
+      "UPDATE agent_tasks SET status='waiting',pendingReason='check_in' WHERE id=?",
+    )
+    .run(s.owner.taskId);
+  s.messaging.cancelCheckIn(s.owner.taskId, timer.checkinId);
+  assert.equal(s.engine.task(s.owner.taskId).status, "awaiting_user");
+  const next = s.messaging.scheduleCheckIn(
+    s.owner,
+    { afterMs: 1, reason: "Cancelled task" },
+    "cancel-task-timer",
+  );
+  await s.engine.cancelTask(s.owner.taskId);
+  s.db
+    .prepare(
+      "UPDATE task_checkins SET dueAt='2000-01-01T00:00:00.000Z' WHERE id=?",
+    )
+    .run(next.checkinId);
+  (s.messaging as any).tick();
+  assert.equal(s.engine.task(s.owner.taskId).status, "cancelled");
+  assert.ok(
+    s.messaging
+      .checkIns(s.owner.taskId)
+      .items.every((row) => row.state === "cancelled"),
+  );
+  assert.equal(
+    (
+      s.db
+        .prepare("SELECT count(*) n FROM agent_turns WHERE taskId=?")
+        .get(s.owner.taskId) as any
+    ).n,
+    1,
+  );
+});
+
+test("pending and overdue check-ins survive restart without replaying accepted yield effects", async (t) => {
+  const s = await setup(t);
+  const reminder = s.messaging.scheduleCheckIn(
+    s.owner,
+    { afterMs: 1, reason: "Recover overdue check" },
+    "restart-checkin",
+  );
+  await s.engine.close();
+  await s.messaging.close();
+  s.db
+    .prepare(
+      "UPDATE agent_turns SET status='running',phase='yielding' WHERE id=?",
+    )
+    .run(s.owner.turnId);
+  s.db
+    .prepare(
+      "UPDATE agent_tasks SET summary='Saved progress',pendingReason='check_in' WHERE id=?",
+    )
+    .run(s.owner.taskId);
+  s.db
+    .prepare(
+      "UPDATE task_checkins SET dueAt='2000-01-01T00:00:00.000Z' WHERE id=?",
+    )
+    .run(reminder.checkinId);
+  const engine = new AgentExecution(
+    s.db,
+    s.connections,
+    { autoStart: false },
+    s.files,
+    s.tools,
+  );
+  const messaging = new MessagingService(s.db, engine, s.connections);
+  engine.messaging = messaging;
+  s.tools.messaging = messaging;
+  s.files.bind(engine);
+  try {
+    assert.equal(engine.task(s.owner.taskId).status, "waiting");
+    messaging.start();
+    let runs = 0;
+    s.connections.toolRound = async (_snapshot, request) => {
+      runs++;
+      assert.match(request.instructions, /Saved progress/);
+      assert.ok(
+        request.messages.some((m) =>
+          m.content.includes("Recover overdue check"),
+        ),
+      );
+      return { text: "Resumed", calls: [], continuation: [], usage: null };
+    };
+    (engine as any).options.autoStart = true;
+    engine.wake();
+    await until(() => engine.task(s.owner.taskId).status === "completed");
+    assert.equal(runs, 1);
+    assert.equal(messaging.checkIns(s.owner.taskId).items[0].state, "fired");
+    assert.equal(
+      (
+        s.db
+          .prepare("SELECT count(*) n FROM agent_turns WHERE taskId=?")
+          .get(s.owner.taskId) as any
+      ).n,
+      2,
+    );
+  } finally {
+    await engine.close();
+    await messaging.close();
+    s.tools.messaging = s.messaging;
+  }
+});
+
+test("yield is rejected alongside other calls and while another action is in flight", async (t) => {
+  const s = await setup(t);
+  s.messaging.scheduleCheckIn(
+    s.owner,
+    { afterMs: 60000, reason: "Later check" },
+    "mixed-timer",
+  );
+  s.connections.toolRound = async (_snapshot, request) => {
+    const steps = request.continuation as any[];
+    if (steps.length) {
+      assert.equal(steps[0].results[0].result.ok, false);
+      assert.match(steps[0].results[0].result.error, /alone/);
+      return { text: "Done", calls: [], continuation: [], usage: null };
+    }
+    return {
+      text: "",
+      calls: [
+        {
+          id: "mixed-yield",
+          name: "task_yield",
+          arguments: { summary: "Pause" },
+        },
+        { id: "inspect", name: "agent_inspect", arguments: {} },
+      ],
+      continuation: [],
+      usage: null,
+    };
+  };
+  (s.engine as any).options.autoStart = true;
+  s.engine.wake();
+  await until(() => s.engine.task(s.owner.taskId).status === "completed");
+  assert.equal(
+    (
+      s.db
+        .prepare("SELECT phase FROM agent_turns WHERE id=?")
+        .get(s.owner.turnId) as any
+    ).phase,
+    "done",
+  );
+  assert.match(
+    (
+      s.db
+        .prepare(
+          "SELECT result FROM tool_invocations WHERE callId='mixed-yield'",
+        )
+        .get() as any
+    ).result,
+    /alone/,
+  );
+  const extra = s.engine.submit(
+    "a",
+    "new",
+    "Check in-flight protection",
+    "inflight-yield",
+  );
+  const owner = { ...s.owner, taskId: extra.taskId!, turnId: extra.turnId };
+  // Freeze this queued task before the scheduler admits it and reconstruct a running host action.
+  s.db
+    .prepare("UPDATE agent_turns SET status='running' WHERE id=?")
+    .run(owner.turnId);
+  s.messaging.scheduleCheckIn(
+    owner,
+    { afterMs: 60000, reason: "Pending" },
+    "inflight-timer",
+  );
+  s.db
+    .prepare(
+      "INSERT INTO tool_invocations VALUES (?,?,?,'files_read','{}','running',NULL,?,?)",
+    )
+    .run(
+      randomUUID(),
+      owner.turnId,
+      "other-action",
+      new Date().toISOString(),
+      new Date().toISOString(),
+    );
+  const denied = await s.tools.dispatch(
+    owner,
+    {
+      id: "yield-inflight",
+      name: "task_yield",
+      arguments: { summary: "Pause" },
+    },
+    new AbortController().signal,
+    async () => {},
+  );
+  assert.equal(denied.ok, false);
+  assert.match(String(denied.error), /in-flight/);
+  await s.engine.cancelTask(owner.taskId);
+});
+
+test("blocked timers retain their events and cancellation/revocation preserve unrelated reminders", async (t) => {
+  const s = await setup(t);
+  const timer = s.messaging.scheduleCheckIn(
+    s.owner,
+    { afterMs: 1000, reason: "Retry after repair" },
+    "blocked-timer",
+  );
+  s.db
+    .prepare("UPDATE agent_tasks SET status='blocked' WHERE id=?")
+    .run(s.owner.taskId);
+  s.db
+    .prepare(
+      "UPDATE task_checkins SET dueAt='2000-01-01T00:00:00.000Z' WHERE id=?",
+    )
+    .run(timer.checkinId);
+  (s.messaging as any).tick();
+  assert.equal(s.messaging.checkIns(s.owner.taskId).items[0].state, "fired");
+  assert.equal(
+    s.messaging.checkIns(s.owner.taskId).items[0].deliveredTurnId,
+    null,
+  );
+  s.db
+    .prepare("UPDATE agent_turns SET status='completed' WHERE id=?")
+    .run(s.owner.turnId);
+  s.db
+    .prepare("UPDATE agent_tasks SET status='awaiting_user' WHERE id=?")
+    .run(s.owner.taskId);
+  (s.messaging as any).tick();
+  assert.ok(s.messaging.checkIns(s.owner.taskId).items[0].deliveredTurnId);
+  const link = s.messaging.createLink(s.workspaceId, "a", "b");
+  const request = s.messaging.send(
+    s.owner,
+    { agentId: "b", content: "Help" },
+    "revoke-checkin-request",
+  );
+  const linked = s.messaging.scheduleCheckIn(
+    s.owner,
+    { afterMs: 60000, reason: "Check helper", requestId: request.requestId },
+    "revoke-linked",
+  );
+  const unrelated = s.messaging.scheduleCheckIn(
+    s.owner,
+    { afterMs: 60000, reason: "Unrelated check" },
+    "revoke-unrelated",
+  );
+  const child = s.messaging.scheduleCheckIn(
+    s.helper(request.requestId),
+    { afterMs: 60000, reason: "Helper follow-up" },
+    "revoke-helper",
+  );
+  const operation = s.messaging.revoke(link.id, {
+    confirmInterruption: true,
+    revision: s.messaging.impact(link.id).revision,
+  });
+  await until(() => s.messaging.operation(operation.id).state === "completed");
+  const state = (id: string) =>
+    (s.db.prepare("SELECT state FROM task_checkins WHERE id=?").get(id) as any)
+      .state;
+  assert.equal(state(linked.checkinId), "cancelled");
+  assert.equal(state(child.checkinId), "cancelled");
+  assert.equal(state(unrelated.checkinId), "scheduled");
+});
+
+test("check-in HTTP reads paginate and cancellation is guarded, scoped and idempotent", async (t) => {
+  const s = await setup(t);
+  const scheduled = s.messaging.scheduleCheckIn(
+    s.owner,
+    { afterMs: 60000, reason: "Check later" },
+    "http-checkin",
+  );
+  const app = createApp({
+    databasePath: s.path,
+    filesRoot: s.files.root,
+    execution: { autoStart: false },
+  });
+  await app.ready();
+  try {
+    const page = await app.inject({
+      method: "GET",
+      url: `/api/tasks/${s.owner.taskId}/check-ins?limit=1&offset=0`,
+    });
+    assert.equal(page.statusCode, 200);
+    assert.equal(page.json().total, 1);
+    assert.equal(page.json().items[0].id, scheduled.checkinId);
+    assert.equal(page.json().items[0].returnEnvelope, undefined);
+    assert.equal(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/api/tasks/${s.owner.taskId}/check-ins?limit=0`,
+        })
+      ).statusCode,
+      400,
+    );
+    const url = `/api/tasks/${s.owner.taskId}/check-ins/${scheduled.checkinId}`;
+    assert.equal(
+      (
+        await app.inject({
+          method: "DELETE",
+          url,
+          headers: { origin: "https://untrusted.example" },
+        })
+      ).statusCode,
+      403,
+    );
+    assert.equal(
+      (
+        await app.inject({
+          method: "DELETE",
+          url: `/api/tasks/missing/check-ins/${scheduled.checkinId}`,
+        })
+      ).statusCode,
+      404,
+    );
+    assert.equal((await app.inject({ method: "DELETE", url })).statusCode, 204);
+    assert.equal((await app.inject({ method: "DELETE", url })).statusCode, 204);
+    s.db
+      .prepare(
+        "UPDATE task_checkins SET state='fired',deliveredTurnId=? WHERE id=?",
+      )
+      .run(s.owner.turnId, scheduled.checkinId);
+    const delivered = await app.inject({ method: "DELETE", url });
+    assert.equal(delivered.statusCode, 409);
+    assert.match(delivered.json().error, /already been delivered/);
+  } finally {
+    await app.close();
+  }
+});
+
+test("events consumed at a tool boundary remain in retry context without replaying a send", async (t) => {
+  const s = await setup(t);
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  let retrying = false;
+  s.connections.toolRound = async (_snapshot, request) => {
+    const steps = request.continuation as any[];
+    if (request.instructions.includes("You are b."))
+      return {
+        text: "Durable collaborator fact",
+        calls: [],
+        continuation: [],
+        usage: null,
+      };
+    if (retrying) {
+      assert.ok(
+        request.messages.some((message) =>
+          message.content.includes("Durable collaborator fact"),
+        ),
+      );
+      return {
+        text: "Retried with retained event",
+        calls: [],
+        continuation: [],
+        usage: null,
+      };
+    }
+    if (!steps.length)
+      return {
+        text: "",
+        calls: [
+          {
+            id: "send",
+            name: "agent_send",
+            arguments: { agentId: "b", content: "Help" },
+          },
+        ],
+        continuation: [],
+        usage: null,
+      };
+    if (steps.length === 1) {
+      await until(
+        () =>
+          (s.db.prepare("SELECT state FROM agent_requests").get() as any)
+            .state === "completed",
+      );
+      return {
+        text: "",
+        calls: [{ id: "inspect", name: "agent_inspect", arguments: {} }],
+        continuation: [],
+        usage: null,
+      };
+    }
+    assert.ok(
+      steps[1].results[0].result.incomingMessages.some(
+        (message: any) => message.content === "Durable collaborator fact",
+      ),
+    );
+    throw new Error("Fixture interruption after event consumption");
+  };
+  (s.engine as any).options.autoStart = true;
+  s.engine.wake();
+  await until(() => s.engine.task(s.owner.taskId).status === "failed");
+  retrying = true;
+  s.engine.retry(s.owner.taskId);
+  await until(() => s.engine.task(s.owner.taskId).status === "completed");
+  assert.equal(
+    (s.db.prepare("SELECT count(*) n FROM agent_requests").get() as any).n,
+    1,
+  );
+});
+
+test("a yielded helper and a later Inbox check-in retain independent return destinations", async (t) => {
+  const s = await setup(t);
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  s.messaging.createLink(s.workspaceId, "b", "c");
+  const parent = s.messaging.send(
+    s.owner,
+    { agentId: "b", content: "Parent task" },
+    "route-parent",
+  );
+  const helper = s.helper(parent.requestId);
+  const child = s.messaging.send(
+    helper,
+    { agentId: "c", content: "Child task" },
+    "route-child",
+  );
+  const inbox = s.messaging.notify(
+    helper,
+    { content: "Please review" },
+    "route-notify",
+  );
+  const userTurn = s.messaging.inboxReply(inbox.inboxId, {
+    content: "Check back later",
+    requestId: randomUUID(),
+  });
+  const userOwner = { ...helper, turnId: userTurn.turnId };
+  const timer = s.messaging.scheduleCheckIn(
+    userOwner,
+    { afterMs: 60000, reason: "Inbox follow-up" },
+    "route-timer",
+  );
+  s.db
+    .prepare(
+      "UPDATE agent_turns SET status='completed',phase='yielded' WHERE taskId=?",
+    )
+    .run(helper.taskId);
+  s.db
+    .prepare(
+      "UPDATE agent_tasks SET status='waiting',resumeEnvelope=(SELECT envelope FROM agent_turns WHERE id=?) WHERE id=?",
+    )
+    .run(userTurn.turnId, helper.taskId);
+  s.messaging.final(
+    s.helper(child.requestId),
+    { requestId: child.requestId, replyKind: "result" },
+    "Child finished",
+    [],
+  );
+  const continuation = s.db
+    .prepare("SELECT * FROM agent_turns WHERE taskId=? AND status='queued'")
+    .get(helper.taskId) as any;
+  assert.equal(JSON.parse(continuation.envelope).requestId, parent.requestId);
+  assert.equal(JSON.parse(continuation.envelope).replyKind, "result");
+  s.db
+    .prepare("UPDATE agent_turns SET status='running' WHERE id=?")
+    .run(continuation.id);
+  s.db
+    .prepare(
+      "UPDATE task_checkins SET dueAt='2000-01-01T00:00:00.000Z' WHERE id=?",
+    )
+    .run(timer.checkinId);
+  (s.messaging as any).tick();
+  assert.deepEqual(
+    s.messaging.consumeInputs({ ...helper, turnId: continuation.id }),
+    [],
+    "an Inbox reminder cannot alter the helper's result destination",
+  );
+  s.messaging.final(
+    { ...helper, turnId: continuation.id },
+    JSON.parse(continuation.envelope),
+    "Parent result",
+    [],
+  );
+  s.db
+    .prepare("UPDATE agent_turns SET status='completed' WHERE id=?")
+    .run(continuation.id);
+  s.db
+    .prepare("UPDATE agent_tasks SET status='awaiting_user' WHERE id=?")
+    .run(helper.taskId);
+  (s.messaging as any).tick();
+  const reminder = s.db
+    .prepare(
+      "SELECT envelope FROM agent_turns WHERE taskId=? AND status='queued'",
+    )
+    .get(helper.taskId) as any;
+  assert.equal(JSON.parse(reminder.envelope).replyKind, "inbox");
+  assert.equal(JSON.parse(reminder.envelope).inboxId, inbox.inboxId);
+  assert.equal(
+    s.messaging.status(s.owner, parent.requestId).request.state,
+    "completed",
+  );
+});
+
+test("v20 routing upgrade preserves existing check-ins and installs missing route snapshots", async (t) => {
+  const s = await setup(t);
+  const reminder = s.messaging.scheduleCheckIn(
+    s.owner,
+    { afterMs: 60000, reason: "Preserved reminder" },
+    "upgrade-reminder",
+  );
+  await s.engine.close();
+  await s.messaging.close();
+  s.db.exec(
+    "ALTER TABLE task_checkins DROP COLUMN returnEnvelope; ALTER TABLE agent_requests DROP COLUMN returnEnvelope; PRAGMA user_version=20",
+  );
+  const upgraded = openDatabase(s.path);
+  try {
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 21);
+    const row = upgraded
+      .prepare("SELECT * FROM task_checkins WHERE id=?")
+      .get(reminder.checkinId) as any;
+    assert.equal(row.reason, "Preserved reminder");
+    assert.equal(row.state, "scheduled");
+    assert.equal(row.returnEnvelope, "{}");
+    assert.ok(
+      (upgraded.pragma("table_info(agent_requests)") as any[]).some(
+        (column) => column.name === "returnEnvelope",
+      ),
+    );
+    assert.deepEqual(upgraded.pragma("foreign_key_check"), []);
+  } finally {
+    upgraded.close();
+  }
+});
+
+test("simultaneous full-size replies retain every body and acknowledge only delivered messages", async (t) => {
+  const s = await setup(t);
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  s.messaging.createLink(s.workspaceId, "a", "c");
+  const first = s.messaging.send(
+    s.owner,
+    { agentId: "b", content: "First task" },
+    "large-first",
+  );
+  const second = s.messaging.send(
+    s.owner,
+    { agentId: "c", content: "Second task" },
+    "large-second",
+  );
+  s.db
+    .prepare("UPDATE agent_turns SET status='running' WHERE id=?")
+    .run(s.owner.turnId);
+  const body = "A".repeat(12000),
+    other = "B".repeat(9000);
+  s.messaging.final(
+    s.helper(first.requestId),
+    { requestId: first.requestId, replyKind: "result" },
+    body,
+    [],
+  );
+  s.messaging.final(
+    s.helper(second.requestId),
+    { requestId: second.requestId, replyKind: "result" },
+    other,
+    [],
+  );
+  s.db
+    .prepare("UPDATE agent_turns SET status='completed' WHERE id=?")
+    .run(s.owner.turnId);
+  s.db
+    .prepare(
+      "UPDATE agent_tasks SET status='waiting',pendingReason='message' WHERE id=?",
+    )
+    .run(s.owner.taskId);
+  (s.messaging as any).tick();
+  const turn = s.db
+    .prepare("SELECT * FROM agent_turns WHERE taskId=? AND status='queued'")
+    .get(s.owner.taskId) as any;
+  const message = s.db
+    .prepare("SELECT content FROM agent_messages WHERE id=?")
+    .get(turn.inputMessageId) as any;
+  assert.equal(message.content, body);
+  assert.equal(
+    JSON.parse(turn.envelope).incomingMessages[0].requestId,
+    first.requestId,
+  );
+  assert.equal(
+    (
+      s.db
+        .prepare(
+          "SELECT count(*) n FROM communication_messages m JOIN communication_deliveries d ON d.messageId=m.id WHERE m.recipientTaskId=? AND d.state='pending'",
+        )
+        .get(s.owner.taskId) as any
+    ).n,
+    1,
+  );
+  s.db
+    .prepare("UPDATE agent_turns SET status='running' WHERE id=?")
+    .run(turn.id);
+  const incoming = s.messaging.consumeInputs({ ...s.owner, turnId: turn.id });
+  assert.equal(incoming.length, 1);
+  assert.equal(incoming[0].content, other);
+  assert.ok(Buffer.byteLength(JSON.stringify(incoming)) < 65536);
+});
+
+test("timer continuations share background fairness instead of taking user priority", async (t) => {
+  const s = await setup(t);
+  s.db
+    .prepare("UPDATE agent_turns SET status='completed' WHERE id=?")
+    .run(s.owner.turnId);
+  s.db
+    .prepare("UPDATE agent_tasks SET status='awaiting_user' WHERE id=?")
+    .run(s.owner.taskId);
+  const reminder = s.messaging.scheduleCheckIn(
+    s.owner,
+    { afterMs: 60000, reason: "Fair timer" },
+    "fair-timer",
+  );
+  s.db
+    .prepare(
+      "UPDATE task_checkins SET dueAt='2000-01-01T00:00:00.000Z' WHERE id=?",
+    )
+    .run(reminder.checkinId);
+  (s.messaging as any).tick();
+  for (let i = 0; i < 4; i++)
+    s.engine.submit("a", "new", `User ${i}`, `fair-user-${i}`);
+  const order: string[] = [];
+  s.connections.toolRound = async (_snapshot, request) => {
+    order.push(
+      request.messages.some((message) => message.content.includes("Fair timer"))
+        ? "timer"
+        : request.messages.at(-1)!.content,
+    );
+    return { text: "Done", calls: [], continuation: [], usage: null };
+  };
+  (s.engine as any).options.autoStart = true;
+  s.engine.wake();
+  await until(() => order.length === 5);
+  assert.deepEqual(order.slice(0, 3), ["User 0", "User 1", "timer"]);
 });

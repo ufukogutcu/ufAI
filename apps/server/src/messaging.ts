@@ -7,6 +7,7 @@ import type { ToolOwner } from "./process-service.js";
 import { ConnectionError } from "./model-providers.js";
 import { guard } from "./connections.js";
 import { pagination, objectBody } from "./validation.js";
+import type { TaskCheckIn } from "./contracts.js";
 
 const now = () => new Date().toISOString();
 const fail = (message: string, code = 409): never => {
@@ -22,11 +23,18 @@ export interface MessageEnvelope {
   rootWorkflowId?: string;
   parentRequestId?: string;
   causationId?: string;
+  continuation?: boolean;
+  incomingMessages?: {
+    messageId: string;
+    requestId: string | null;
+    kind: string;
+  }[];
 }
 export class MessagingService {
   private stopped = false;
   private timer?: ReturnType<typeof setInterval>;
   private operations = new Map<string, Promise<void>>();
+  private checkinCursor = "";
   constructor(
     readonly db: Database.Database,
     readonly execution: AgentExecution,
@@ -91,6 +99,12 @@ export class MessagingService {
       .get(owner.turnId, owner.taskId, owner.agentId) as
       | { envelope: string }
       | undefined;
+    if (
+      !row ||
+      this.task(owner.taskId).agentId !== owner.agentId ||
+      this.owner(owner.agentId).workspaceId !== owner.workspaceId
+    )
+      fail("This tool does not belong to the executing task.", 403);
     this.assertTask(
       owner.taskId,
       row ? (JSON.parse(row.envelope).source ?? "user") : "agent",
@@ -184,6 +198,169 @@ export class MessagingService {
   private changed(workspaceId: string) {
     this.execution.workspaceEvent(workspaceId, "communication");
     this.execution.wake();
+  }
+  checkIns(taskId: string, limit = 20, offset = 0) {
+    this.task(taskId);
+    return {
+      items: this.db
+        .prepare(
+          "SELECT id,taskId,requestId,reason,dueAt,state,deliveredTurnId,createdAt,updatedAt FROM task_checkins WHERE taskId=? ORDER BY (state='scheduled' OR (state='fired' AND deliveredTurnId IS NULL)) DESC,dueAt,id LIMIT ? OFFSET ?",
+        )
+        .all(taskId, limit, offset) as TaskCheckIn[],
+      total: (
+        this.db
+          .prepare("SELECT count(*) n FROM task_checkins WHERE taskId=?")
+          .get(taskId) as { n: number }
+      ).n,
+    };
+  }
+  private hasReplyDependency(taskId: string) {
+    return !!this.db
+      .prepare(
+        `SELECT 1 FROM agent_requests WHERE sourceTaskId=? AND state='open' AND kind='request'
+      UNION ALL SELECT 1 FROM communication_messages m JOIN agent_requests r ON r.id=m.requestId WHERE senderTaskId=? AND m.kind='question' AND answered=0 AND r.state='open'
+      UNION ALL SELECT 1 FROM communication_messages m JOIN communication_deliveries d ON d.messageId=m.id
+        WHERE m.recipientTaskId=? AND d.state='pending' LIMIT 1`,
+      )
+      .get(taskId, taskId, taskId);
+  }
+  private pendingReason(taskId: string) {
+    if (this.hasReplyDependency(taskId)) return "message";
+    return this.db
+      .prepare(
+        "SELECT 1 FROM task_checkins WHERE taskId=? AND (state='scheduled' OR (state='fired' AND deliveredTurnId IS NULL)) LIMIT 1",
+      )
+      .get(taskId)
+      ? "check_in"
+      : null;
+  }
+  private refreshPending(taskId: string) {
+    const reason = this.pendingReason(taskId);
+    this.db
+      .prepare(
+        "UPDATE agent_tasks SET pendingReason=?,status=CASE WHEN status='waiting' AND pendingReason IS NOT NULL AND ? IS NULL THEN 'awaiting_user' ELSE status END WHERE id=?",
+      )
+      .run(reason, reason, taskId);
+  }
+  scheduleCheckIn(owner: ToolOwner, args: any, key: string) {
+    this.assertOwner(owner);
+    return this.once(key, owner.workspaceId, args, () => {
+      const due = Date.now() + args.afterMs;
+      if (
+        !Number.isSafeInteger(args.afterMs) ||
+        args.afterMs <= 0 ||
+        !Number.isSafeInteger(due) ||
+        due > 253402300799999
+      )
+        fail(
+          "Use a positive whole-millisecond delay within the supported date range.",
+          400,
+        );
+      const reason = this.text(args.reason);
+      let replied = false;
+      if (args.requestId) {
+        const request = this.participant(owner, args.requestId);
+        replied =
+          request.state !== "open" ||
+          !!this.db
+            .prepare(
+              `SELECT 1 FROM communication_messages m
+          WHERE requestId=? AND recipientTaskId=? AND kind!='progress' AND sequence>
+            (SELECT coalesce(max(sequence),0) FROM communication_messages WHERE requestId=? AND senderTaskId=? AND kind!='progress') LIMIT 1`,
+            )
+            .get(request.id, owner.taskId, request.id, owner.taskId);
+      }
+      const id = randomUUID(),
+        stamp = now();
+      const envelope = (
+        this.db
+          .prepare("SELECT envelope FROM agent_turns WHERE id=?")
+          .get(owner.turnId) as { envelope: string }
+      ).envelope;
+      this.db
+        .prepare(
+          "INSERT INTO task_checkins(id,taskId,requestId,reason,dueAt,state,createdAt,updatedAt,returnEnvelope) VALUES (?,?,?,?,?,?,?,?,?)",
+        )
+        .run(
+          id,
+          owner.taskId,
+          args.requestId ?? null,
+          reason,
+          new Date(due).toISOString(),
+          replied ? "cancelled" : "scheduled",
+          stamp,
+          stamp,
+          envelope,
+        );
+      this.refreshPending(owner.taskId);
+      this.changed(owner.workspaceId);
+      return {
+        checkinId: id,
+        dueAt: new Date(due).toISOString(),
+        state: replied ? "cancelled" : "scheduled",
+        ...(replied ? { reason: "A response already arrived." } : {}),
+      };
+    });
+  }
+  cancelCheckIn(taskId: string, id: string) {
+    const task = this.task(taskId);
+    return this.db.transaction(() => {
+      const row = this.db
+        .prepare("SELECT id FROM task_checkins WHERE id=? AND taskId=?")
+        .get(id, taskId);
+      if (!row) fail("Check-in not found for this task.", 404);
+      this.db
+        .prepare(
+          "UPDATE task_checkins SET state='cancelled',updatedAt=? WHERE id=? AND (state='scheduled' OR (state='fired' AND deliveredTurnId IS NULL))",
+        )
+        .run(now(), id);
+      this.refreshPending(taskId);
+      this.changed(this.owner(task.agentId).workspaceId);
+      const state = (
+        this.db
+          .prepare("SELECT state FROM task_checkins WHERE id=?")
+          .get(id) as TaskCheckIn
+      ).state;
+      return { checkinId: id, state, cancelled: state === "cancelled" };
+    })();
+  }
+  cancelTaskCheckIns(taskId: string) {
+    this.db
+      .prepare(
+        "UPDATE task_checkins SET state='cancelled',updatedAt=? WHERE taskId=? AND (state='scheduled' OR (state='fired' AND deliveredTurnId IS NULL))",
+      )
+      .run(now(), taskId);
+    this.db
+      .prepare(
+        "UPDATE agent_tasks SET pendingReason=NULL,resumeEnvelope=NULL WHERE id=?",
+      )
+      .run(taskId);
+  }
+  yieldTask(owner: ToolOwner, summary: unknown) {
+    this.assertOwner(owner);
+    return this.db.transaction(() => {
+      const reason = this.pendingReason(owner.taskId);
+      if (!reason)
+        fail(
+          "Schedule a check-in or send a request before yielding. If a response has arrived, handle it first.",
+        );
+      const text = this.text(summary);
+      const turn = this.db
+        .prepare(
+          "SELECT envelope FROM agent_turns WHERE id=? AND taskId=? AND status='running'",
+        )
+        .get(owner.turnId, owner.taskId) as { envelope: string } | undefined;
+      if (!turn) fail("Only a running turn can yield.");
+      this.db
+        .prepare(
+          "UPDATE agent_tasks SET summary=?,pendingReason=?,resumeEnvelope=? WHERE id=?",
+        )
+        .run(text, reason, turn!.envelope, owner.taskId);
+      this.db
+        .prepare("UPDATE agent_turns SET phase='yielding' WHERE id=?")
+        .run(owner.turnId);
+      return { taskYield: true, summary: text };
+    })();
   }
   link(id: string): any {
     const l = this.db
@@ -333,7 +510,7 @@ export class MessagingService {
       );
       this.db
         .prepare(
-          "INSERT INTO agent_requests(id,workspaceId,linkId,sourceAgentId,targetAgentId,sourceName,targetName,sourceTaskId,targetTaskId,rootWorkflowId,parentRequestId,depth,kind,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          "INSERT INTO agent_requests(id,workspaceId,linkId,sourceAgentId,targetAgentId,sourceName,targetName,sourceTaskId,targetTaskId,rootWorkflowId,parentRequestId,depth,kind,createdAt,updatedAt,returnEnvelope) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         )
         .run(
           id,
@@ -351,6 +528,11 @@ export class MessagingService {
           kind,
           now(),
           now(),
+          (
+            this.db
+              .prepare("SELECT envelope FROM agent_turns WHERE id=?")
+              .get(owner.turnId) as { envelope: string }
+          ).envelope,
         );
       this.record(
         owner,
@@ -427,7 +609,14 @@ export class MessagingService {
         accepted?.turnId ?? null,
         now(),
       );
-    if (kind !== "progress" && !delivered) this.deliver(id);
+    if (kind !== "progress" && !delivered) {
+      this.db
+        .prepare(
+          "UPDATE task_checkins SET state='cancelled',updatedAt=? WHERE taskId=? AND requestId=? AND (state='scheduled' OR (state='fired' AND deliveredTurnId IS NULL))",
+        )
+        .run(now(), recipient, request.id);
+      this.deliver(id);
+    }
     this.changed(request.workspaceId);
     return { messageId: id, requestId: request.id };
   }
@@ -488,90 +677,221 @@ export class MessagingService {
       ).n,
     };
   }
+  private resultRoute(envelope: string) {
+    const route = JSON.parse(envelope) as MessageEnvelope;
+    return JSON.stringify([
+      route.replyKind ?? "none",
+      route.requestId ?? null,
+      route.inboxId ?? null,
+    ]);
+  }
+  private pendingInputs(
+    taskId: string,
+    byteBudget = 60000,
+    activeEnvelope?: string,
+    contentBudget = Infinity,
+  ) {
+    const original =
+      (
+        this.db
+          .prepare(
+            "SELECT envelope FROM agent_turns WHERE taskId=? ORDER BY rowid LIMIT 1",
+          )
+          .get(taskId) as { envelope: string } | undefined
+      )?.envelope ?? "{}";
+    const messages = this.db
+      .prepare(
+        `SELECT m.*,NULL AS checkinId,
+        CASE WHEN r.sourceTaskId=m.recipientTaskId THEN r.returnEnvelope END AS returnEnvelope
+      FROM communication_messages m JOIN agent_requests r ON r.id=m.requestId
+      JOIN communication_deliveries d ON d.messageId=m.id WHERE m.recipientTaskId=? AND d.state='pending'
+      ORDER BY m.sequence LIMIT 32`,
+      )
+      .all(taskId) as any[];
+    const checkins = this.db
+      .prepare(
+        `SELECT id AS checkinId,id,'check_in' AS kind,reason AS content,'system' AS senderName,
+      NULL AS senderAgentId,requestId,'[]' AS attachments,dueAt AS createdAt,returnEnvelope FROM task_checkins
+      WHERE taskId=? AND state='fired' AND deliveredTurnId IS NULL ORDER BY dueAt,id LIMIT 32`,
+      )
+      .all(taskId) as any[];
+    const batch: any[] = [];
+    let bytes = 0,
+      files = 0,
+      characters = 0;
+    let route = activeEnvelope ? this.resultRoute(activeEnvelope) : null;
+    for (const item of [...messages, ...checkins].sort((a, b) =>
+      a.createdAt.localeCompare(b.createdAt),
+    )) {
+      item.returnEnvelope =
+        !item.returnEnvelope || item.returnEnvelope === "{}"
+          ? original
+          : item.returnEnvelope;
+      const destination = this.resultRoute(item.returnEnvelope);
+      route ??= destination;
+      if (destination !== route) continue;
+      const size = Buffer.byteLength(JSON.stringify(item)) + 1024;
+      const count = (JSON.parse(item.attachments) as string[]).length;
+      const contentLength =
+        this.inputContent(item).length + (batch.length ? 2 : 0);
+      if (batch.length && characters + contentLength > contentBudget) break;
+      if (bytes + size > byteBudget || files + count > 10 || batch.length >= 10)
+        break;
+      batch.push(item);
+      bytes += size;
+      files += count;
+      characters += contentLength;
+    }
+    return batch;
+  }
+  private inputContent(item: any) {
+    return `[${item.kind} from ${item.senderName}; request ${item.requestId ?? "none"}; message ${item.id}]\n${item.content}`;
+  }
+  private acknowledgeInputs(
+    batch: any[],
+    turnId: string,
+    inputMessageId: string,
+  ) {
+    for (const item of batch) {
+      if (item.checkinId)
+        this.db
+          .prepare(
+            "UPDATE task_checkins SET deliveredTurnId=?,updatedAt=? WHERE id=? AND state='fired'",
+          )
+          .run(turnId, now(), item.checkinId);
+      else
+        this.db
+          .prepare(
+            "UPDATE communication_deliveries SET state='delivered',turnId=?,inputMessageId=? WHERE messageId=? AND state='pending'",
+          )
+          .run(turnId, inputMessageId, item.id);
+    }
+  }
+  // Called only after a completed host tool exchange, never while an action is in flight.
+  consumeInputs(owner: ToolOwner, byteBudget = 60000) {
+    return this.db.transaction(() => {
+      this.assertOwner(owner);
+      const turn = this.db
+        .prepare(
+          "SELECT conversationId,envelope FROM agent_turns WHERE id=? AND status='running'",
+        )
+        .get(owner.turnId) as
+        | { conversationId: string; envelope: string }
+        | undefined;
+      if (!turn) return [];
+      const batch = this.pendingInputs(owner.taskId, byteBudget, turn.envelope);
+      for (const item of batch) {
+        const id = randomUUID();
+        this.db
+          .prepare(
+            `INSERT INTO agent_messages(id,conversationId,turnId,role,content,state,createdAt,authorType,authorId)
+          VALUES (?,?,?,'user',?,'complete',?,?,?)`,
+          )
+          .run(
+            id,
+            turn.conversationId,
+            owner.turnId,
+            this.inputContent(item),
+            now(),
+            item.checkinId ? "system" : "agent",
+            item.senderAgentId,
+          );
+        (JSON.parse(item.attachments) as string[]).forEach(
+          (versionId, ordinal) =>
+            this.db
+              .prepare(
+                "INSERT INTO artifact_references(versionId,messageId,ordinal,mode) VALUES (?,?,?,'file')",
+              )
+              .run(versionId, id, ordinal),
+        );
+        this.acknowledgeInputs([item], owner.turnId, id);
+      }
+      if (batch.length) this.changed(owner.workspaceId);
+      return batch.map((item) => ({
+        messageId: item.id,
+        requestId: item.requestId,
+        kind: item.kind,
+        authorType: item.checkinId ? "system" : "agent",
+        authorId: item.senderAgentId,
+        authorName: item.senderName,
+        content: item.content,
+        versionIds: JSON.parse(item.attachments),
+        replyToId: item.replyToId ?? null,
+      }));
+    })();
+  }
   private deliver(id: string) {
-    const m = this.db
-      .prepare("SELECT * FROM communication_messages WHERE id=?")
+    const message = this.db
+      .prepare("SELECT recipientTaskId FROM communication_messages WHERE id=?")
       .get(id) as any;
-    const d = this.db
-      .prepare("SELECT * FROM communication_deliveries WHERE messageId=?")
-      .get(id) as any;
-    if (!m || d?.state !== "pending") return;
-    if (!m.recipientTaskId) {
+    if (message?.recipientTaskId) this.deliverTask(message.recipientTaskId);
+    else
       this.db
         .prepare(
-          "UPDATE communication_deliveries SET state='orphaned' WHERE messageId=?",
+          "UPDATE communication_deliveries SET state='orphaned' WHERE messageId=? AND state='pending'",
         )
         .run(id);
-      return;
-    }
+  }
+  private deliverTask(taskId: string) {
     const task = this.db
       .prepare("SELECT * FROM agent_tasks WHERE id=?")
-      .get(m.recipientTaskId) as any;
+      .get(taskId) as any;
     if (!task || task.status === "cancelled") {
       this.db
         .prepare(
-          "UPDATE communication_deliveries SET state='recorded' WHERE messageId=?",
+          "UPDATE communication_deliveries SET state='recorded' WHERE messageId IN (SELECT id FROM communication_messages WHERE recipientTaskId=?) AND state='pending'",
         )
-        .run(id);
+        .run(taskId);
+      if (task) this.cancelTaskCheckIns(taskId);
       return;
     }
-    const r = this.request(m.requestId);
     if (
+      ["failed", "blocked"].includes(task.status) ||
       this.db
         .prepare(
-          "SELECT 1 FROM agent_turns WHERE taskId=? AND status='running' LIMIT 1",
+          `SELECT 1 FROM agent_turns WHERE taskId=? AND
+      (status IN ('running','waiting') OR (status='queued' AND json_extract(envelope,'$.continuation')=1)) LIMIT 1`,
         )
-        .get(task.id)
+        .get(taskId)
     )
       return;
-    // A parked turn receives the event as a tool result, not a competing turn.
-    if (
-      this.db
-        .prepare(
-          "SELECT 1 FROM messaging_waits WHERE taskId=? AND state='waiting'",
-        )
-        .get(task.id)
-    )
-      return;
-    if (["failed", "blocked"].includes(task.status)) return;
-    // Coalesce other pending inputs at the same safe boundary; bounded by ten files / 12k text.
-    const pending = this.db
-      .prepare(
-        "SELECT m.* FROM communication_messages m JOIN communication_deliveries d ON d.messageId=m.id WHERE m.recipientTaskId=? AND d.state='pending' AND m.kind!='progress' ORDER BY m.sequence LIMIT 10",
-      )
-      .all(task.id) as any[];
-    const batch: any[] = [];
-    const versions: string[] = [];
-    let content = "";
-    for (const item of pending) {
-      // Questions have distinct return routes and cannot be combined with result updates.
-      if (
-        batch.length &&
-        (item.kind === "question" || batch[0].kind === "question")
-      )
-        break;
-      const part = `[${item.kind} from ${item.senderName}; request ${item.requestId}; message ${item.id}]\n${item.content}`;
-      const ids = JSON.parse(item.attachments) as string[];
-      if (
-        content.length + part.length > 12000 ||
-        versions.length + ids.length > 10
-      )
-        break;
-      batch.push(item);
-      versions.push(...ids);
-      content += (content ? "\n\n" : "") + part;
-    }
-    if (!batch.length) {
-      batch.push(m);
-      content = m.content;
-      versions.push(...JSON.parse(m.attachments));
-    }
+    const batch = this.pendingInputs(taskId, 60000, undefined, 12000);
+    if (!batch.length) return;
+    const first = batch[0];
+    const base = JSON.parse(first.returnEnvelope) as MessageEnvelope;
+    // A continuation always keeps the task's own result route. Questions carry their own IDs
+    // and are answered explicitly with agent_message, independently of the task's final result.
+    const envelope: MessageEnvelope = {
+      ...base,
+      source: first.checkinId ? "system" : "agent",
+      senderId: first.senderAgentId ?? undefined,
+      causationId: first.id,
+      continuation: true,
+      incomingMessages: batch.map((item) => ({
+        messageId: item.id,
+        requestId: item.requestId ?? null,
+        kind: item.kind,
+      })),
+    };
+    const versions = [
+      ...new Set(
+        batch.flatMap((item) => JSON.parse(item.attachments) as string[]),
+      ),
+    ];
+    let content = batch.map((item) => this.inputContent(item)).join("\n\n");
+    // A full-size single message uses routing metadata for attribution so the
+    // existing submission limit cannot clip its body or acknowledge unseen peers.
+    if (batch.length === 1 && content.length > 12000) content = first.content;
+    if (content.length > 12000)
+      content =
+        content.slice(0, 11600) +
+        "\n[Excerpt; full messages remain in communication history.]";
     try {
       const accepted = this.execution.submit(
         task.agentId,
         task.id,
         content,
-        `delivery_${batch[0].id}`,
+        `delivery_${first.id}`,
         versions.map((versionId) => ({
           versionId,
           name: (
@@ -582,31 +902,12 @@ export class MessagingService {
           mode: "file" as const,
         })),
         JSON.stringify(versions),
-        {
-          source: "agent",
-          senderId: m.senderAgentId,
-          requestId:
-            batch[0].kind === "question"
-              ? m.requestId
-              : (task.parentRequestId ?? m.requestId),
-          messageId: batch[0].id,
-          replyKind:
-            batch[0].kind === "question"
-              ? "answer"
-              : task.parentRequestId &&
-                  this.request(task.parentRequestId).kind === "request"
-                ? "result"
-                : "none",
-          rootWorkflowId: r.rootWorkflowId,
-          causationId: batch[0].id,
-        },
+        envelope,
       );
-      for (const item of batch)
-        this.db
-          .prepare(
-            "UPDATE communication_deliveries SET state='delivered',turnId=?,inputMessageId=(SELECT inputMessageId FROM agent_turns WHERE id=?) WHERE messageId=?",
-          )
-          .run(accepted.turnId, accepted.turnId, item.id);
+      const input = this.db
+        .prepare("SELECT inputMessageId FROM agent_turns WHERE id=?")
+        .get(accepted.turnId) as { inputMessageId: string };
+      this.acknowledgeInputs(batch, accepted.turnId, input.inputMessageId);
     } catch (e) {
       if (
         !(
@@ -842,6 +1143,7 @@ export class MessagingService {
     this.changed(r.workspaceId);
   }
   taskCancelled(id: string) {
+    this.cancelTaskCheckIns(id);
     for (const r of this.db
       .prepare(
         "SELECT id FROM agent_requests WHERE targetTaskId=? AND state='open'",
@@ -951,12 +1253,18 @@ export class MessagingService {
       this.db
         .prepare("UPDATE communication_links SET state='revoking' WHERE id=?")
         .run(id);
-      for (const r of impact.requests)
+      for (const r of impact.requests) {
         this.db
           .prepare(
             "UPDATE agent_requests SET state='revoking' WHERE id=? AND state='open'",
           )
           .run(r.id);
+        this.db
+          .prepare(
+            "UPDATE task_checkins SET state='cancelled',updatedAt=? WHERE requestId=? AND (state='scheduled' OR (state='fired' AND deliveredTurnId IS NULL))",
+          )
+          .run(now(), r.id);
+      }
       this.db
         .prepare(
           "INSERT INTO messaging_operations(id,workspaceId,linkId,requestIds,taskIds,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?)",
@@ -1003,6 +1311,33 @@ export class MessagingService {
   }
   private tick() {
     if (this.stopped) return;
+    this.db.transaction(() => {
+      const due = this.db
+        .prepare(
+          "SELECT id,taskId FROM task_checkins WHERE state='scheduled' AND dueAt<=? ORDER BY dueAt,id LIMIT 32",
+        )
+        .all(now()) as { id: string; taskId: string }[];
+      for (const row of due) {
+        this.db
+          .prepare(
+            "UPDATE task_checkins SET state='fired',updatedAt=? WHERE id=? AND state='scheduled'",
+          )
+          .run(now(), row.id);
+        const owner = this.db
+          .prepare(
+            "SELECT a.workspaceId FROM agent_tasks t JOIN agents a ON a.id=t.agentId WHERE t.id=?",
+          )
+          .get(row.taskId) as { workspaceId: string };
+        this.changed(owner.workspaceId);
+      }
+      const tasks = this.db
+        .prepare(
+          "SELECT DISTINCT taskId FROM task_checkins WHERE state='fired' AND deliveredTurnId IS NULL ORDER BY (taskId<=?),taskId LIMIT 32",
+        )
+        .all(this.checkinCursor) as { taskId: string }[];
+      if (tasks.length) this.checkinCursor = tasks.at(-1)!.taskId;
+      for (const row of tasks) this.deliverTask(row.taskId);
+    })();
     for (const d of this.db
       .prepare(
         "SELECT d.messageId FROM communication_deliveries d JOIN communication_messages m ON m.id=d.messageId LEFT JOIN agent_tasks t ON t.id=m.recipientTaskId WHERE d.state='pending' AND (t.id IS NULL OR (t.status NOT IN ('failed','blocked','running') AND NOT EXISTS(SELECT 1 FROM messaging_waits w WHERE w.taskId=t.id AND w.state='waiting'))) ORDER BY d.createdAt,d.messageId LIMIT 32",
@@ -1102,6 +1437,25 @@ export function registerMessaging(
     if (!db.prepare("SELECT 1 FROM workspaces WHERE id=?").get(id))
       fail("Workspace not found.", 404);
   };
+  app.get(
+    "/api/tasks/:id/check-ins",
+    checked((req) => {
+      const { limit, offset } = pagination(req.query);
+      return service.checkIns(req.params.id, limit, offset);
+    }),
+  );
+  app.delete(
+    "/api/tasks/:id/check-ins/:checkinId",
+    checked((req, reply) => {
+      const result = service.cancelCheckIn(req.params.id, req.params.checkinId);
+      if (!result.cancelled)
+        fail(
+          "This check-in has already been delivered. Stop the task to cancel queued or active work.",
+          409,
+        );
+      return reply.code(204).send();
+    }),
+  );
   app.get(
     "/api/workspaces/:id/communication-links",
     checked((req) => {

@@ -739,10 +739,10 @@ export function AgentPanel({
                   <p className={styles.muted}>{details.turns[0]!.error}</p>
                 )}
             </div>
-            <Transcript key={taskId} agentId={agent.id} taskId={taskId} />
+            <Transcript key={`transcript:${taskId}`} agentId={agent.id} taskId={taskId} />
 
             <Composer
-              key={taskId}
+              key={`composer:${taskId}`}
               agentId={agent.id}
               taskId={taskId}
               onCreated={created}

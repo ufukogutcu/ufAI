@@ -78,6 +78,7 @@ class CodexClient {
       task?: TaskRequest;
       signal: AbortSignal;
       toolChain?: Promise<void>;
+      yielding?: boolean;
       text: string;
       onDelta?: (delta: string) => void;
       items: Map<string, string>;
@@ -175,8 +176,10 @@ class CodexClient {
           ? this.textTurns.get(params.threadId)
           : undefined;
       if (textTurn?.signal.aborted) continue;
+      if (textTurn?.yielding && message.method !== "item/tool/call") continue;
       if (textTurn) {
         const emitDelta = (delta: string) => {
+          if (textTurn.yielding) return;
           try {
             textTurn.onDelta?.(delta);
           } catch (error) {
@@ -211,6 +214,21 @@ class CodexClient {
           textTurn.toolChain = (textTurn.toolChain ?? Promise.resolve())
             .then(async () => {
               task.signal.throwIfAborted();
+              if (textTurn.yielding) {
+                this.send({
+                  id: message.id,
+                  result: {
+                    contentItems: [
+                      {
+                        type: "inputText",
+                        text: "This turn has yielded. No further tools are accepted.",
+                      },
+                    ],
+                    success: false,
+                  },
+                });
+                return;
+              }
               if (textTurn.text.trim()) task.onCommentary?.(textTurn.text);
               textTurn.text = "";
               textTurn.items.clear();
@@ -219,6 +237,7 @@ class CodexClient {
                 name: String(params.tool),
                 arguments: object(params.arguments),
               });
+              if (task.shouldYield?.()) textTurn.yielding = true;
               task.signal.throwIfAborted();
               const opened = result.media?.length
                 ? await task.resolveMedia?.(result.media)
@@ -246,6 +265,12 @@ class CodexClient {
                   success: result.ok,
                 },
               });
+              if (textTurn.yielding)
+                textTurn.resolve({
+                  text: "",
+                  finishReason: "yield",
+                  usage: textTurn.usage,
+                });
             })
             .catch((e) => {
               textTurn.reject(e);
@@ -330,6 +355,7 @@ class CodexClient {
             emitDelta(textTurn.text.slice(before.length));
         }
         if (message.method === "turn/completed") {
+          if (textTurn.yielding) continue;
           if (
             object(params.turn).status === "completed" &&
             textTurn.text.trim()
@@ -587,7 +613,8 @@ class CodexClient {
       };
       // Completion can follow the RPC response in the same stdout chunk.
       const early = this.earlyCompletion as
-        { loginId: string; success: boolean } | undefined;
+        | { loginId: string; success: boolean }
+        | undefined;
       if (early && early.loginId === this.loginId) {
         this.loginId = undefined;
         this.loginResult = early.success
@@ -914,7 +941,7 @@ class CodexClient {
       turn.turnId ??= object(started.turn).id as string;
       if (request.signal.aborted) abort();
       const answer = await completed;
-      finished = true;
+      finished = answer.finishReason !== "yield";
       return answer;
     } finally {
       if (!finished) {

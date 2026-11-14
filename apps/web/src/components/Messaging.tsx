@@ -1,5 +1,11 @@
 import { useNavigationGuard } from "../navigation-guard";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Inbox, Link as LinkIcon } from "lucide-react";
 import { useAgents, useAgentStore, emptyList } from "../agent-store";
@@ -11,12 +17,17 @@ import type {
   MessagingOperation,
   Page,
   RevocationImpact,
+  TaskCheckIn,
 } from "../../../server/src/contracts";
 import { TaskComposer } from "./TaskComposer";
 import { Dialog } from "./Dialog";
 import { MessageAttachments } from "./MessageAttachments";
 import { Tooltip } from "./Tooltip";
 import styles from "./Messaging.module.scss";
+const checkInDateFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 
 function AttachedFiles({ ids }: { ids: string[] }) {
   return (
@@ -551,9 +562,7 @@ function RequestThread({ item }: { item: AgentRequest }) {
           </button>
         )}
       </div>
-      <span className={styles.meta}>
-        {item.kind}
-      </span>
+      <span className={styles.meta}>{item.kind}</span>
       {(item.error || item.executionError) && (
         <p role="status">{item.error || item.executionError}</p>
       )}
@@ -619,25 +628,171 @@ export function TaskCommunications({ taskId }: { taskId: string }) {
       setError(errorMessage(e));
     }
   }
-  if (!items.length && !error) return null;
   return (
-    <section className={styles.section} aria-label="Agent communications">
-      <h3>Agent communications</h3>
-      <div className={styles.panel}>
-        {items.map((item) => (
-          <RequestThread key={item.id} item={item} />
+    <>
+      <TaskCheckIns taskId={taskId} />
+      {(items.length > 0 || error) && (
+        <section className={styles.section} aria-label="Agent communications">
+          <h3>Agent communications</h3>
+          <div className={styles.panel}>
+            {items.map((item) => (
+              <RequestThread key={item.id} item={item} />
+            ))}
+            {items.length < total && (
+              <button className="textButton" onClick={() => void more()}>
+                Load more requests
+              </button>
+            )}
+            {error && (
+              <p role="alert" className="error">
+                {error}
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+function TaskCheckIns({ taskId }: { taskId: string }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  const [page, setPage] = useState<Page<TaskCheckIn> | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const version = useAgents((s) => s.eventVersion);
+  const task = useAgents((s) => s.details[taskId]?.task);
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    void request<Page<TaskCheckIn>>(
+      `/tasks/${taskId}/check-ins?limit=20`,
+      "GET",
+      undefined,
+      controller.signal,
+    )
+      .then((result) => {
+        if (!controller.signal.aborted) {
+          setPage(result);
+          setError("");
+        }
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) setError(errorMessage(e));
+      });
+    return () => controller.abort();
+  }, [taskId, version, revision]);
+  async function cancel(id: string) {
+    setBusy(id);
+    setNotice("");
+    setError("");
+    try {
+      await request(`/tasks/${taskId}/check-ins/${id}`, "DELETE");
+      setNotice("Check-in cancelled.");
+      heading.current?.focus();
+      setRevision((value) => value + 1);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+  async function more() {
+    try {
+      const next = await request<Page<TaskCheckIn>>(
+        `/tasks/${taskId}/check-ins?limit=20&offset=${page?.items.length ?? 0}`,
+      );
+      setPage((previous) => ({
+        total: next.total,
+        items: [
+          ...(previous?.items ?? []),
+          ...next.items.filter(
+            (item) => !previous?.items.some((old) => old.id === item.id),
+          ),
+        ],
+      }));
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+  const pending = (
+    page?.items.filter(
+      (item) =>
+        item.state === "scheduled" ||
+        (item.state === "fired" && !item.deliveredTurnId),
+    ) ?? []
+  ).sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+  if (!page?.items.length && !task?.pendingReason && !error) return null;
+  return (
+    <section className={styles.section} aria-label="Task check-ins">
+      <h3 ref={heading} tabIndex={-1}>
+        Check-ins
+      </h3>
+      {task?.status === "waiting" && task.pendingReason && (
+        <p role="status">
+          {task.pendingReason === "message"
+            ? "Awaiting messages"
+            : "Scheduled to resume"}
+        </p>
+      )}
+      {pending[0] && (
+        <p className={styles.meta}>
+          Next check-in:{" "}
+          <time dateTime={pending[0].dueAt}>
+            {checkInDateFormatter.format(new Date(pending[0].dueAt))}
+          </time>
+        </p>
+      )}
+      <ul className={styles.list}>
+        {page?.items.map((item) => (
+          <li key={item.id} className={`${styles.item} ${styles.checkin}`}>
+            <p className={styles.content}>{item.reason}</p>
+            <time dateTime={item.dueAt}>
+              {checkInDateFormatter.format(new Date(item.dueAt))}
+            </time>
+            <span className={styles.meta}>
+              {item.state === "fired"
+                ? item.deliveredTurnId
+                  ? "Delivered"
+                  : "Ready to resume"
+                : item.state === "scheduled"
+                  ? "Scheduled"
+                  : "Cancelled"}
+            </span>
+            {item.requestId && (
+              <span className={styles.meta}>Request: {item.requestId}</span>
+            )}
+            {(item.state === "scheduled" ||
+              (item.state === "fired" && !item.deliveredTurnId)) && (
+              <button
+                type="button"
+                className="textButton"
+                disabled={busy !== null}
+                onClick={() => void cancel(item.id)}
+              >
+                {busy === item.id ? "Cancelling…" : "Cancel check-in"}
+              </button>
+            )}
+          </li>
         ))}
-        {items.length < total && (
-          <button className="textButton" onClick={() => void more()}>
-            Load more requests
-          </button>
-        )}
-        {error && (
-          <p role="alert" className="error">
-            {error}
-          </p>
-        )}
-      </div>
+      </ul>
+      {(page?.items.length ?? 0) < (page?.total ?? 0) && (
+        <button
+          type="button"
+          className="textButton"
+          onClick={() => void more()}
+        >
+          Load more check-ins
+        </button>
+      )}
+      <p role="status" aria-live="polite">
+        {notice}
+      </p>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
     </section>
   );
 }

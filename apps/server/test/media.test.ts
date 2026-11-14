@@ -358,7 +358,7 @@ test("v12 upgrade retains existing messages, references and paths; interrupted i
     (db.prepare("SELECT mode FROM artifact_references").get() as any).mode,
     "file",
   );
-  assert.equal(db.pragma("user_version", { simple: true }), 19);
+  assert.equal(db.pragma("user_version", { simple: true }), 21);
   const files = new ManagedFiles(db, join(root, "files"));
   await files.start();
   const artifacts = new ArtifactService(db, files, () => {});

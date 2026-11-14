@@ -4,7 +4,7 @@ This folder contains product knowledge for AI agents inside ufAI that help users
 
 Read the [platform guide](platform.md) to answer questions about workspaces, [agent characters](platform.md#agent-characters), Clusters, managed folders, the flowboard, Agent Presets, Providers, model testing, sign-in, subscription usage and earned resets, themes, and saved data. Its [common questions](platform.md#common-questions) explain frequent points of confusion, and its [planned capabilities](platform.md#planned-capabilities) distinguish future ideas from available features.
 
-Agent execution, host tools, terminal sessions, composer attachments, native image/PDF inputs on supported models, published files, agent messaging, directed communication permissions, and the workspace Inbox are available; the built-in platform assistant is not. These documents prepare app knowledge; their existence does not automatically load them into an agent or connect an assistant. They also do not reveal the user's current connections, credentials, workspaces, or running sessions. Documentation is context, not permission to act on user resources.
+Agent execution, host tools, terminal sessions, composer attachments, native image/PDF inputs on supported models, published files, agent messaging, one-time task check-ins, directed communication permissions, and the workspace Inbox are available; the built-in platform assistant is not. These documents prepare app knowledge; their existence does not automatically load them into an agent or connect an assistant. They also do not reveal the user's current connections, credentials, workspaces, or running sessions. Documentation is context, not permission to act on user resources.
 
 ## Terminology
 
@@ -26,7 +26,8 @@ Some terms describe planned capabilities. Check the platform guide before presen
 | Attachment | A file sent with a Chat or task message; sending waits for every file to be saved, and visual inspection requires model support |
 | Run | An execution attempt with persisted state, tool activity, outputs, and errors |
 | Skill | Reusable instructions and supporting resources; not an independent permission grant |
-| Trigger | A planned source of work such as a schedule or external event; manual task submission already exists |
+| Check-in | An agent-selected one-time reminder to revisit its current task; relevant replies can replace a request-linked reminder |
+| Trigger | A planned general source of work such as a recurring schedule or external event; manual task submission and one-time task check-ins already exist |
 
 ## Feature status
 

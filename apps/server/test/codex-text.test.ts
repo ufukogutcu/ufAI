@@ -133,7 +133,7 @@ test("Codex dynamic tools use ufAI callbacks, isolate commentary, and preserve c
     ],
     resolveMedia: async (refs) => refs.map((ref) => ({ ...ref, data: "AQID" })),
     tools: [
-      ...taskTools.filter(t=>t.name!=="files_read"),
+      ...taskTools.filter((t) => t.name !== "files_read"),
       {
         name: "files_read",
         description: "Read file",
@@ -162,7 +162,7 @@ test("Codex dynamic tools use ufAI callbacks, isolate commentary, and preserve c
   });
   assert.equal(result.text, "Final answer.");
   assert.equal(calls[0].name, "agent_send");
-  assert.deepEqual(calls[0].arguments, {agentId:"helper",content:"Help"});
+  assert.deepEqual(calls[0].arguments, { agentId: "helper", content: "Help" });
   assert.deepEqual(comments, ["Reading the file.", "Checking the result."]);
   assert.equal(result.usage?.inputTokens, 20);
   const controller = new AbortController();
@@ -198,23 +198,95 @@ test("Codex dynamic tools use ufAI callbacks, isolate commentary, and preserve c
   await assert.rejects(() => waiting, /cancelled/i);
 });
 
-
-test("Codex completes text beyond its former reply ceiling", async t => {
+test("Codex completes text beyond its former reply ceiling", async (t) => {
   const r = await runtime(t);
-  const reply = await r.executeText("connection", { ...base, messages: [{ role: "user", content: "large-reply" }] });
+  const reply = await r.executeText("connection", {
+    ...base,
+    messages: [{ role: "user", content: "large-reply" }],
+  });
   assert.equal(reply.text.length, 80 * 4096);
 });
 
-test("Codex executes more than 32 dynamic tool rounds", async t => {
+test("Codex executes more than 32 dynamic tool rounds", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "ufai-codex-rounds-"));
-  const r = new CodexRuntime(dir, () => spawn(process.execPath,
-    [fileURLToPath(new URL("./fixtures/codex-tools-process.cjs", import.meta.url))], { stdio: ["pipe","pipe","pipe"] }), 1000, 1000);
-  t.after(async () => { await r.close(); await rm(dir, { recursive:true, force:true }); });
-  let calls = 0;
-  const reply = await r.executeTask("connection", { ...base,
-    messages: [{ role:"user",content:"many-tools" }], tools:[taskTools.find(t => t.name === "files_read")!],
-    onTool: async () => { calls++; return {ok:true,text:"Contents"}; },
+  const r = new CodexRuntime(
+    dir,
+    () =>
+      spawn(
+        process.execPath,
+        [
+          fileURLToPath(
+            new URL("./fixtures/codex-tools-process.cjs", import.meta.url),
+          ),
+        ],
+        { stdio: ["pipe", "pipe", "pipe"] },
+      ),
+    1000,
+    1000,
+  );
+  t.after(async () => {
+    await r.close();
+    await rm(dir, { recursive: true, force: true });
   });
-  assert.equal(calls,130);
-  assert.equal(reply.text,"Final answer.");
+  let calls = 0;
+  const reply = await r.executeTask("connection", {
+    ...base,
+    messages: [{ role: "user", content: "many-tools" }],
+    tools: [taskTools.find((t) => t.name === "files_read")!],
+    onTool: async () => {
+      calls++;
+      return { ok: true, text: "Contents" };
+    },
+  });
+  assert.equal(calls, 130);
+  assert.equal(reply.text, "Final answer.");
+});
+
+test("Codex acknowledges a yielded tool, interrupts its session and leaves unrelated execution usable", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "ufai-codex-yield-"));
+  const runtime = new CodexRuntime(
+    directory,
+    () =>
+      spawn(
+        process.execPath,
+        [
+          fileURLToPath(
+            new URL("./fixtures/codex-tools-process.cjs", import.meta.url),
+          ),
+        ],
+        { stdio: ["pipe", "pipe", "pipe"] },
+      ),
+    1000,
+    1000,
+  );
+  t.after(async () => {
+    await runtime.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  let yielded = false,
+    calls = 0;
+  const deltas: string[] = [];
+  const result = await runtime.executeTask("connection", {
+    ...base,
+    messages: [{ role: "user", content: "yield-fixture" }],
+    tools: taskTools,
+    shouldYield: () => yielded,
+    onDelta: (text) => deltas.push(text),
+    onTool: async (call) => {
+      assert.equal(call.name, "task_yield");
+      calls++;
+      yielded = true;
+      return { ok: true, taskYield: true, summary: "Waiting for messages" };
+    },
+  });
+  assert.equal(result.finishReason, "yield");
+  assert.equal(result.text, "");
+  assert.equal(calls, 1);
+  assert.ok(!deltas.join("").includes("late output"));
+  const answer = await runtime.executeTask("connection", {
+    ...base,
+    tools: taskTools,
+    onTool: async () => ({ ok: true }),
+  });
+  assert.equal(answer.text, "Final answer.");
 });
