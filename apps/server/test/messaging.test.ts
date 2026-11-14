@@ -23,6 +23,11 @@ async function until(fn: () => boolean) {
   }
   assert.fail("Timed out");
 }
+// Advance durable transmissions without wall-clock sleeps in routing-only fixtures.
+function arrive(s: { db: ReturnType<typeof openDatabase>; messaging: MessagingService }) {
+  s.db.prepare("UPDATE message_transits SET arrivesAt='2000-01-01T00:00:00.000Z' WHERE state='in_flight'").run();
+  while (s.db.prepare("SELECT 1 FROM message_transits WHERE state='in_flight' LIMIT 1").get()) s.messaging.transits.reconcile();
+}
 async function setup(t: any, run = false) {
   const directory = await mkdtemp(join(tmpdir(), "ufai-messages-")),
     path = join(directory, "app.sqlite"),
@@ -504,6 +509,7 @@ test("unbounded helper requests retain ancestor checks and complete-before-wait 
     "Done",
     [],
   );
+  arrive(s);
   assert.equal(
     s.messaging.waitState(s.owner, [sent.requestId], "all").ready,
     true,
@@ -683,7 +689,7 @@ test("v13 upgrade preserves populated records and stable paths while backfilling
       );
     else assert.deepEqual(rows, retained[table], table);
   }
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 22);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 23);
   assert.deepEqual(
     (upgraded.prepare("SELECT content FROM agent_messages").all() as any[]).map(
       (r) => r.content,
@@ -988,6 +994,7 @@ test("user queue preference admits a helper after two eligible user turns", asyn
   const s = await setup(t);
   s.messaging.createLink(s.workspaceId, "a", "b");
   s.messaging.send(s.owner, { agentId: "b", content: "Helper" }, "helper");
+  arrive(s);
   for (let i = 0; i < 3; i++)
     s.engine.submit("b", "new", `User ${i}`, randomUUID());
   const order: string[] = [];
@@ -1136,6 +1143,7 @@ test("a child result wakes its helper with the helper original return route, nev
     "Child completed",
     [],
   );
+  arrive(s);
   const delivery = s.db
     .prepare(
       "SELECT t.envelope FROM communication_messages m JOIN communication_deliveries d ON d.messageId=m.id JOIN agent_turns t ON t.id=d.turnId WHERE m.requestId=? AND m.kind='result'",
@@ -1238,6 +1246,7 @@ test("a helper completing during requester generation is consumed at the next to
               .get(id) as any
           ).state === "completed",
       );
+      await until(() => !s.db.prepare("SELECT 1 FROM message_transits WHERE recipientTaskId=? AND state='in_flight' LIMIT 1").get(s.owner.taskId));
       return {
         text: "",
         calls: [{ id: "inspect", name: "agent_inspect", arguments: {} }],
@@ -1547,6 +1556,7 @@ test("more than sixteen yielded tasks can remain pending and remain cancellable 
         ),
       );
     }
+    arrive(s);
     const steps = request.continuation as any[];
     return {
       text: "",
@@ -1572,14 +1582,16 @@ test("more than sixteen yielded tasks can remain pending and remain cancellable 
   (s.engine as any).options.autoStart = true;
   s.engine.wake();
   await until(
-    () =>
-      (
+    () => {
+      arrive(s);
+      return (
         s.db
           .prepare(
             "SELECT count(*) n FROM agent_tasks WHERE agentId='a' AND status='waiting'",
           )
           .get() as any
-      ).n === 20,
+      ).n === 20;
+    },
   );
   t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
   try {
@@ -1994,6 +2006,7 @@ test("a timer racing a reply produces one continuation containing the current re
     ).n,
     1,
   );
+  arrive(s);
   s.connections.toolRound = async (_snapshot, request) => {
     if (request.instructions.includes("You are a."))
       assert.ok(
@@ -2395,6 +2408,7 @@ test("events consumed at a tool boundary remain in retry context without replayi
           (s.db.prepare("SELECT state FROM agent_requests").get() as any)
             .state === "completed",
       );
+      await until(() => !s.db.prepare("SELECT 1 FROM message_transits WHERE recipientTaskId=? AND state='in_flight' LIMIT 1").get(s.owner.taskId));
       return {
         text: "",
         calls: [{ id: "inspect", name: "agent_inspect", arguments: {} }],
@@ -2467,6 +2481,7 @@ test("a yielded helper and a later Inbox check-in retain independent return dest
     "Child finished",
     [],
   );
+  arrive(s);
   const continuation = s.db
     .prepare("SELECT * FROM agent_turns WHERE taskId=? AND status='queued'")
     .get(helper.taskId) as any;
@@ -2522,11 +2537,11 @@ test("v20 routing upgrade preserves existing check-ins and installs missing rout
   await s.engine.close();
   await s.messaging.close();
   s.db.exec(
-    "ALTER TABLE task_checkins DROP COLUMN returnEnvelope; ALTER TABLE agent_requests DROP COLUMN returnEnvelope; PRAGMA user_version=20",
+    "DROP INDEX communication_deliveries_turn; DROP TABLE message_transits; ALTER TABLE task_checkins DROP COLUMN returnEnvelope; ALTER TABLE agent_requests DROP COLUMN returnEnvelope; PRAGMA user_version=20",
   );
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 22);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 23);
     const row = upgraded
       .prepare("SELECT * FROM task_checkins WHERE id=?")
       .get(reminder.checkinId) as any;
@@ -2583,6 +2598,7 @@ test("simultaneous full-size replies retain every body and acknowledge only deli
       "UPDATE agent_tasks SET status='waiting',pendingReason='message' WHERE id=?",
     )
     .run(s.owner.taskId);
+  arrive(s);
   (s.messaging as any).tick();
   const turn = s.db
     .prepare("SELECT * FROM agent_turns WHERE taskId=? AND status='queued'")
@@ -2690,7 +2706,7 @@ test("one connection permits independent requests and notifications from either 
 
 async function restoreDirectedLinks(s: Awaited<ReturnType<typeof setup>>) {
   await s.messaging.close();
-  s.db.exec("DROP INDEX communication_pair; DROP INDEX communication_target; PRAGMA user_version=21");
+  s.db.exec("DROP INDEX communication_deliveries_turn; DROP TABLE message_transits; DROP INDEX communication_pair; DROP INDEX communication_target; PRAGMA user_version=21");
 }
 function insertReverseLink(s: Awaited<ReturnType<typeof setup>>, id: string) {
   s.db.prepare("INSERT INTO communication_links(id,workspaceId,sourceAgentId,targetAgentId,createdAt) VALUES (?,?,'b','a','2999')").run(id, s.workspaceId);
@@ -2698,7 +2714,7 @@ function insertReverseLink(s: Awaited<ReturnType<typeof setup>>, id: string) {
 function upgradeLinks(s: Awaited<ReturnType<typeof setup>>) {
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 22);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 23);
     assert.deepEqual(upgraded.pragma("foreign_key_check"), []);
     assert.deepEqual(upgraded.pragma("integrity_check"), [{ integrity_check: "ok" }]);
   } finally {
@@ -2836,4 +2852,175 @@ test("both merged pending removals finish without duplicate terminal delivery or
   } finally {
     await resumed.close();
   }
+});
+
+test("visual transmissions use saved distance, remain idempotent and gate initial execution without a browser", async (t) => {
+  const s = await setup(t);
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  s.db.prepare("UPDATE agents SET x=1000,y=0 WHERE id='b'").run();
+  const sent = s.messaging.send(s.owner, { agentId: "b", content: "Travel" }, "travel");
+  assert.equal(Date.parse(sent.arrivesAt) - Date.parse(sent.startedAt), 2000);
+  s.db.prepare("UPDATE agents SET x=1 WHERE id='b'").run();
+  assert.deepEqual(s.messaging.send(s.owner, { agentId: "b", content: "Travel" }, "travel"), sent);
+  assert.equal((s.db.prepare("SELECT count(*) n FROM message_transits").get() as any).n, 1);
+  let helperRuns = 0;
+  s.connections.toolRound = async (_snapshot, request) => {
+    if (request.instructions.includes("You are b.")) helperRuns++;
+    return { text: "Done", calls: [], continuation: [], usage: null };
+  };
+  s.engine.pump();
+  await delay(30);
+  assert.equal(helperRuns, 0);
+  assert.equal(s.engine.task(sent.taskId).status, "queued");
+  arrive(s);
+  s.engine.pump();
+  await until(() => helperRuns === 1);
+  assert.equal((s.db.prepare("SELECT count(*) n FROM agent_turns WHERE taskId=?").get(sent.taskId) as any).n, 1);
+});
+
+test("messaging tools remain pending until arrival and duplicate callbacks share one transmission", async (t) => {
+  const s = await setup(t);
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  const call = { id: "visual-send", name: "agent_send", arguments: { agentId: "b", content: "Tool waits" } };
+  let completed = false;
+  const result = s.tools.dispatch(s.owner, call, new AbortController().signal, async () => ({})).then(value => { completed = true; return value; });
+  const duplicate = s.tools.dispatch(s.owner, call, new AbortController().signal, async () => ({}));
+  await delay(20);
+  assert.equal(completed, false);
+  arrive(s);
+  const [first, second] = await Promise.all([result, duplicate]);
+  assert.equal(first.ok, true);
+  assert.deepEqual(second, first);
+  assert.ok(first.messageId && first.startedAt && first.arrivesAt);
+  assert.equal((s.db.prepare("SELECT count(*) n FROM message_transits").get() as any).n, 1);
+  const progressCall = { id: "visual-progress", name: "agent_message", arguments: { requestId: first.requestId, kind: "progress", content: "Sent progress" } };
+  completed = false;
+  const progress = s.tools.dispatch(s.owner, progressCall, new AbortController().signal, async () => ({})).then(value => { completed = true; return value; });
+  await delay(20);
+  assert.equal(completed, false);
+  arrive(s);
+  assert.equal((await progress).ok, true);
+});
+
+test("replies and recovered waits cannot consume travelling messages; progress arrives without waking work", async (t) => {
+  const s = await setup(t);
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  const sent = s.messaging.send(s.owner, { agentId: "b", content: "Help" }, "gated-reply");
+  arrive(s);
+  const helper = s.helper(sent.requestId);
+  const progress = s.messaging.message(helper, { requestId: sent.requestId, kind: "progress", content: "Working" }, "gated-progress");
+  assert.ok(progress.arrivesAt);
+  const before = (s.db.prepare("SELECT count(*) n FROM agent_turns WHERE taskId=?").get(s.owner.taskId) as any).n;
+  arrive(s);
+  assert.equal((s.db.prepare("SELECT count(*) n FROM agent_turns WHERE taskId=?").get(s.owner.taskId) as any).n, before);
+  s.db.prepare("UPDATE agent_turns SET status='running' WHERE id=?").run(s.owner.turnId);
+  s.messaging.final(helper, { requestId: sent.requestId, replyKind: "result" }, "Answer in transit", []);
+  assert.equal(s.messaging.waitState(s.owner, [sent.requestId], "all").ready, false);
+  assert.deepEqual(s.messaging.consumeInputs(s.owner), []);
+  assert.deepEqual(s.messaging.waitResult(s.owner, [sent.requestId], "all").messages, []);
+  arrive(s);
+  assert.equal(s.messaging.waitState(s.owner, [sent.requestId], "all").ready, true);
+  assert.equal(s.messaging.consumeInputs(s.owner)[0].content, "Answer in transit");
+});
+
+test("transmissions preserve direction order, survive restart deadlines and retain blocked deliveries", async (t) => {
+  const s = await setup(t);
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  const sent = s.messaging.send(s.owner, { agentId: "b", content: "Help" }, "restart-transit");
+  s.db.prepare("UPDATE agents SET x=1200 WHERE id='a'").run();
+  const first = s.messaging.message(s.owner, { requestId: sent.requestId, kind: "progress", content: "First" }, "ordered-first");
+  s.db.prepare("UPDATE agents SET x=0 WHERE id='a'").run();
+  const second = s.messaging.message(s.owner, { requestId: sent.requestId, kind: "progress", content: "Second" }, "ordered-second");
+  assert.ok(first.arrivesAt <= second.arrivesAt);
+  await s.messaging.close();
+  const resumed = new MessagingService(s.db, s.engine, s.connections);
+  s.engine.messaging = resumed;
+  s.tools.messaging = resumed;
+  t.after(() => resumed.close());
+  resumed.start();
+  assert.equal((s.db.prepare("SELECT arrivesAt FROM message_transits WHERE messageId=?").get(sent.messageId) as any).arrivesAt, sent.arrivesAt);
+  assert.equal((s.db.prepare("SELECT count(*) n FROM agent_requests").get() as any).n, 1);
+  const helper = s.helper(sent.requestId);
+  s.db.prepare("UPDATE agent_turns SET status='completed' WHERE id=?").run(s.owner.turnId);
+  s.db.prepare("UPDATE agent_tasks SET status='blocked' WHERE id=?").run(s.owner.taskId);
+  resumed.final(helper, { requestId: sent.requestId, replyKind: "result" }, "Retained", []);
+  arrive({ db: s.db, messaging: resumed });
+  assert.equal((s.db.prepare("SELECT d.state FROM communication_deliveries d JOIN communication_messages m ON m.id=d.messageId WHERE m.kind='result'").get() as any).state, "pending");
+  s.db.prepare("UPDATE agent_tasks SET status='awaiting_user' WHERE id=?").run(s.owner.taskId);
+  (resumed as any).tick();
+  assert.equal((s.db.prepare("SELECT d.state FROM communication_deliveries d JOIN communication_messages m ON m.id=d.messageId WHERE m.kind='result'").get() as any).state, "delivered");
+});
+
+test("sender cancellation keeps accepted mail; recipient cancellation, deletion and revocation cancel flights", async (t) => {
+  const s = await setup(t);
+  const link = s.messaging.createLink(s.workspaceId, "a", "b");
+  const sent = s.messaging.send(s.owner, { agentId: "b", content: "Accepted" }, "cancel-source");
+  await s.engine.cancelTask(s.owner.taskId);
+  assert.equal((s.db.prepare("SELECT state FROM message_transits WHERE messageId=?").get(sent.messageId) as any).state, "in_flight");
+  const waiting = s.messaging.transits.wait(sent.messageId, new AbortController().signal);
+  const rejected = assert.rejects(waiting, /cancelled/);
+  await s.engine.cancelTask(sent.taskId);
+  await rejected;
+  assert.equal((s.db.prepare("SELECT state FROM message_transits WHERE messageId=?").get(sent.messageId) as any).state, "cancelled");
+  const root = s.engine.submit("a", "new", "New task", randomUUID());
+  const owner = { ...s.owner, taskId: root.taskId!, turnId: root.turnId };
+  const revoke = s.messaging.send(owner, { agentId: "b", content: "Revoke" }, "cancel-link");
+  s.messaging.revoke(link.id, { confirmInterruption: true, revision: s.messaging.impact(link.id).revision });
+  assert.equal((s.db.prepare("SELECT state FROM message_transits WHERE messageId=?").get(revoke.messageId) as any).state, "cancelled");
+  s.messaging.createLink(s.workspaceId, "a", "c");
+  const deleted = s.messaging.send(owner, { agentId: "c", content: "Delete" }, "delete-recipient");
+  await s.messaging.deletingAgents(["c"]);
+  assert.equal((s.db.prepare("SELECT state FROM message_transits WHERE messageId=?").get(deleted.messageId) as any).state, "cancelled");
+});
+
+test("active transmission HTTP snapshots are scoped, guarded, cursor paginated and metadata only", async (t) => {
+  const s = await setup(t);
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  const first = s.messaging.send(s.owner, { agentId: "b", content: "Private body" }, "http-first");
+  s.messaging.send(s.owner, { agentId: "b", content: "Other private body" }, "http-second");
+  const app = createApp({ databasePath: s.path, filesRoot: s.directory + "/http-files", execution: { autoStart: false }, serveStatic: false });
+  await app.ready();
+  t.after(() => app.close());
+  const path = `/api/workspaces/${s.workspaceId}/message-transits`;
+  const page = await app.inject({ method: "GET", url: `${path}?limit=1` });
+  assert.equal(page.statusCode, 200);
+  const data = page.json();
+  assert.equal(data.items[0].messageId, first.messageId);
+  assert.equal(data.items[0].content, undefined);
+  assert.ok(data.serverNow && data.nextCursor);
+  const next = (await app.inject({ method: "GET", url: `${path}?limit=1&after=${data.nextCursor}` })).json();
+  assert.equal(next.items.length, 1);
+  assert.notEqual(next.items[0].messageId, first.messageId);
+  assert.equal((await app.inject({ method: "GET", url: `${path}?after=-1` })).statusCode, 400);
+  assert.equal((await app.inject({ method: "GET", url: "/api/workspaces/missing/message-transits" })).statusCode, 404);
+  assert.equal((await app.inject({ method: "GET", url: path, headers: { origin: "https://evil.example" } })).statusCode, 403);
+});
+
+test("bounded simultaneous arrival batches preserve sequence before releasing later messages", async t => {
+  const s = await setup(t);
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  const sent = s.messaging.send(s.owner, { agentId: "b", content: "Help" }, "batch-order");
+  for (let i = 0; i < 270; i++) s.messaging.message(s.owner, { requestId: sent.requestId, kind: "progress", content: String(i) }, `batch-${i}`);
+  s.db.prepare("UPDATE message_transits SET arrivesAt='2000-01-01T00:00:00.000Z'").run();
+  s.messaging.transits.reconcile();
+  const rows = s.db.prepare("SELECT m.sequence,mt.state FROM message_transits mt JOIN communication_messages m ON m.id=mt.messageId ORDER BY m.sequence").all() as { sequence: number; state: string }[];
+  assert.equal(rows.filter(row => row.state === "arrived").length, 128);
+  assert.ok(rows.slice(0, 128).every(row => row.state === "arrived"));
+  assert.ok(rows.slice(128).every(row => row.state === "in_flight"));
+});
+
+test("v22 upgrade preserves old messages without adding retrospective transmission delays", async t => {
+  const s = await setup(t);
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  const sent = s.messaging.send(s.owner, { agentId: "b", content: "Old message" }, "upgrade-transit");
+  arrive(s);
+  await s.messaging.close();
+  s.db.exec("DROP INDEX communication_deliveries_turn; DROP TABLE message_transits; PRAGMA user_version=22");
+  const upgraded = openDatabase(s.path);
+  try {
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 23);
+    assert.equal((upgraded.prepare("SELECT count(*) n FROM message_transits").get() as any).n, 0);
+    assert.equal((upgraded.prepare("SELECT content FROM communication_messages WHERE id=?").get(sent.messageId) as any).content, "Old message");
+    assert.deepEqual(upgraded.pragma("foreign_key_check"), []);
+  } finally { upgraded.close(); }
 });

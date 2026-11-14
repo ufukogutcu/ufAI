@@ -14,6 +14,7 @@ export function restoreOutputColumns(database: Database.Database) {
 
 // Reconstruct v18 state before any older-schema fixture is assembled.
 export function removeCheckIns(database: Database.Database) {
+  database.exec("DROP INDEX IF EXISTS communication_deliveries_turn; DROP TABLE IF EXISTS message_transits");
   database.exec("DROP TABLE IF EXISTS task_checkins");
   const columns = database.pragma("table_info(agent_tasks)") as {
     name: string;

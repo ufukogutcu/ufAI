@@ -1,3 +1,5 @@
+import { CommunicationEdge } from "./CommunicationEdge";
+import { createMessageTransitStore, MessageTransitContext } from "../message-transit-store";
 import { useShallow } from "zustand/react/shallow";
 import { PermissionEditor } from "./Messaging";
 import messagingStyles from "./Messaging.module.scss";
@@ -39,6 +41,7 @@ import styles from "./Flowboard.module.scss";
 import { GlassMaterial } from "./GlassMaterial";
 import { Appearance } from "./Appearance";
 
+const edgeTypes = { communication: CommunicationEdge };
 const nodeTypes = { agent: AgentNode, cluster: ClusterNode };
 const defaultViewport: Viewport = { x: 0, y: 0, zoom: 1 };
 
@@ -101,6 +104,7 @@ function ViewControls() {
 
 function Board({ workspaceId }: { workspaceId: string }) {
   const agentStore = useAgentStore();
+  const [transitStore] = useState(createMessageTransitStore);
   const savedNodes = useAgents((s) => s.nodes[workspaceId] ?? emptyNodes);
   const links = useAgents(s => s.communication[workspaceId]?.links ?? emptyList);
   const editor = useAgents(s => s.communicationEditor);
@@ -114,6 +118,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
   ]))));
   const edges = useMemo<Edge[]>(() => links.map(link => ({
     id: link.id,
+    type: "communication",
     source: link.sourceAgentId,
     target: link.targetAgentId,
     sourceHandle: sourceOnLeft[link.id] ? "right" : "left",
@@ -174,23 +179,39 @@ function Board({ workspaceId }: { workspaceId: string }) {
     const events = new EventSource(
       `/api/events?workspaceId=${encodeURIComponent(workspaceId)}`,
     );
-    events.addEventListener("change", refresh);
-    events.addEventListener("resync", refresh);
+    const refreshTransits = () => {
+      if (!closed) void transitStore.getState().refresh(workspaceId);
+    };
+    const changed = (event: MessageEvent) => {
+      try {
+        if (JSON.parse(event.data).kind === "message-transit") {
+          refreshTransits();
+          void agentStore.getState().loadWorkspace(workspaceId);
+        }
+      } catch { /* Ordinary snapshots still refresh for malformed invalidations. */ }
+      refresh();
+    };
+    const resync = () => { refreshTransits(); refresh(); };
+    events.addEventListener("change", changed);
+    events.addEventListener("resync", resync);
     events.onopen = () => {
       agentStore.setState({ connected: true });
+      refreshTransits();
       refresh();
     };
     events.onerror = () => agentStore.setState({ connected: false });
     const unfocus = refreshOnFocus(async () => {
+      refreshTransits();
       refresh();
     });
     return () => {
       closed = true;
       clearTimeout(timer);
       events.close();
+      transitStore.getState().clear();
       unfocus();
     };
-  }, [agentStore, workspaceId]);
+  }, [agentStore, workspaceId, transitStore]);
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: WorkspaceFlowNode) => {
       if (node.type === "agent")
@@ -301,6 +322,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
     [saveViewport, workspaceId],
   );
   return (
+    <MessageTransitContext.Provider value={transitStore}>
     <div className={styles.board} ref={root}>
       <ReactFlow
         defaultViewport={viewport ?? defaultViewport}
@@ -311,6 +333,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
         colorMode={mode}
         nodes={nodes}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onNodeClick={handleNodeClick}
         onNodeDragStart={() => {
@@ -389,6 +412,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
         </Dialog>
       )}
     </div>
+    </MessageTransitContext.Provider>
   );
 }
 

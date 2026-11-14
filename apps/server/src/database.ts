@@ -1,3 +1,4 @@
+import { migrateMessageTransits } from "./message-transits.js";
 import { migrateCharacters } from "./agent-appearance.js";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -26,7 +27,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 22)
+    if (version > 23)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -276,6 +277,11 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
       database.transaction(() => {
         migrateMutualLinks(database);
         database.pragma("user_version = 22");
+      })();
+    if (version < 23)
+      database.transaction(() => {
+        migrateMessageTransits(database);
+        database.pragma("user_version = 23");
       })();
   } catch (error) {
     database.close();

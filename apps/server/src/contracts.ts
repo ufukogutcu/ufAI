@@ -487,3 +487,15 @@ export interface MessagingOperation {
   id: string; workspaceId: string; linkId: string; state: "pending" | "running" | "completed" | "failed";
   error: string | null;
 }
+
+export interface MessageTransit {
+  messageId: string;
+  workspaceId: string;
+  requestId: string;
+  linkId: string;
+  senderAgentId: string;
+  recipientAgentId: string;
+  startedAt: string;
+  arrivesAt: string;
+  state: "in_flight" | "arrived" | "cancelled";
+}

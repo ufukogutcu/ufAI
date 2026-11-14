@@ -77,7 +77,7 @@ const allTaskTools: ToolSpec[] = [
   ),
   spec(
     "agent_send",
-    "Message a connected agent asynchronously; either agent may initiate contact. Continue independent work. Replies resume this task automatically. Schedule a check-in if useful, then task_yield when no independent work remains. Attach immutable versions, not host paths.",
+    "Message a connected agent; this tool waits for the short visual delivery trip, not for a reply. Either agent may initiate contact. Continue independent work. Replies resume this task automatically. Schedule a check-in if useful, then task_yield when no independent work remains. Attach immutable versions, not host paths.",
     {
       agentId: str("Recipient agent ID", 100),
       kind: { type: "string", enum: ["request", "notification"] },
@@ -88,7 +88,7 @@ const allTaskTools: ToolSpec[] = [
   ),
   spec(
     "agent_message",
-    "Send a question, progress update, or answer within an accepted request. Questions and answers resume the other task; progress stays in history. Answer incoming questions explicitly without changing your own final-result destination. An answer requires its question message ID.",
+    "Send a question, progress update, or answer within an accepted request. This tool completes after the short visual delivery trip. Questions and answers resume the other task; progress stays in history. Answer incoming questions explicitly without changing your own final-result destination. An answer requires its question message ID.",
     {
       requestId: str("Request ID", 100),
       kind: { type: "string", enum: ["question", "progress", "answer"] },
@@ -745,8 +745,13 @@ export class AgentTools {
         return messaging.yieldTask(owner, a.summary);
       }
       if (name === "agents_find") return messaging.find(owner, a);
-      if (name === "agent_send") return messaging.send(owner, a, key);
-      if (name === "agent_message") return messaging.message(owner, a, key);
+      if (name === "agent_send" || name === "agent_message") {
+        const result = name === "agent_send"
+          ? messaging.send(owner, a, key)
+          : messaging.message(owner, a, key);
+        await messaging.transits.wait(result.messageId, signal);
+        return result;
+      }
       if (name === "agent_request_status")
         return messaging.status(owner, a.requestId, a.offset, a.limit);
       if (name === "task_set_outputs")

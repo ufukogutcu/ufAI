@@ -1,3 +1,4 @@
+import { MessageTransits } from "./message-transits.js";
 import { createHash, randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { FastifyInstance } from "fastify";
@@ -31,6 +32,7 @@ export interface MessageEnvelope {
   }[];
 }
 export class MessagingService {
+  readonly transits: MessageTransits;
   private stopped = false;
   private timer?: ReturnType<typeof setInterval>;
   private operations = new Map<string, Promise<void>>();
@@ -39,13 +41,18 @@ export class MessagingService {
     readonly db: Database.Database,
     readonly execution: AgentExecution,
     private connections: ConnectionService,
-  ) {}
+  ) {
+    this.transits = new MessageTransits(db,
+      workspaceId => execution.workspaceEvent(workspaceId, "message-transit"),
+      messageId => { this.deliver(messageId); execution.wake(); });
+  }
   start() {
     this.db
       .prepare(
         "UPDATE messaging_operations SET state='pending' WHERE state='running'",
       )
       .run();
+    this.transits.reconcile();
     this.tick();
     this.timer = setInterval(() => this.tick(), 1000);
     this.timer.unref();
@@ -536,7 +543,7 @@ export class MessagingService {
               .get(owner.turnId) as { envelope: string }
           ).envelope,
         );
-      this.record(
+      const recorded = this.record(
         owner,
         this.request(id),
         kind,
@@ -547,7 +554,7 @@ export class MessagingService {
         true,
         accepted,
       );
-      return { requestId: id, taskId: accepted.taskId, state: "accepted" };
+      return { ...recorded, requestId: id, taskId: accepted.taskId, state: "accepted" };
     });
   }
   private record(
@@ -611,16 +618,19 @@ export class MessagingService {
         accepted?.turnId ?? null,
         now(),
       );
+    const transit = recipient && owner.turnId
+      ? this.transits.create(id, request, owner.agentId, recipient)
+      : undefined;
     if (kind !== "progress" && !delivered) {
       this.db
         .prepare(
           "UPDATE task_checkins SET state='cancelled',updatedAt=? WHERE taskId=? AND requestId=? AND (state='scheduled' OR (state='fired' AND deliveredTurnId IS NULL))",
         )
         .run(now(), recipient, request.id);
-      this.deliver(id);
+      if (!transit) this.deliver(id);
     }
     this.changed(request.workspaceId);
-    return { messageId: id, requestId: request.id };
+    return { messageId: id, requestId: request.id, ...(transit ? { startedAt: transit.startedAt, arrivesAt: transit.arrivesAt } : {}) };
   }
   message(owner: ToolOwner, args: any, key: string) {
     return this.once(key, owner.workspaceId, args, () => {
@@ -707,6 +717,7 @@ export class MessagingService {
         CASE WHEN r.sourceTaskId=m.recipientTaskId THEN r.returnEnvelope END AS returnEnvelope
       FROM communication_messages m JOIN agent_requests r ON r.id=m.requestId
       JOIN communication_deliveries d ON d.messageId=m.id WHERE m.recipientTaskId=? AND d.state='pending'
+      AND NOT EXISTS(SELECT 1 FROM message_transits mt WHERE mt.messageId=m.id AND mt.state!='arrived')
       ORDER BY m.sequence LIMIT 32`,
       )
       .all(taskId) as any[];
@@ -824,8 +835,9 @@ export class MessagingService {
   }
   private deliver(id: string) {
     const message = this.db
-      .prepare("SELECT recipientTaskId FROM communication_messages WHERE id=?")
+      .prepare("SELECT m.recipientTaskId,d.state FROM communication_messages m JOIN communication_deliveries d ON d.messageId=m.id WHERE m.id=?")
       .get(id) as any;
+    if (message?.state !== "pending") return;
     if (message?.recipientTaskId) this.deliverTask(message.recipientTaskId);
     else
       this.db
@@ -1061,7 +1073,7 @@ export class MessagingService {
 
     const questions = this.db
       .prepare(
-        "SELECT m.* FROM communication_messages m JOIN communication_deliveries d ON d.messageId=m.id WHERE m.recipientTaskId=? AND m.kind='question' AND m.answered=0 ORDER BY sequence LIMIT 10",
+        "SELECT m.* FROM communication_messages m JOIN communication_deliveries d ON d.messageId=m.id WHERE m.recipientTaskId=? AND m.kind='question' AND m.answered=0 AND NOT EXISTS(SELECT 1 FROM message_transits mt WHERE mt.messageId=m.id AND mt.state!='arrived') ORDER BY sequence LIMIT 10",
       )
       .all(owner.taskId);
     for (const r of rows)
@@ -1078,11 +1090,13 @@ export class MessagingService {
           "A helper may wait on its incoming request only after asking a clarification question.",
         );
     const complete = (r: any) =>
-      !["open", "revoking"].includes(r.state) ||
+      (!["open", "revoking"].includes(r.state) && !this.db.prepare(
+        "SELECT 1 FROM message_transits WHERE requestId=? AND recipientTaskId=? AND state='in_flight' LIMIT 1"
+      ).get(r.id, owner.taskId)) ||
       (r.targetTaskId === owner.taskId &&
         !!this.db
           .prepare(
-            "SELECT 1 FROM communication_messages m JOIN communication_deliveries d ON d.messageId=m.id WHERE m.recipientTaskId=? AND m.requestId=? AND m.kind='answer'",
+            "SELECT 1 FROM communication_messages m JOIN communication_deliveries d ON d.messageId=m.id WHERE m.recipientTaskId=? AND m.requestId=? AND m.kind='answer' AND NOT EXISTS(SELECT 1 FROM message_transits mt WHERE mt.messageId=m.id AND mt.state!='arrived')",
           )
           .get(owner.taskId, r.id));
     const done = mode === "all" ? rows.every(complete) : rows.some(complete);
@@ -1100,7 +1114,7 @@ export class MessagingService {
     const state = this.waitState(owner, ids, mode);
     const messages = this.db
       .prepare(
-        `SELECT m.* FROM communication_messages m JOIN communication_deliveries d ON d.messageId=m.id WHERE m.recipientTaskId=? AND m.requestId IN (${ids.map(() => "?").join(",")}) AND m.kind!='progress' ORDER BY sequence DESC LIMIT 10`,
+        `SELECT m.* FROM communication_messages m JOIN communication_deliveries d ON d.messageId=m.id WHERE m.recipientTaskId=? AND m.requestId IN (${ids.map(() => "?").join(",")}) AND m.kind!='progress' AND NOT EXISTS(SELECT 1 FROM message_transits mt WHERE mt.messageId=m.id AND mt.state!='arrived') ORDER BY sequence DESC LIMIT 10`,
       )
       .all(owner.taskId, ...ids)
       .reverse() as any[];
@@ -1145,6 +1159,7 @@ export class MessagingService {
     this.changed(r.workspaceId);
   }
   taskCancelled(id: string) {
+    this.transits.cancel("recipientTaskId", id);
     this.cancelTaskCheckIns(id);
     for (const r of this.db
       .prepare(
@@ -1159,6 +1174,7 @@ export class MessagingService {
       .run(id);
   }
   async deletingAgents(ids: string[]) {
+    for (const id of ids) this.transits.cancel("recipientAgentId", id);
     for (const agent of ids)
       for (const r of this.db
         .prepare(
@@ -1289,6 +1305,7 @@ export class MessagingService {
           JSON.stringify({ id: op }),
         );
     })();
+    this.transits.cancel("linkId", id);
     this.changed(impact.link.workspaceId);
     this.tick();
     return this.operation(op);
@@ -1313,6 +1330,7 @@ export class MessagingService {
   }
   private tick() {
     if (this.stopped) return;
+    this.transits.reconcile();
     this.db.transaction(() => {
       const due = this.db
         .prepare(
@@ -1342,7 +1360,7 @@ export class MessagingService {
     })();
     for (const d of this.db
       .prepare(
-        "SELECT d.messageId FROM communication_deliveries d JOIN communication_messages m ON m.id=d.messageId LEFT JOIN agent_tasks t ON t.id=m.recipientTaskId WHERE d.state='pending' AND (t.id IS NULL OR (t.status NOT IN ('failed','blocked','running') AND NOT EXISTS(SELECT 1 FROM messaging_waits w WHERE w.taskId=t.id AND w.state='waiting'))) ORDER BY d.createdAt,d.messageId LIMIT 32",
+        "SELECT d.messageId FROM communication_deliveries d JOIN communication_messages m ON m.id=d.messageId LEFT JOIN agent_tasks t ON t.id=m.recipientTaskId WHERE d.state='pending' AND NOT EXISTS(SELECT 1 FROM message_transits mt WHERE mt.messageId=m.id AND mt.state!='arrived') AND (t.id IS NULL OR (t.status NOT IN ('failed','blocked','running') AND NOT EXISTS(SELECT 1 FROM messaging_waits w WHERE w.taskId=t.id AND w.state='waiting'))) ORDER BY d.createdAt,d.messageId LIMIT 32",
       )
       .all() as any[])
       this.db.transaction(() => this.deliver(d.messageId))();
@@ -1397,6 +1415,7 @@ export class MessagingService {
     this.changed(op.workspaceId);
   }
   async close() {
+    this.transits.close();
     this.stopped = true;
     clearInterval(this.timer);
     await Promise.allSettled([...this.operations.values()]);
@@ -1441,6 +1460,21 @@ export function registerMessaging(
     if (!db.prepare("SELECT 1 FROM workspaces WHERE id=?").get(id))
       fail("Workspace not found.", 404);
   };
+  app.get(
+    "/api/workspaces/:id/message-transits",
+    checked((req) => {
+      workspace(req.params.id);
+      const { limit } = pagination(req.query);
+      const after = req.query.after === undefined ? 0 : Number(req.query.after);
+      if (!Number.isSafeInteger(after) || after < 0) fail("Invalid transmission cursor.", 400);
+      const serverNow = now();
+      const items = db.prepare(`SELECT mt.*,m.sequence FROM message_transits mt
+        JOIN communication_messages m ON m.id=mt.messageId
+        WHERE mt.workspaceId=? AND mt.state='in_flight' AND mt.arrivesAt>? AND m.sequence>?
+        ORDER BY m.sequence LIMIT ?`).all(req.params.id, serverNow, after, limit) as any[];
+      return { items, serverNow, nextCursor: items.length === limit ? items.at(-1).sequence : null };
+    }),
+  );
   app.get(
     "/api/tasks/:id/check-ins",
     checked((req) => {

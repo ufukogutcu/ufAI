@@ -677,6 +677,8 @@ export class AgentExecution {
               t.rowid) AS laneOrder
           FROM agent_turns t JOIN agent_tasks own ON own.id=t.taskId
           WHERE t.status='queued'
+            AND NOT EXISTS (SELECT 1 FROM communication_deliveries d JOIN message_transits mt ON mt.messageId=d.messageId
+              WHERE d.turnId=t.id AND mt.state!='arrived')
             AND NOT EXISTS (SELECT 1 FROM agent_turns a JOIN agent_tasks activeTask ON activeTask.id=a.taskId
               WHERE a.agentId=t.agentId AND a.status='running' AND activeTask.kind=own.kind)
             AND NOT EXISTS (SELECT 1 FROM agent_turns p WHERE p.taskId=t.taskId

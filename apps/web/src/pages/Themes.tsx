@@ -244,7 +244,12 @@ function ThemePreview({
                     <div className={styles.clusterPalette}>{clusterColors.map((color,i)=><span key={color} title={`Cluster color ${i+1}`} style={{background:color}}/>)}</div>
                   </div>
                   <pre className={styles.terminalSample}>$ build report{'\n'}Report saved · exit 0</pre>
-                  <svg width="100" height="24" aria-label="Communication permission preview"><path d="M4 12 H82 L74 6 M82 12 L74 18" fill="none" stroke="var(--communication-edge)" strokeWidth="2"/><path d="M4 22 H82" stroke="var(--communication-edge-selected)" strokeWidth="2"/></svg>
+                  <svg width="100" height="32" role="img" aria-label="Communication link and message envelope preview">
+                    <path d="M4 12H96" stroke="var(--communication-edge)" strokeWidth="2" />
+                    <path d="M4 28H96" stroke="var(--communication-edge-selected)" strokeWidth="2" />
+                    <rect x="38" y="3" width="24" height="18" rx="3" fill="var(--communication-envelope-surface)" stroke="var(--communication-envelope-foreground)" />
+                    <path d="M40 6L50 13L60 6" fill="none" stroke="var(--communication-envelope-foreground)" />
+                  </svg>
                   <small>Workspace canvas</small>
                   <svg width="220" height="58" viewBox="0 0 220 58" role="img" aria-label="Character prototype colors and props">
                     {characterPreviewColors.map((color, index) => <g key={color} transform={`translate(${index * 32 + 3} 0)`}>

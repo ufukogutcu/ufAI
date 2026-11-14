@@ -1513,10 +1513,36 @@
       "light": "#ffffff",
       "dark": "#ffffff"
     },
+    "communication-envelope-surface": {
+      "cssVariable": "--communication-envelope-surface",
+      "label": "Message envelope surface",
+      "description": "Background of envelopes traveling between agents.",
+      "components": [
+        "Message envelopes",
+        "Canvas theme preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#eeeeef",
+      "dark": "#242528"
+    },
+    "communication-envelope-foreground": {
+      "cssVariable": "--communication-envelope-foreground",
+      "label": "Message envelope outline",
+      "description": "Envelope outlines and icons on agent communication links.",
+      "components": [
+        "Message envelopes",
+        "Canvas theme preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#202124",
+      "dark": "#f0f0f2"
+    },
     "communication-edge": {
       "cssVariable": "--communication-edge",
       "label": "Communication links",
-      "description": "Directed agent communication permission lines and arrowheads.",
+      "description": "Mutual agent communication permission lines.",
       "components": [
         "Agent communication edges",
         "Canvas theme preview"
