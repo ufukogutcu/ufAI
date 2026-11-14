@@ -82,6 +82,17 @@
   font-size: 12px;
   flex-shrink: 0;
 }
+.portrait {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  margin-right: 4px;
+  vertical-align: middle;
+  pointer-events: none;
+}
+.peerNameStart {
+  white-space: nowrap;
+}
 .meta {
   color: var(--muted);
   font-size: 12px;

@@ -233,3 +233,37 @@ export function actionLabel(item: TimelineEntry) {
     readable.length > 160 ? readable.slice(0, 160) + "…" : readable;
   return `${label}${excerpt ? ` · ${excerpt}` : ""}${active ? "…" : ""}`;
 }
+
+/** Identity-based peer and split copy for message actions, never inferred from names. */
+export function messageActionLabel(item: TimelineEntry, taskId: string) {
+  const request = item.request;
+  const other = request?.sourceTaskId === taskId
+    ? { agentId: request.targetAgentId, name: request.targetName }
+    : request?.targetTaskId === taskId
+      ? { agentId: request.sourceAgentId, name: request.sourceName }
+      : undefined;
+  const communication = item.communication;
+  if (item.kind === "communication") {
+    const outgoing = communication?.senderTaskId === taskId;
+    const peer = outgoing ? other : {
+      agentId: communication?.senderAgentId,
+      name: communication?.senderName,
+    };
+    const prefix = outgoing ? "Message to " : "Message from ";
+    const name = peer?.name || "collaborator";
+    return { agentId: peer?.agentId, prefix, name, suffix: "", label: prefix + name };
+  }
+  if (item.kind !== "action" || !["agent_send", "agent_message"].includes(item.name ?? "")) return;
+  const peer = item.name === "agent_send"
+    ? { agentId: typeof item.arguments?.agentId === "string" ? item.arguments.agentId : undefined,
+        name: item.contextName || other?.name }
+    : other;
+  const name = (item.contextName || peer?.name || "").replace(/\s+/g, " ").trim();
+  if (!name) return;
+  const labels = toolLabels[item.name!]!;
+  const prefix = `${labels[item.status === "completed" ? 1 : 0]} · to `;
+  // Match the existing bounded context excerpt, including its "to " prefix.
+  const excerpt = name.length > 157 ? name.slice(0, 157) + "…" : name;
+  const suffix = item.status === "running" || item.status === "waiting" ? "…" : "";
+  return { agentId: peer?.agentId, prefix, name: excerpt, suffix, label: prefix + excerpt + suffix };
+}

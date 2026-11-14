@@ -13,8 +13,8 @@ function Body({ kind }: { kind: CharacterKind }) {
   }
 }
 
-export const AgentCharacter = memo(function AgentCharacter({ appearance, activity = "idle", paused = false, decorative = false, className = "" }: {
-  appearance: Appearance; activity?: Activity; paused?: boolean; decorative?: boolean; className?: string;
+export const AgentCharacter = memo(function AgentCharacter({ appearance, activity = "idle", paused = false, decorative = false, portrait = false, className = "" }: {
+  appearance: Appearance; activity?: Activity; paused?: boolean; decorative?: boolean; portrait?: boolean; className?: string;
 }) {
   const { kind, color, accessories: items } = appearance;
   const hidden = useContext(CharacterVisibilityContext);
@@ -22,16 +22,16 @@ export const AgentCharacter = memo(function AgentCharacter({ appearance, activit
   const [visible, setVisible] = useState(true);
   useEffect(() => {
     const node = element.current;
-    if (!node || typeof IntersectionObserver === "undefined") return;
+    if (portrait || !node || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(([entry]) => setVisible(entry?.isIntersecting ?? true));
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
+  }, [portrait]);
   const headwear = accessories.some(item => item.slot === "head" && items.includes(item.id));
   const reading = activity === "studying" || activity === "studying-hard";
-  return <svg ref={element} viewBox="0 0 240 240" className={`${styles.character} ${className}`}
+  return <svg ref={element} viewBox={portrait ? "50 26 140 140" : "0 0 240 240"} className={`${styles.character} ${portrait ? styles.portrait : ""} ${className}`}
     style={{ "--character-body": colors.find(item => item.id === color)!.variable } as CSSProperties}
-    data-activity={activity} data-paused={paused || hidden || !visible} data-kind={kind}
+    data-activity={activity} data-paused={portrait || paused || hidden || !visible} data-kind={kind}
     role={decorative ? undefined : "img"} aria-hidden={decorative || undefined}
     aria-label={decorative ? undefined : `${characterNames[kind]}, ${color}, ${activities.find(a => a.id === activity)!.name}${items.length ? `, wearing ${items.map(id => accessories.find(a => a.id === id)!.name).join(" and ")}` : ""}`}>
     <ellipse className={styles.shadow} cx="120" cy="207" rx="49" ry="7" />

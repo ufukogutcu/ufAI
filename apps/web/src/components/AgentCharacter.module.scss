@@ -12,6 +12,12 @@
   g { transform-box: fill-box; transform-origin: center; }
 }
 .shadow { fill: var(--character-shadow); stroke: none; }
+.character.portrait {
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+  &, * { animation: none !important; }
+}
 .character .actor { animation: breathe 3.8s ease-in-out infinite; transform-origin: center bottom; }
 .eyes { fill: var(--character-ink); stroke: none; animation: blink 5.2s infinite; }
 .facePanel, .paper, .dreamCloud { fill: var(--character-paper); }

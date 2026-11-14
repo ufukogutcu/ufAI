@@ -14,10 +14,11 @@ import {
 } from "lucide-react";
 import type { TimelineEntry, TaskCheckIn } from "../../../server/src/contracts";
 import { useAgents, useAgentStore } from "../agent-store";
-import { createTimelineStore, actionLabel } from "../task-timeline";
+import { createTimelineStore, actionLabel, messageActionLabel } from "../task-timeline";
 import { request, errorMessage } from "../api";
 import { MessageAttachments } from "./MessageAttachments";
 import { ArtifactCard, ProcessActivity } from "./TaskTools";
+import { AgentCharacter } from "./AgentCharacter";
 import styles from "./TaskTimeline.module.scss";
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
@@ -99,15 +100,22 @@ function CheckIn({
 }
 function TimelineRow({
   item,
+  taskId,
   onChange,
   onInspect,
 }: {
   item: TimelineEntry;
+  taskId: string;
   onChange: () => void;
   onInspect: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const store = useAgentStore();
+  const messageLabel = messageActionLabel(item, taskId);
+  const appearance = useAgents(s => messageLabel?.agentId ? s.agents[messageLabel.agentId]?.appearance : undefined);
+  const nameBreak = messageLabel?.name.search(/\s/) ?? -1;
+  const nameStart = nameBreak < 0 ? messageLabel?.name : messageLabel?.name.slice(0, nameBreak);
+  const nameRest = nameBreak < 0 ? "" : messageLabel?.name.slice(nameBreak);
   const m = item.message;
   if (m) {
     const own = m.role === "user" && (!m.authorType || m.authorType === "user");
@@ -139,8 +147,8 @@ function TimelineRow({
   const active = item.status === "running" || item.status === "waiting";
   const communication = item.communication;
   const label =
-    item.kind === "communication"
-      ? `Message from ${communication?.senderName ?? "collaborator"}`
+    messageLabel
+      ? messageLabel.label
       : item.kind === "checkin"
         ? "Scheduled check-in"
         : item.kind === "file"
@@ -191,7 +199,13 @@ function TimelineRow({
           }
         />
         <span className={styles.actionLabel} title={label}>
-          {label}
+          {messageLabel ? <>
+            {messageLabel.prefix}
+            <span className={styles.peerNameStart}>
+              {appearance && <span className={styles.portrait} aria-hidden="true"><AgentCharacter appearance={appearance} portrait decorative /></span>}
+              {nameStart}
+            </span>{nameRest}{messageLabel.suffix}
+          </> : label}
         </span>
         {item.status && (
           <span
@@ -318,8 +332,10 @@ function TimelineRow({
 
 function TimelineContent({
   store,
+  taskId,
 }: {
   store: ReturnType<typeof createTimelineStore>;
+  taskId: string;
 }) {
   const items = useStore(store, (s) => s.items),
     before = useStore(store, (s) => s.before),
@@ -452,7 +468,7 @@ function TimelineContent({
         )}
         {items.map((item) => (
           <div key={item.id} data-timeline-id={item.id} tabIndex={-1}>
-            <TimelineRow item={item} onChange={refresh} onInspect={inspect} />
+            <TimelineRow item={item} taskId={taskId} onChange={refresh} onInspect={inspect} />
           </div>
         ))}
         {error && (
@@ -499,5 +515,5 @@ export function TaskTimeline({ taskId }: { taskId: string }) {
     setStore(instance);
     return () => instance.getState().dispose();
   }, [taskId]);
-  return store ? <TimelineContent key={taskId} store={store} /> : null;
+  return store ? <TimelineContent key={taskId} store={store} taskId={taskId} /> : null;
 }
