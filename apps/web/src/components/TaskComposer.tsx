@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Paperclip, Send, X } from "lucide-react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { LoaderCircle, Paperclip, Send, X } from "lucide-react";
 import { useAgents, useAgentStore, emptyList } from "../agent-store";
 import { request, errorMessage } from "../api";
 import { sendTaskFiles } from "../task-attachments";
 import type { DraftAttachment } from "../task-attachments";
 import type { MediaCapabilities } from "../../../server/src/contracts";
-import styles from "./AgentPanel.module.scss";
+import { Tooltip } from "./Tooltip";
+import styles from "./TaskComposer.module.scss";
 import mediaStyles from "./Media.module.scss";
 function DraftFile({
   item,
@@ -81,8 +82,29 @@ export function TaskComposer({
     maxBytes: 256 * 1024 * 1024,
   });
   const input = useRef<HTMLInputElement>(null),
+    textarea = useRef<HTMLTextAreaElement>(null),
     controller = useRef<AbortController | null>(null),
     scope = useRef(key);
+  const id = useId();
+  useLayoutEffect(() => {
+    const field = textarea.current;
+    if (!field) return;
+    function resize() {
+      if (!field) return;
+      field.style.height = "auto";
+      field.style.height = `${field.scrollHeight}px`;
+    }
+    resize();
+    let width = field.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (field.clientWidth !== width) {
+        width = field.clientWidth;
+        resize();
+      }
+    });
+    observer.observe(field);
+    return () => observer.disconnect();
+  }, [key, value]);
   useEffect(() => {
     scope.current = key;
     setError("");
@@ -199,11 +221,10 @@ export function TaskComposer({
   }
   return (
     <form
-      className={`${styles.composer} ${mediaStyles.composer}`}
+      className={styles.composer}
       onSubmit={submit}
       onDragOver={(e) => {
-        if (e.dataTransfer.types.includes("Files"))
-          e.preventDefault();
+        if (e.dataTransfer.types.includes("Files")) e.preventDefault();
       }}
       onDrop={(e) => {
         if (e.dataTransfer.files.length) {
@@ -212,126 +233,150 @@ export function TaskComposer({
         }
       }}
     >
-      <div className={mediaStyles.fields}>
-        <label htmlFor={`compose-${key}`}>
-          {taskId === null
+      <label htmlFor={id} className={mediaStyles.visuallyHidden}>
+        {submissionPath
+          ? "Reply to this message"
+          : taskId === null
             ? "Message this agent"
             : taskId === "new"
               ? "Describe a new task"
               : "Message this task"}
-        </label>
-        <textarea
-          id={`compose-${key}`}
-          name="message"
-          rows={3}
-          maxLength={12000}
-          autoComplete="off"
-          placeholder="What would you like help with?…"
-          value={value}
-          onChange={(e) => store.getState().setDraft(key, e.target.value)}
-          onPaste={(e) => {
-            const pasted = Array.from(e.clipboardData.files).filter((f) =>
-              f.type.startsWith("image/"),
-            );
-            if (pasted.length) {
-              e.preventDefault();
-              add(pasted);
-            }
-          }}
-          onKeyDown={(e) => {
-            if (
-              e.key === "Enter" &&
-              !e.shiftKey &&
-              !e.altKey &&
-              !e.ctrlKey &&
-              !e.metaKey
-            ) {
-              e.preventDefault();
-              if (!e.nativeEvent.isComposing && e.keyCode !== 229 && !e.repeat)
-                e.currentTarget.form?.requestSubmit();
-            }
-          }}
-        />
-        {!!files.length && (
-          <ul className={mediaStyles.drafts}>
-            {files.map((f) => (
-              <DraftFile
-                key={f.id}
-                item={f}
-                busy={busy}
-                onChange={change}
-                onRemove={remove}
-              />
-            ))}
-          </ul>
-        )}
-        {incompatible && (
-          <p className={mediaStyles.meta}>
-            Image inspection is {caps?.image ?? "unknown"}. Choose File only or
-            configure image support in Providers.
-          </p>
-        )}
-        <>
-            <input
-              ref={input}
-              className={mediaStyles.visuallyHidden}
-              type="file"
-              name="attachments"
-              multiple
-              tabIndex={-1}
-              aria-label="Choose message attachments"
-              disabled={busy}
-              onChange={(e) => {
-                add(Array.from(e.target.files ?? []));
-                e.target.value = "";
-              }}
-            />
+      </label>
+      <span id={`${id}-hint`} className={mediaStyles.visuallyHidden}>
+        Enter to send. Shift+Enter for a new line.
+      </span>
+      <div className={styles.surface}>
+        <div className={styles.fields}>
+          <textarea
+            ref={textarea}
+            id={id}
+            className={styles.input}
+            aria-describedby={`${id}-hint`}
+            name="message"
+            rows={1}
+            maxLength={12000}
+            autoComplete="off"
+            placeholder="Write a message…"
+            value={value}
+            onChange={(e) => store.getState().setDraft(key, e.target.value)}
+            onPaste={(e) => {
+              const pasted = Array.from(e.clipboardData.files).filter((f) =>
+                f.type.startsWith("image/"),
+              );
+              if (pasted.length) {
+                e.preventDefault();
+                add(pasted);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.altKey &&
+                !e.ctrlKey &&
+                !e.metaKey &&
+                !e.nativeEvent.isComposing &&
+                e.keyCode !== 229
+              ) {
+                e.preventDefault();
+                if (!e.repeat) e.currentTarget.form?.requestSubmit();
+              }
+            }}
+          />
+          {!!files.length && (
+            <ul className={`${mediaStyles.drafts} ${styles.drafts}`}>
+              {files.map((f) => (
+                <DraftFile
+                  key={f.id}
+                  item={f}
+                  busy={busy}
+                  onChange={change}
+                  onRemove={remove}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className={styles.toolbar}>
+          <input
+            ref={input}
+            className={mediaStyles.visuallyHidden}
+            type="file"
+            name="attachments"
+            multiple
+            tabIndex={-1}
+            aria-label="Choose message attachments"
+            disabled={busy}
+            onChange={(e) => {
+              add(Array.from(e.target.files ?? []));
+              e.target.value = "";
+            }}
+          />
+          <Tooltip content="Attach Files">
             <button
               type="button"
-              className={`button ${mediaStyles.attach}`}
+              className="iconButton"
+              aria-label="Attach Files"
               disabled={busy}
               onClick={() => input.current?.click()}
             >
-              <Paperclip size={15} aria-hidden="true" />
-              Attach Files
+              <Paperclip size={18} aria-hidden="true" />
             </button>
-        </>
+          </Tooltip>
+          <div className={styles.sendActions}>
+            {busy && files.length > 0 && (
+              <button
+                type="button"
+                className="button"
+                onClick={() => controller.current?.abort()}
+              >
+                Cancel Send
+              </button>
+            )}
+            <Tooltip content="Send · Enter to send; Shift+Enter for a new line">
+              <button
+                type="submit"
+                className={`iconButton primary ${styles.send}`}
+                aria-label={busy ? "Sending…" : "Send"}
+                disabled={busy || (!value.trim() && !files.length)}
+              >
+                {busy ? (
+                  <LoaderCircle size={18} aria-hidden="true" className={styles.sending} />
+                ) : (
+                  <Send size={18} aria-hidden="true" />
+                )}
+              </button>
+            </Tooltip>
+          </div>
+        </div>
       </div>
-      <div className={`${styles.actions} ${mediaStyles.footer}`}>
-        <span>
-          {busy && files.length
-            ? `Sending files: ${progress}%${progress === 100 ? " · Saving…" : ""}`
-            : "Shift + Enter for a new line"}
-        </span>
-        {busy && files.length ? (
-          <button
-            type="button"
-            className="button"
-            onClick={() => controller.current?.abort()}
-          >
-            Cancel Send
-          </button>
-        ) : null}
-        <button
-          className="button primary"
-          disabled={busy || (!value.trim() && !files.length)}
-        >
-          <Send size={15} aria-hidden="true" />
-          {busy ? "Sending…" : "Send"}
-        </button>
-      </div>
-      {busy && files.length > 0 && (
-        <progress
-          className={mediaStyles.progress}
-          max={100}
-          value={progress}
-          aria-label="Sending attachments"
-        />
-      )}
-      {error && (
-        <p role="alert" className={`errorBanner ${mediaStyles.error}`}>
-          {error}
-        </p>
+      {(busy || incompatible || error) && (
+        <div className={styles.feedback}>
+          <span role="status" className={busy ? mediaStyles.meta : mediaStyles.visuallyHidden}>
+            {busy && (files.length
+              ? `Sending files: ${progress}%${progress === 100 ? " · Saving…" : ""}`
+              : "Sending…")}
+          </span>
+          {incompatible && (
+            <p className={mediaStyles.meta}>
+              Image inspection is {caps?.image ?? "unknown"}. Choose File only or
+              configure image support in Providers.
+            </p>
+          )}
+          {busy && files.length > 0 && (
+            <progress
+              className={styles.progress}
+              max={100}
+              value={progress}
+              aria-label="Sending attachments"
+            />
+          )}
+          {error && (
+            <p role="alert" className="errorBanner">
+              {error}
+            </p>
+          )}
+        </div>
       )}
     </form>
   );

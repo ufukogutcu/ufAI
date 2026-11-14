@@ -1,0 +1,132 @@
+.composer {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 1;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  max-height: 60%;
+  padding: 8px 20px 16px;
+}
+
+.surface {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: calc(var(--icon-control-size) + 18px);
+  background: var(--input-background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+
+  &:focus-within {
+    border-color: var(--accent);
+  }
+
+  &:has(.input:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.fields {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+}
+
+.input {
+  display: block;
+  width: 100%;
+  min-height: calc(1lh + 16px);
+  max-height: 160px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  line-height: 1.5;
+  resize: none;
+  overflow-y: auto;
+
+  &:focus-visible {
+    // The compound surface supplies the input's keyboard focus ring.
+    outline: none;
+  }
+}
+
+.drafts {
+  padding: 0 12px 8px;
+  scroll-padding: 8px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 4px 8px 8px;
+}
+
+.sendActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.toolbar .send {
+  background: var(--primary-background);
+  border-color: var(--primary-border);
+  color: var(--primary-text);
+
+  &:hover:not(:disabled) {
+    background: var(--primary-hover);
+    color: var(--primary-text);
+  }
+}
+
+.feedback {
+  flex-shrink: 0;
+  max-height: 96px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.progress {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.sending {
+  animation: sending 1s linear infinite;
+}
+
+@keyframes sending {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 767px) {
+  .composer {
+    padding: 8px 16px 12px;
+  }
+}
+
+@media (max-height: 520px) {
+  .composer {
+    flex-shrink: 0;
+    max-height: none;
+    padding: 8px 16px;
+  }
+
+  .input {
+    max-height: 64px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sending {
+    animation: none;
+  }
+}
