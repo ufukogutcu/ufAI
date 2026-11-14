@@ -1538,6 +1538,54 @@
       "region": "canvas",
       "light": "#252932",
       "dark": "#e2e5ec"
+    },
+    "agent-warning-background": {
+      "cssVariable": "--agent-warning-background",
+      "label": "Agent warning bubble background",
+      "description": "Yellow count bubbles for agent configuration warnings.",
+      "components": [
+        "Agent issue bubbles"
+      ],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#f4ce59",
+      "dark": "#e8bd43"
+    },
+    "agent-warning-text": {
+      "cssVariable": "--agent-warning-text",
+      "label": "Agent warning bubble text",
+      "description": "Count text on agent warning bubbles.",
+      "components": [
+        "Agent issue bubbles"
+      ],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#332600",
+      "dark": "#2c2100"
+    },
+    "agent-error-background": {
+      "cssVariable": "--agent-error-background",
+      "label": "Agent error bubble background",
+      "description": "Red count bubbles for blocked or failed agent work.",
+      "components": [
+        "Agent issue bubbles"
+      ],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#c93232",
+      "dark": "#ef7070"
+    },
+    "agent-error-text": {
+      "cssVariable": "--agent-error-text",
+      "label": "Agent error bubble text",
+      "description": "Count text on agent error bubbles.",
+      "components": [
+        "Agent issue bubbles"
+      ],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#ffffff",
+      "dark": "#300909"
     }
   }
 }

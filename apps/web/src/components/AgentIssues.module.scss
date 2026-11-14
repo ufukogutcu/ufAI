@@ -1,0 +1,71 @@
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 24px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+  border-radius: 50%;
+  &:hover .bubble { box-shadow: 0 0 0 2px currentColor; }
+  &:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+}
+.bubble {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.warning { background: var(--agent-warning-background); color: var(--agent-warning-text); }
+.error { background: var(--agent-error-background); color: var(--agent-error-text); }
+.popover {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(340px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 4px 16px var(--tooltip-shadow);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  header { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  h3 { margin: 0; flex: 1; font-size: 14px; font-weight: 600; }
+  p { margin: 0; white-space: pre-wrap; }
+  &:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+}
+.measuring { visibility: hidden; }
+.scroll {
+  min-height: 0;
+  max-height: min(320px, 50dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  &:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+}
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  li { padding: 8px 0; }
+  li + li { border-top: 1px solid var(--border); }
+  strong { display: block; margin-bottom: 4px; font-weight: 600; }
+}
+.feedback { color: var(--muted); flex-shrink: 0; &:empty { display: none; } }
+@media (any-pointer: coarse) {
+  .trigger { flex-basis: 44px; width: 44px; height: 44px; }
+}

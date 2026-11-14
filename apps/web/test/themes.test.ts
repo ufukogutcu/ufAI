@@ -43,6 +43,10 @@ function legacyTheme(theme: Theme): Theme {
     "usage-healthy",
     "usage-warning",
     "usage-critical",
+    "agent-warning-background",
+    "agent-warning-text",
+    "agent-error-background",
+    "agent-error-text",
   ] as const) {
     delete (colors as Partial<Theme["colors"]>)[key];
   }
@@ -232,6 +236,21 @@ test("older custom palettes inherit usage bar colors while retaining overrides",
       assert.equal(resolved.colors[key], catalog.tokens[key][mode]);
       assert.equal(resolveColors(mode, { [key]: "#123456" })[key], "#123456");
     }
+  }
+});
+
+test("older themes inherit readable agent issue bubbles and retain custom overrides", () => {
+  const keys = ["agent-warning-background", "agent-warning-text", "agent-error-background", "agent-error-text"] as const;
+  for (const mode of ["light", "dark"] as const) {
+    const older = legacyTheme({ ...custom, mode });
+    const resolved = resolveTheme(older);
+    for (const key of keys) {
+      assert.equal(older.colors[key], undefined);
+      assert.equal(resolved.colors[key], catalog.tokens[key][mode]);
+      assert.equal(resolveColors(mode, { [key]: "#123456" })[key], "#123456");
+      assert.equal(catalog.tokens[key].region, "feedback");
+    }
+    assert.ok(!contrastWarnings(resolved).some(message => message.startsWith("Agent ")));
   }
 });
 

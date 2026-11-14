@@ -9,6 +9,7 @@ import { SubmissionMedia, type UploadOptions } from "./submission-media.js";
 import fastifyStatic from "@fastify/static";
 import { ConnectionService } from "./connection-service.js";
 import { AgentExecution, type ExecutionOptions } from "./agent-execution.js";
+import { registerIssueInvalidations } from "./agent-issues.js";
 import { ProcessService, type ProcessOptions } from "./process-service.js";
 import { ArtifactService, type ArtifactOptions } from "./artifact-service.js";
 import { AgentTools } from "./agent-tools.js";
@@ -159,6 +160,7 @@ export function createApp(
     tools,
   );
   const messaging = new MessagingService(database,execution,connections);
+  registerIssueInvalidations(app, database, id => execution.workspaceEvent(id, "issues"));
   execution.messaging=messaging; tools.messaging=messaging;
   const media = new MediaService(artifacts);
   tools.media = media;

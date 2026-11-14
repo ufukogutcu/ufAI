@@ -240,6 +240,7 @@ export interface AgentAppearance {
   accessories: CharacterAccessory[];
 }
 export interface Agent {
+  issueCounts: { warning: number; error: number };
   appearance: AgentAppearance;
   id: string;
   workspaceId: string;
@@ -272,6 +273,13 @@ export interface AgentTask {
   error: string | null;
   createdAt: string;
   updatedAt: string;
+}
+export interface AgentIssue {
+  id: string;
+  severity: "warning" | "error";
+  message: string;
+  taskId: string | null;
+  taskTitle: string | null;
 }
 export interface AgentMessage {
   authorType?: "user" | "agent" | "system";

@@ -248,10 +248,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 128px;
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  min-width: 128px;
   height: 20px;
-  margin: 0 auto;
-  gap: 12px;
+  margin: 0;
+  gap: 4px;
   color: var(--muted);
 }
 .nodeIndicator {
@@ -267,6 +271,13 @@
   &:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 }
 .nodeCluster { color: var(--cluster-color); }
+.node :global(.react-flow__handle) { top: 96px; }
+@media (any-pointer: coarse) {
+  .node[data-issues="true"] {
+    height: 216px;
+    .nodeIndicators { top: 12px; }
+  }
+}
 .nodeSpinner {
   animation: nodeSpin 1s linear infinite;
   &[data-paused="true"] { animation-play-state: paused; }

@@ -8,8 +8,9 @@ const agent: Agent = {
   presetId: null, clusterId: null, x: 10, y: 20, revision: 1,
   createdAt: "now", updatedAt: "now", state: "idle", queuedCount: 0, runningTaskCount: 0,
   appearance: { kind: "pebble", color: "sage", accessories: [] },
+  issueCounts: { warning: 1, error: 0 },
 };
-const running: Agent = { ...agent, state: "running", runningTaskCount: 1 };
+const running: Agent = { ...agent, state: "running", runningTaskCount: 1, issueCounts: { warning: 0, error: 2 } };
 const cluster: Cluster = {
   id: "cluster", workspaceId: "workspace", name: "Team", description: "",
   x: 0, y: 0, width: 600, height: 360, colorSlot: 0, createdAt: "now", updatedAt: "now",
@@ -74,6 +75,7 @@ for (const resource of ["workspace", "agent"] as const) {
     await Promise.all([first, ...overlaps]);
     assert.equal(reads, 3);
     assert.equal(store.getState().agents.agent!.state, "running");
+    assert.deepEqual(store.getState().agents.agent!.issueCounts, running.issueCounts);
   });
 }
 
@@ -109,6 +111,7 @@ test("canvas interactions accept activity changes while protecting geometry, mem
   source.set({ ...running, x: 300, y: 400, clusterId: cluster.id });
   await store.getState().loadWorkspace(agent.workspaceId);
   assert.equal(store.getState().agents.agent!.state, "running");
+  assert.deepEqual(store.getState().agents.agent!.issueCounts, running.issueCounts);
   source.set({ ...running, state: "waiting", runningTaskCount: 0, x: 300, clusterId: cluster.id });
   await store.getState().refreshAgent(agent.id);
   assert.equal(store.getState().agents.agent!.state, "waiting");

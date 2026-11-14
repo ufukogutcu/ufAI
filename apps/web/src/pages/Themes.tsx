@@ -203,6 +203,10 @@ function ThemePreview({
                     Example: the change could not be saved.
                   </p>
                   <p className={styles.warningSample}>Unsaved changes</p>
+                  <div className={styles.issueSamples}>
+                    <span><span className={styles.issueWarning}>2</span> Agent warnings</span>
+                    <span><span className={styles.issueError}>3</span> Agent errors</span>
+                  </div>
                   <div className={styles.usageSamples}>
                     <span><CodexUsageBar remaining={80} />80% remaining</span>
                     <span><CodexUsageBar remaining={35} />35% remaining</span>

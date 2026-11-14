@@ -153,6 +153,16 @@ One local installation holds one shared setup across browser sessions. There are
 - **Behavior:** The agent receives a timestamped task/process snapshot and can refresh its own task statuses, summaries, errors, and message history before answering. There is no separate status-only question mode. Activity indicators include Chat; the running-task count includes separate tasks only.
 - **Limitations:** Work can change after a snapshot is taken. Replies can be mistaken; active execution does not guarantee progress or success. Questions sent in a task conversation remain in that task’s queue.
 
+### agent-issues
+
+- **Status:** implemented
+- **Purpose:** Find configuration warnings and unresolved execution errors directly on the flowboard.
+- **Behavior:** An agent shows a yellow warning count and a red error count beside its activity indicators. Counts of zero are hidden. Hover or focus a bubble to list its issues; click or tap to keep the list open. Press Arrow Down from a focused open bubble to enter the list. Escape, Close issues, or clicking outside closes it. Moving the canvas also closes the list. Long lists scroll and offer Load more; failed reads offer Retry.
+- **Warnings:** Choose a preset in Configuration when none is selected. Other warnings identify an incomplete Provider, missing required API key, missing or disabled model, or an unknown context window or one below 1,024 tokens. Fix the saved selection in Configuration, Agent Presets, or Providers. Missing prerequisites do not produce a cascade of dependent warnings.
+- **Errors:** Each currently failed or blocked task, including Chat, contributes one error with its title and recorded reason. Errors remain visible while other work runs. Retrying or cancelling affected work clears its error once it leaves failed/blocked state. Removing an agent or workspace removes its issues along with its work. Fixing configuration clears warnings but does not automatically retry blocked work.
+- **Limitations:** These are saved-configuration and execution diagnostics, not a continuous Provider health check. Sign-in expiry and connectivity failures appear when execution records them. There is no dismiss or acknowledge action.
+- **Related references:** [Agent configuration](#agent-configuration), [Agent execution](#agent-execution), [Agent Chat](#agent-chat).
+
 ### agent-memory
 
 - **Status:** partial

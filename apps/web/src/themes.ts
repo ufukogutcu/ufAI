@@ -97,6 +97,8 @@ export function contrastWarnings(input: ThemeInput): string[] {
     ["text", "input-background", "Input text"],
     ["danger-text", "danger-background", "Destructive button"],
     ["error-text", "error-background", "Error banner"],
+    ["agent-warning-text", "agent-warning-background", "Agent warning bubble"],
+    ["agent-error-text", "agent-error-background", "Agent error bubble"],
   ];
   return pairs.flatMap(([foreground, background, label]) => {
     const bg = over(rgb(input.colors[background]), page);

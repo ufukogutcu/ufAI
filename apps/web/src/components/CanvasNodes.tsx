@@ -28,6 +28,7 @@ import type { Agent } from "../../../server/src/contracts";
 import { useSettings } from "../settings-store";
 import { CharacterVisibilityContext } from "./CharacterMotion";
 import { Tooltip } from "./Tooltip";
+import { AgentIssueBubble } from "./AgentIssues";
 
 const agentStates = {
   idle: { label: "Ready", icon: Check },
@@ -257,6 +258,7 @@ export const AgentNode = memo(function AgentNode({
   return (
     <div
       className={agentStyles.node}
+      data-issues={agent.issueCounts.warning > 0 || agent.issueCounts.error > 0}
       onKeyDown={keyboard}
       style={cluster ? clusterColor(cluster.colorSlot) : undefined}
     >
@@ -302,6 +304,9 @@ export const AgentNode = memo(function AgentNode({
             </span>
           </Tooltip>
         )}
+        {(["warning", "error"] as const).map(severity => agent.issueCounts[severity] > 0 && (
+          <AgentIssueBubble key={severity} agentId={agent.id} agentName={agent.name} severity={severity} count={agent.issueCounts[severity]} />
+        ))}
       </div>
       {menu && (
         <NodeActions agentId={agent.id} onClose={() => setMenu(false)} />

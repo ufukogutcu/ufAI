@@ -22,6 +22,7 @@ import type { TaskRequest, ToolResult, ToolCall } from "./execution-types.js";
 import { ConnectionService } from "./connection-service.js";
 import { ConnectionError } from "./model-providers.js";
 import { maintenanceEvidence } from "./maintenance-evidence.js";
+import { AgentIssues } from "./agent-issues.js";
 
 const now = () => new Date().toISOString();
 const json = (text: string): any =>
@@ -53,6 +54,7 @@ type Active = {
 };
 type Summary = { content: string; throughSequence: number; version: number };
 export class AgentExecution {
+  readonly issues: AgentIssues;
   messaging?: import("./messaging.js").MessagingService;
   incoming?: import("./submission-media.js").SubmissionMedia;
   readonly events = new EventEmitter();
@@ -72,6 +74,7 @@ export class AgentExecution {
     private files?: ManagedFiles,
     private tools?: AgentTools,
   ) {
+    this.issues = new AgentIssues(db);
     this.events.setMaxListeners(128);
     // Replies committed before a crash resume maintenance without repeating generation.
     db.transaction(() => {
@@ -117,7 +120,7 @@ export class AgentExecution {
   }
   requiredAgent(id: string, allowDeleting = false): Agent {
     const row = this.db.prepare("SELECT * FROM agents WHERE id = ?").get(id) as
-      | (Omit<Agent, "appearance" | "state" | "queuedCount" | "runningTaskCount"> & { appearance: string })
+      | (Omit<Agent, "appearance" | "state" | "queuedCount" | "runningTaskCount" | "issueCounts"> & { appearance: string })
       | undefined;
     if (!row) throw new ConnectionError("Agent not found.", 404);
     if (!allowDeleting)
@@ -148,6 +151,7 @@ export class AgentExecution {
     return {
       ...row,
       appearance: JSON.parse(row.appearance),
+      issueCounts: this.issues.counts(id),
       queuedCount: counts.queued,
       runningTaskCount: running.count,
       state: this.db.prepare("SELECT 1 FROM agent_turns WHERE agentId=? AND taskId IS NOT NULL AND status='running' LIMIT 1").get(id)

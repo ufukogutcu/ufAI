@@ -196,6 +196,16 @@ export function registerAgents(
   app.get<{ Params: { id: string } }>("/api/agents/:id", async (req) =>
     execution.requiredAgent(req.params.id, true),
   );
+  app.get<{ Params: { id: string }; Querystring: { severity?: string; limit?: string; offset?: string } }>(
+    "/api/agents/:id/issues", async req => {
+      execution.requiredAgent(req.params.id, true);
+      const { severity } = req.query;
+      if (severity !== "warning" && severity !== "error")
+        return invalid("severity", "Choose warning or error.");
+      const { limit, offset } = pagination({ ...req.query, limit: req.query.limit ?? "20" });
+      return execution.issues.list(req.params.id, severity, limit, offset);
+    },
+  );
   app.patch<{ Params: { id: string } }>("/api/agents/:id", async (req) => {
     const old = execution.requiredAgent(req.params.id);
     const v = validate(req.body, old);

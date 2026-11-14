@@ -5,6 +5,7 @@ import type { Agent } from "../../server/src/contracts";
 import { agentActivity } from "../src/agent-appearance";
 import { AGENT_WIDTH, AGENT_HEIGHT, dropCluster } from "../src/canvas-layout";
 const a: Agent = {
+  issueCounts: { warning: 1, error: 0 },
   appearance: { kind: "pebble", color: "sage", accessories: [] },
   id: "agent",
   workspaceId: "workspace",
