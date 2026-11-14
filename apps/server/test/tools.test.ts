@@ -31,7 +31,13 @@ async function until(fn: () => boolean) {
 }
 async function setup(
   t: any,
-  options: { logBytes?: number; maxStorageBytes?: number; run?: boolean } = {},
+  options: {
+    logBytes?: number;
+    maxStorageBytes?: number;
+    run?: boolean;
+    agentId?: string;
+    target?: "new" | "chat";
+  } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), "ufai-tools-")),
     path = join(directory, "app.sqlite"),
@@ -82,10 +88,11 @@ async function setup(
   await files.start();
   await artifacts.start();
   tools.ready = true;
-  const submitted = engine.submit("a", "new", "Make a file", randomUUID());
+  const agentId = options.agentId ?? "a";
+  const submitted = engine.submit(agentId, options.target ?? "new", "Make a file", randomUUID());
   const owner: ToolOwner = {
     workspaceId,
-    agentId: "a",
+    agentId,
     taskId: submitted.taskId!,
     turnId: submitted.turnId,
   };
@@ -112,6 +119,74 @@ async function setup(
     owner,
     signal: new AbortController().signal,
   };
+}
+for (const agentId of ["a", "b"]) {
+  for (const target of ["new", "chat"] as const) {
+    test(`${agentId} ${target}: commands and text writes produce downloadable files and preserve filesystem errors`, async (t) => {
+      const s = await setup(t, { agentId, target });
+      const folder = s.files.location("task", s.owner.taskId).path;
+      const text = "A story from an agent with host tools.\n";
+      await mkdir(join(folder, "existing-directory"));
+      let round = 0;
+      s.connections.toolRound = async (_snapshot, request) => {
+        const previous = (request.continuation?.at(-1) as any)?.results[0].result;
+        let call;
+        switch (round++) {
+          case 0:
+            for (const name of ["process_start", "files_write", "artifact_publish"])
+              assert.ok(request.tools.some((tool) => tool.name === name));
+            call = { id: "command", name: "process_start", arguments: { command: "printf 'command output' > command.txt" } };
+            break;
+          case 1:
+            assert.equal(previous.ok, true);
+            call = { id: "wait", name: "process_wait", arguments: { processId: previous.process.id } };
+            break;
+          case 2:
+            assert.equal(previous.process.state, "exited");
+            assert.equal(previous.process.exitCode, 0);
+            assert.equal(await readFile(join(folder, "command.txt"), "utf8"), "command output");
+            call = { id: "invalid-write", name: "files_write", arguments: { path: "existing-directory", text, expectedSha256: null } };
+            break;
+          case 3:
+            assert.equal(previous.ok, false);
+            assert.match(previous.error, /regular unlinked text file/);
+            call = { id: "write", name: "files_write", arguments: { path: "story.txt", text, expectedSha256: null } };
+            break;
+          case 4:
+            assert.equal(previous.ok, true);
+            call = { id: "publish", name: "artifact_publish", arguments: { path: "story.txt" } };
+            break;
+          default:
+            assert.equal(previous.ok, true);
+            assert.equal(previous.version.state, "ready");
+            return { text: "Created the downloadable story.", calls: [], continuation: [], usage: null };
+        }
+        return { text: "", calls: [call], continuation: [], usage: null };
+      };
+      (s.engine as any).options.autoStart = true;
+      s.engine.wake();
+      await until(() => s.engine.task(s.owner.taskId).status === "completed");
+      assert.equal(round, 6);
+      assert.equal(await readFile(join(folder, "story.txt"), "utf8"), text);
+      const invocations = s.db.prepare("SELECT name,state FROM tool_invocations WHERE turnId=? ORDER BY rowid").all(s.owner.turnId);
+      assert.deepEqual(invocations, [
+        { name: "process_start", state: "completed" },
+        { name: "process_wait", state: "completed" },
+        { name: "files_write", state: "completed" },
+        { name: "files_write", state: "completed" },
+        { name: "artifact_publish", state: "completed" },
+      ]);
+      const failedWrite = s.db.prepare("SELECT result FROM tool_invocations WHERE turnId=? AND callId='invalid-write'").get(s.owner.turnId) as { result: string };
+      assert.equal(JSON.parse(failedWrite.result).ok, false);
+      const version = s.db.prepare("SELECT id FROM artifact_versions WHERE producerTaskId=? AND origin='published'").get(s.owner.taskId) as { id: string };
+      const download = await s.artifacts.download(version.id);
+      const chunks: Buffer[] = [];
+      for await (const chunk of download.stream) chunks.push(Buffer.from(chunk));
+      assert.equal(Buffer.concat(chunks).toString("utf8"), text);
+      const attachment = s.db.prepare("SELECT r.versionId FROM artifact_references r JOIN agent_messages m ON m.id=r.messageId WHERE m.turnId=? AND m.role='assistant'").get(s.owner.turnId) as { versionId: string };
+      assert.equal(attachment.versionId, version.id);
+    });
+  }
 }
 test("pipe commands sanitize environment, accept stdin, preserve task cwd and stop descendants", async (t) => {
   const s = await setup(t);

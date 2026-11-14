@@ -5,7 +5,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  if(r.method==='initialize'){if(r.params.capabilities?.experimentalApi!==true)throw Error('missing experimental handshake');return reply({});}
  if(r.method==='initialized')return;
  if(r.method==='account/read')return reply({account:{type:'chatgpt'}});
- if(r.method==='thread/start'){if(!r.params.dynamicTools?.length||r.params.config.features.shell_tool!==false||r.params.sandbox!=='read-only')throw Error('invalid tool config');const id='thread-'+ ++thread;toolKinds.set(id,r.params.dynamicTools.some(t=>t.name==='agent_send'));return reply({thread:{id}});}
+ if(r.method==='thread/start'){if(!r.params.dynamicTools?.length||r.params.config.features.shell_tool!==false||r.params.config.features.apply_patch_freeform!==false||r.params.approvalPolicy!=='never'||r.params.sandbox!=='danger-full-access')throw Error('invalid tool config');const id='thread-'+ ++thread;toolKinds.set(id,r.params.dynamicTools.some(t=>t.name==='agent_send'));return reply({thread:{id}});}
  if(r.method==='turn/start'){
   if(r.params.input[0].text.includes('Inspect') && !r.params.input.some(i=>i.type==='image'&&i.url==='data:image/png;base64,AQID'))throw Error('missing native image');
   const threadId=r.params.threadId,turnId='turn-'+threadId,id=100+thread;reply({turn:{id:turnId}});pending.set(id,{threadId,turnId,remaining:r.params.input[0].text.includes("many-tools")?130:1});
