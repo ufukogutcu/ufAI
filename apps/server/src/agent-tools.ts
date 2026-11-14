@@ -68,7 +68,7 @@ const allTaskTools: ToolSpec[] = [
   ),
   spec(
     "agents_find",
-    "Find agents this agent is permitted to contact. Capabilities are reported facts, not guarantees.",
+    "Find connected agents. Each connection allows both agents to discover and contact each other. Capabilities are reported facts, not guarantees.",
     {
       query: { type: "string", maxLength: 120 },
       offset: number(0, 1000000),
@@ -77,7 +77,7 @@ const allTaskTools: ToolSpec[] = [
   ),
   spec(
     "agent_send",
-    "Message another agent asynchronously and continue independent work. Replies resume this task automatically. Schedule a check-in if useful, then task_yield when no independent work remains. Attach immutable versions, not host paths.",
+    "Message a connected agent asynchronously; either agent may initiate contact. Continue independent work. Replies resume this task automatically. Schedule a check-in if useful, then task_yield when no independent work remains. Attach immutable versions, not host paths.",
     {
       agentId: str("Recipient agent ID", 100),
       kind: { type: "string", enum: ["request", "notification"] },

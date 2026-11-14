@@ -135,14 +135,14 @@ export function PermissionEditor({ workspaceId }: { workspaceId: string }) {
     busy || (!!operation && ["pending", "running"].includes(operation.state));
   return (
     <Dialog
-      title={link ? "Communication permission" : "Allow agent communication"}
+      title={link ? "Agent connection" : "Connect agents"}
       onClose={close}
       busy={working}
     >
       <div className={styles.panel}>
         <p>
-          A directed link allows the source agent to initiate requests and
-          notifications. Accepted requests allow replies in both directions.
+          A connection lets both agents discover and message each other, including
+          initiating requests and notifications.
         </p>
         {link ? (
           <>
@@ -151,7 +151,7 @@ export function PermissionEditor({ workspaceId }: { workspaceId: string }) {
                 {agents.find((a) => a.id === link.sourceAgentId)?.name ??
                   link.sourceAgentId}
               </strong>{" "}
-              →{" "}
+              and{" "}
               <strong>
                 {agents.find((a) => a.id === link.targetAgentId)?.name ??
                   link.targetAgentId}
@@ -274,10 +274,13 @@ export function PermissionEditor({ workspaceId }: { workspaceId: string }) {
         ) : (
           <form className={styles.form} onSubmit={submit}>
             <label>
-              From agent
+              Agent
               <select
                 value={source}
-                onChange={(e) => setSource(e.target.value)}
+                onChange={(e) => {
+                  setSource(e.target.value);
+                  if (target === e.target.value) setTarget("");
+                }}
                 required
                 disabled={busy}
               >
@@ -290,7 +293,7 @@ export function PermissionEditor({ workspaceId }: { workspaceId: string }) {
               </select>
             </label>
             <label>
-              May contact
+              Connect with
               <select
                 value={target}
                 onChange={(e) => setTarget(e.target.value)}
@@ -308,7 +311,7 @@ export function PermissionEditor({ workspaceId }: { workspaceId: string }) {
               </select>
             </label>
             <button className="button primary" disabled={busy}>
-              Allow communication
+              Connect agents
             </button>
           </form>
         )}
@@ -834,7 +837,7 @@ export function CommunicationMenuAction({
     <>
       <button type="button" className="button secondary" onClick={() => edit()}>
         <LinkIcon size={14} />
-        Allow communication
+        Connect agents
       </button>
       {links.map((link) => (
         <button
@@ -843,8 +846,8 @@ export function CommunicationMenuAction({
           key={link.id}
           onClick={() => edit(link.id)}
         >
-          {names[link.sourceAgentId]} → {names[link.targetAgentId]} ·{" "}
-          {link.state === "active" ? "Edit permission" : "Removal in progress"}
+          {names[link.sourceAgentId]} and {names[link.targetAgentId]} ·{" "}
+          {link.state === "active" ? "Edit connection" : "Removal in progress"}
         </button>
       ))}
     </>

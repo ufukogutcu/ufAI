@@ -3,7 +3,7 @@ import { PermissionEditor } from "./Messaging";
 import messagingStyles from "./Messaging.module.scss";
 import { useCallback, useEffect, useRef, useMemo, useState } from "react";
 import {
-  MarkerType,
+  ConnectionMode,
   type Connection,
   type Edge,
   Background,
@@ -102,10 +102,25 @@ function ViewControls() {
 function Board({ workspaceId }: { workspaceId: string }) {
   const agentStore = useAgentStore();
   const savedNodes = useAgents((s) => s.nodes[workspaceId] ?? emptyNodes);
-  const links=useAgents(s=>s.communication[workspaceId]?.links ?? emptyList);
-  const editor=useAgents(s=>s.communicationEditor);
-  const edgeNames=useAgents(useShallow(s=>Object.fromEntries(links.map(link=>[link.id,`Allow ${s.agents[link.sourceAgentId]?.name ?? "agent"} to contact ${s.agents[link.targetAgentId]?.name ?? "agent"}`]))));
-  const edges=useMemo<Edge[]>(()=>links.map(link=>({id:link.id,source:link.sourceAgentId,target:link.targetAgentId,sourceHandle:"out",targetHandle:"in",className:editor?.linkId===link.id?messagingStyles.selected:messagingStyles.edge,markerEnd:{type:MarkerType.ArrowClosed,color:"var(--communication-edge)"},ariaLabel:edgeNames[link.id]})),[links,editor?.linkId,edgeNames]);
+  const links = useAgents(s => s.communication[workspaceId]?.links ?? emptyList);
+  const editor = useAgents(s => s.communicationEditor);
+  const edgeNames = useAgents(useShallow(s => Object.fromEntries(links.map(link => [
+    link.id,
+    `Connection between ${s.agents[link.sourceAgentId]?.name ?? "agent"} and ${s.agents[link.targetAgentId]?.name ?? "agent"}`,
+  ]))));
+  const sourceOnLeft = useAgents(useShallow(s => Object.fromEntries(links.map(link => [
+    link.id,
+    (s.agents[link.sourceAgentId]?.x ?? 0) <= (s.agents[link.targetAgentId]?.x ?? 0),
+  ]))));
+  const edges = useMemo<Edge[]>(() => links.map(link => ({
+    id: link.id,
+    source: link.sourceAgentId,
+    target: link.targetAgentId,
+    sourceHandle: sourceOnLeft[link.id] ? "right" : "left",
+    targetHandle: sourceOnLeft[link.id] ? "left" : "right",
+    className: editor?.linkId === link.id ? messagingStyles.selected : messagingStyles.edge,
+    ariaLabel: edgeNames[link.id],
+  })), [links, editor?.linkId, edgeNames, sourceOnLeft]);
   const connect=useCallback((connection:Connection)=>{
     if(connection.source && connection.target) void agentStore.getState().createCommunicationLink(workspaceId,connection.source,connection.target).catch(e=>agentStore.setState({positionError:errorMessage(e)}));
   },[agentStore,workspaceId]);
@@ -306,6 +321,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
         nodesDraggable
         nodesFocusable={false}
         nodesConnectable
+        connectionMode={ConnectionMode.Loose}
         edgesFocusable
         edges={edges}
         onConnect={connect}

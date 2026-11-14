@@ -387,9 +387,9 @@ export class MessagingService {
       fail("Choose two different agents in this workspace.", 400);
     const old = this.db
       .prepare(
-        "SELECT * FROM communication_links WHERE sourceAgentId=? AND targetAgentId=?",
+        "SELECT * FROM communication_links WHERE min(sourceAgentId,targetAgentId)=min(?,?) AND max(sourceAgentId,targetAgentId)=max(?,?)",
       )
-      .get(source, target) as any;
+      .get(source, target, source, target) as any;
     if (old) {
       if (old.state !== "active") fail("This link is being revoked.");
       return old;
@@ -408,9 +408,11 @@ export class MessagingService {
       offset = args.offset ?? 0;
     const rows = this.db
       .prepare(
-        "SELECT a.id FROM communication_links l JOIN agents a ON a.id=l.targetAgentId WHERE l.sourceAgentId=? AND l.state='active' AND a.workspaceId=? AND (?='' OR a.name LIKE ? ESCAPE '\\') ORDER BY a.name,a.id LIMIT ? OFFSET ?",
+        "SELECT a.id FROM communication_links l JOIN agents a ON a.id=CASE WHEN l.sourceAgentId=? THEN l.targetAgentId ELSE l.sourceAgentId END WHERE (l.sourceAgentId=? OR l.targetAgentId=?) AND l.state='active' AND a.workspaceId=? AND (?='' OR a.name LIKE ? ESCAPE '\\') ORDER BY a.name,a.id LIMIT ? OFFSET ?",
       )
       .all(
+        owner.agentId,
+        owner.agentId,
         owner.agentId,
         owner.workspaceId,
         args.query ?? "",
@@ -459,9 +461,9 @@ export class MessagingService {
         fail("Cross-workspace messaging is unavailable.", 403);
       const link = this.db
         .prepare(
-          "SELECT * FROM communication_links WHERE sourceAgentId=? AND targetAgentId=? AND state='active'",
+          "SELECT * FROM communication_links WHERE min(sourceAgentId,targetAgentId)=min(?,?) AND max(sourceAgentId,targetAgentId)=max(?,?) AND state='active'",
         )
-        .get(owner.agentId, target.id) as any;
+        .get(owner.agentId, target.id, owner.agentId, target.id) as any;
       if (!link)
         fail("No active communication link permits this request.", 403);
       const task = this.task(owner.taskId),
@@ -1375,13 +1377,15 @@ export class MessagingService {
             "Communication permission was revoked.",
           );
         this.db
-          .prepare("DELETE FROM communication_links WHERE id=?")
-          .run(op.linkId);
-        this.db
           .prepare(
             "UPDATE messaging_operations SET state='completed',updatedAt=? WHERE id=?",
           )
           .run(now(), id);
+        // Legacy reverse links can merge with multiple unfinished removals.
+        // Keep the pair fenced until every operation has settled successfully.
+        this.db
+          .prepare("DELETE FROM communication_links WHERE id=? AND NOT EXISTS(SELECT 1 FROM messaging_operations WHERE linkId=? AND state!='completed')")
+          .run(op.linkId, op.linkId);
       })();
     } catch {
       this.db

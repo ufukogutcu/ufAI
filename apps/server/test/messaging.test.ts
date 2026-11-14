@@ -121,7 +121,7 @@ async function setup(t: any, run = false) {
     workspaceId,
   };
 }
-test("directed discovery, same-workspace enforcement, separate incoming tasks and idempotent acceptance", async (t) => {
+test("mutual discovery, same-workspace enforcement, separate incoming tasks and idempotent acceptance", async (t) => {
   const s = await setup(t);
   assert.equal(s.messaging.find(s.owner, {}).items.length, 0);
   assert.throws(
@@ -169,7 +169,7 @@ test("directed discovery, same-workspace enforcement, separate incoming tasks an
     /workspace/,
   );
 });
-test("scoped questions, progress and answers need no reverse link; automatic final and attachment grants", async (t) => {
+test("scoped questions, progress and answers share one mutual connection; automatic final and attachment grants", async (t) => {
   const s = await setup(t);
   s.messaging.createLink(s.workspaceId, "a", "b");
   const sent = s.messaging.send(
@@ -683,7 +683,7 @@ test("v13 upgrade preserves populated records and stable paths while backfilling
       );
     else assert.deepEqual(rows, retained[table], table);
   }
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 21);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 22);
   assert.deepEqual(
     (upgraded.prepare("SELECT content FROM agent_messages").all() as any[]).map(
       (r) => r.content,
@@ -730,6 +730,13 @@ test("HTTP guards, pagination, confirmation, Inbox read state and reply validati
     payload: { sourceAgentId: a.id, targetAgentId: b.id },
   });
   assert.equal(link.statusCode, 201, link.body);
+  const reverseLink = await app.inject({
+    method: "POST",
+    url: `/api/workspaces/${w}/communication-links`,
+    payload: { sourceAgentId: b.id, targetAgentId: a.id },
+  });
+  assert.equal(reverseLink.statusCode, 201, reverseLink.body);
+  assert.equal(reverseLink.json().id, link.json().id);
   const denied = await app.inject({
     method: "GET",
     url: `/api/workspaces/${w}/communication-links`,
@@ -1001,7 +1008,7 @@ test("user queue preference admits a helper after two eligible user turns", asyn
   assert.deepEqual(order.slice(0, 3), ["user", "user", "agent"]);
 });
 
-test("helper may wait for its clarification answer without a reverse permission", async (t) => {
+test("helper may wait for its clarification answer within a mutual connection", async (t) => {
   const s = await setup(t);
   s.messaging.createLink(s.workspaceId, "a", "b");
   const sent = s.messaging.send(
@@ -2519,7 +2526,7 @@ test("v20 routing upgrade preserves existing check-ins and installs missing rout
   );
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 21);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 22);
     const row = upgraded
       .prepare("SELECT * FROM task_checkins WHERE id=?")
       .get(reminder.checkinId) as any;
@@ -2641,4 +2648,192 @@ test("timer continuations share background fairness instead of taking user prior
   s.engine.wake();
   await until(() => order.length === 5);
   assert.deepEqual(order.slice(0, 3), ["User 0", "User 1", "timer"]);
+});
+
+test("one connection permits independent requests and notifications from either endpoint", async (t) => {
+  const s = await setup(t);
+  const link = s.messaging.createLink(s.workspaceId, "a", "b");
+  assert.equal(s.messaging.createLink(s.workspaceId, "b", "a").id, link.id);
+  s.messaging.createLink(s.workspaceId, "c", "b");
+  const accepted = s.engine.submit("b", "new", "Independent work", randomUUID());
+  const b = { ...s.owner, agentId: "b", taskId: accepted.taskId!, turnId: accepted.turnId };
+  assert.deepEqual(s.messaging.find(b, {}).items.map(a => a.id), ["a", "c"]);
+  assert.deepEqual(s.messaging.find(b, { limit: 1, offset: 1 }).items.map(a => a.id), ["c"]);
+  assert.deepEqual(s.messaging.find(b, { query: "a" }).items.map(a => a.id), ["a"]);
+  for (const [index, owner, agentId] of [[0, s.owner, "b"], [1, b, "a"]] as const) {
+    for (const kind of ["request", "notification"]) {
+      const sent = s.messaging.send(owner, { agentId, kind, content: "Hello" }, `mutual-${index}-${kind}`);
+      const row = s.db.prepare("SELECT linkId,sourceAgentId,targetAgentId FROM agent_requests WHERE id=?").get(sent.requestId) as any;
+      assert.deepEqual(row, { linkId: link.id, sourceAgentId: owner.agentId, targetAgentId: agentId });
+      if (kind === "request") assert.throws(() => s.messaging.send(s.helper(sent.requestId), { agentId: owner.agentId, content: "Cycle" }, `cycle-${index}`), /ancestor/);
+    }
+  }
+  assert.throws(() => s.messaging.createLink(s.workspaceId, "b", "b"), /different/);
+  assert.throws(() => s.messaging.send(b, { agentId: "d", content: "No link" }, "unconnected-b"), /link/);
+  const stamp = new Date().toISOString();
+  s.db.prepare("INSERT INTO workspaces(id,name,createdAt,updatedAt) VALUES ('other','Other',?,?)").run(stamp, stamp);
+  s.db.prepare("INSERT INTO agents(id,workspaceId,name,createdAt,updatedAt) VALUES ('outside','other','Outside',?,?)").run(stamp, stamp);
+  assert.throws(() => s.messaging.createLink(s.workspaceId, "b", "outside"), /workspace/);
+  assert.throws(() => s.messaging.send(b, { agentId: "outside", content: "Other workspace" }, "outside"), /Cross-workspace/);
+  assert.throws(() => s.db.prepare("INSERT INTO communication_links(id,workspaceId,sourceAgentId,targetAgentId,createdAt) VALUES ('duplicate',?,'b','a',?)").run(s.workspaceId, stamp), /UNIQUE/);
+  const impact = s.messaging.impact(link.id);
+  assert.equal(impact.requests.length, 4);
+  assert.deepEqual(new Set(impact.requests.map(r => r.sourceAgentId)), new Set(["a", "b"]));
+  const op = s.messaging.revoke(link.id, { confirmInterruption: true, revision: impact.revision });
+  assert.deepEqual(s.messaging.find(b, {}).items.map(a => a.id), ["c"]);
+  assert.equal(s.messaging.find(s.owner, {}).items.length, 0);
+  assert.throws(() => s.messaging.createLink(s.workspaceId, "b", "a"), /revoked/);
+  assert.throws(() => s.messaging.send(b, { agentId: "a", content: "Revoking" }, "revoking-b"), /link/);
+  await until(() => s.messaging.operation(op.id).state === "completed");
+  assert.equal(s.engine.task(b.taskId).status, "queued");
+});
+
+async function restoreDirectedLinks(s: Awaited<ReturnType<typeof setup>>) {
+  await s.messaging.close();
+  s.db.exec("DROP INDEX communication_pair; DROP INDEX communication_target; PRAGMA user_version=21");
+}
+function insertReverseLink(s: Awaited<ReturnType<typeof setup>>, id: string) {
+  s.db.prepare("INSERT INTO communication_links(id,workspaceId,sourceAgentId,targetAgentId,createdAt) VALUES (?,?,'b','a','2999')").run(id, s.workspaceId);
+}
+function upgradeLinks(s: Awaited<ReturnType<typeof setup>>) {
+  const upgraded = openDatabase(s.path);
+  try {
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 22);
+    assert.deepEqual(upgraded.pragma("foreign_key_check"), []);
+    assert.deepEqual(upgraded.pragma("integrity_check"), [{ integrity_check: "ok" }]);
+  } finally {
+    upgraded.close();
+  }
+}
+
+test("v21 upgrade merges reverse links and preserves conversations, grants, files and one-way links", async (t) => {
+  const s = await setup(t);
+  const link = s.messaging.createLink(s.workspaceId, "a", "b");
+  const single = s.messaging.createLink(s.workspaceId, "c", "d");
+  const path = join(s.directory, "shared.txt");
+  await writeFile(path, "Shared immutable reference");
+  const version = await s.artifacts.publish(s.owner, { path, origin: "inspection" }, new AbortController().signal);
+  const forward = s.messaging.send(s.owner, { agentId: "b", content: "Shared", versionIds: [version.id] }, "upgrade-forward");
+  const root = s.engine.submit("b", "new", "Independent", randomUUID());
+  const b = { ...s.owner, agentId: "b", taskId: root.taskId!, turnId: root.turnId };
+  const reverse = s.messaging.send(b, { agentId: "a", content: "Reverse" }, "upgrade-reverse");
+  await restoreDirectedLinks(s);
+  insertReverseLink(s, "legacy-reverse");
+  s.db.prepare("UPDATE agent_requests SET linkId='legacy-reverse' WHERE id=?").run(reverse.requestId);
+  const messages = s.db.prepare("SELECT * FROM communication_messages ORDER BY sequence").all();
+  const grants = s.db.prepare("SELECT * FROM artifact_grants ORDER BY taskId,versionId").all();
+  upgradeLinks(s);
+  assert.equal((s.db.prepare("SELECT count(*) n FROM communication_links").get() as any).n, 2);
+  assert.equal(s.messaging.createLink(s.workspaceId, "b", "a").id, link.id);
+  assert.equal(s.messaging.createLink(s.workspaceId, "d", "c").id, single.id);
+  assert.equal((s.db.prepare("SELECT linkId FROM agent_requests WHERE id=?").get(reverse.requestId) as any).linkId, link.id);
+  assert.deepEqual(s.db.prepare("SELECT * FROM communication_messages ORDER BY sequence").all(), messages);
+  assert.deepEqual(s.db.prepare("SELECT * FROM artifact_grants ORDER BY taskId,versionId").all(), grants);
+  assert.equal(s.messaging.assertVersion(s.helper(forward.requestId), version.id).id, version.id);
+  assert.throws(() => s.messaging.assertVersion(b, version.id), /not been shared/);
+  assert.equal(await readFile(path, "utf8"), "Shared immutable reference");
+  assert.deepEqual(s.messaging.find(b, {}).items.map(a => a.id), ["a"]);
+  const reopened = openDatabase(s.path);
+  reopened.close();
+  assert.equal(s.messaging.createLink(s.workspaceId, "a", "b").id, link.id);
+});
+
+test("v21 upgrade expands pending and failed removals across both directions and preserves recovery keys", async (t) => {
+  const s = await setup(t);
+  const link = s.messaging.createLink(s.workspaceId, "a", "b");
+  s.messaging.createLink(s.workspaceId, "b", "c");
+  const forward = s.messaging.send(s.owner, { agentId: "b", content: "Forward" }, "remove-forward");
+  const child = s.messaging.send(s.helper(forward.requestId), { agentId: "c", content: "Descendant" }, "remove-child");
+  const root = s.engine.submit("b", "new", "Independent", randomUUID());
+  const b = { ...s.owner, agentId: "b", taskId: root.taskId!, turnId: root.turnId };
+  const reverse = s.messaging.send(b, { agentId: "a", content: "Reverse" }, "remove-reverse");
+  const background = s.messaging.send(b, { agentId: "a", content: "Background" }, "remove-background");
+  const helper = s.helper(background.requestId);
+  const ownedProcess = await s.processes.start(helper, {
+    command: `${processExecutable()} -e 'setInterval(()=>{},1000)'`, background: true, yieldMs: 0,
+  }, new AbortController().signal);
+  s.messaging.final(helper, { requestId: background.requestId, replyKind: "result" }, "Background started", []);
+  const reminder = s.messaging.scheduleCheckIn(s.helper(child.requestId), { afterMs: 60000, reason: "Child reminder", requestId: child.requestId }, "remove-child-reminder");
+  const unrelated = s.messaging.scheduleCheckIn(b, { afterMs: 60000, reason: "Independent reminder" }, "independent-reminder");
+  await restoreDirectedLinks(s);
+  insertReverseLink(s, "legacy-reverse");
+  s.db.prepare("UPDATE agent_requests SET linkId='legacy-reverse' WHERE id IN (?,?)").run(reverse.requestId, background.requestId);
+  s.db.prepare("UPDATE communication_links SET state='revoking' WHERE id=?").run(link.id);
+  s.db.prepare("UPDATE agent_requests SET state='revoking' WHERE id=?").run(forward.requestId);
+  const insert = s.db.prepare("INSERT INTO messaging_operations(id,workspaceId,linkId,requestIds,taskIds,state,createdAt,updatedAt) VALUES (?,?,?,?,?,?,'now','now')");
+  insert.run("old-forward-op", s.workspaceId, link.id, JSON.stringify([forward.requestId]), JSON.stringify([forward.taskId]), "running");
+  insert.run("old-reverse-op", s.workspaceId, "legacy-reverse", JSON.stringify([reverse.requestId]), JSON.stringify([reverse.taskId]), "failed");
+  const key = "revocation_legacy-reverse_original-revision";
+  s.db.prepare("INSERT INTO messaging_idempotency VALUES (?,?,?,?)").run(key, s.workspaceId, "{}", JSON.stringify({ id: "old-reverse-op" }));
+  upgradeLinks(s);
+  for (const id of ["old-forward-op", "old-reverse-op"]) {
+    const op = s.messaging.operation(id);
+    assert.equal(op.linkId, link.id);
+    assert.deepEqual(new Set(JSON.parse(op.requestIds)), new Set([forward.requestId, reverse.requestId, child.requestId, background.requestId]));
+    assert.deepEqual(new Set(JSON.parse(op.taskIds)), new Set([forward.taskId, reverse.taskId, child.taskId, background.taskId]));
+  }
+  assert.equal(s.messaging.link(link.id).state, "revoking");
+  assert.equal(s.messaging.find(b, {}).items.length, 1); // Only B–C remains active.
+  assert.throws(() => s.messaging.createLink(s.workspaceId, "b", "a"), /revoked/);
+  assert.equal((s.db.prepare("SELECT state FROM task_checkins WHERE id=?").get(reminder.checkinId) as any).state, "cancelled");
+  assert.equal((s.db.prepare("SELECT state FROM task_checkins WHERE id=?").get(unrelated.checkinId) as any).state, "scheduled");
+  assert.equal(s.messaging.revoke("legacy-reverse", { confirmInterruption: true, revision: "original-revision" }).id, "old-reverse-op");
+  const resumed = new MessagingService(s.db, s.engine, s.connections);
+  s.engine.messaging = resumed;
+  s.tools.messaging = resumed;
+  try {
+    resumed.start();
+    await until(() => resumed.operation("old-forward-op").state === "completed");
+    assert.equal(resumed.link(link.id).state, "revoking");
+    assert.throws(() => resumed.createLink(s.workspaceId, "a", "b"), /revoked/);
+    assert.notEqual(s.processes.get(ownedProcess.id).state, "running");
+    assert.equal(resumed.status(b, background.requestId).request.state, "completed");
+    for (const sent of [forward, reverse, child]) {
+      assert.equal(s.engine.task(sent.taskId!).status, "cancelled");
+      assert.equal((s.db.prepare("SELECT state FROM agent_requests WHERE id=?").get(sent.requestId) as any).state, "revoked");
+    }
+    assert.equal(s.engine.task(root.taskId!).status, "queued");
+    resumed.retryOperation("old-reverse-op");
+    await until(() => resumed.operation("old-reverse-op").state === "completed");
+    assert.throws(() => resumed.link(link.id), /not found/);
+    assert.equal(resumed.revoke("legacy-reverse", { confirmInterruption: true, revision: "original-revision" }).id, "old-reverse-op");
+    assert.equal((s.db.prepare("SELECT count(*) n FROM communication_messages WHERE requestId=? AND kind='result'").get(background.requestId) as any).n, 1);
+  } finally {
+    await resumed.close();
+  }
+});
+
+test("both merged pending removals finish without duplicate terminal delivery or early permission restoration", async (t) => {
+  const s = await setup(t);
+  const link = s.messaging.createLink(s.workspaceId, "a", "b");
+  const forward = s.messaging.send(s.owner, { agentId: "b", content: "Forward" }, "pending-forward");
+  const root = s.engine.submit("b", "new", "Independent", randomUUID());
+  const b = { ...s.owner, agentId: "b", taskId: root.taskId!, turnId: root.turnId };
+  const reverse = s.messaging.send(b, { agentId: "a", content: "Reverse" }, "pending-reverse");
+  await restoreDirectedLinks(s);
+  insertReverseLink(s, "pending-reverse-link");
+  s.db.prepare("UPDATE agent_requests SET linkId='pending-reverse-link' WHERE id=?").run(reverse.requestId);
+  for (const [id, linkId, sent] of [["pending-forward-op", link.id, forward], ["pending-reverse-op", "pending-reverse-link", reverse]] as const) {
+    s.db.prepare("INSERT INTO messaging_operations(id,workspaceId,linkId,requestIds,taskIds,createdAt,updatedAt) VALUES (?,?,?,?,?,'now','now')")
+      .run(id, s.workspaceId, linkId, JSON.stringify([sent.requestId]), JSON.stringify([sent.taskId]));
+  }
+  upgradeLinks(s);
+  const resumed = new MessagingService(s.db, s.engine, s.connections);
+  s.engine.messaging = resumed;
+  s.tools.messaging = resumed;
+  try {
+    resumed.start();
+    assert.throws(() => resumed.createLink(s.workspaceId, "b", "a"), /revoked/);
+    await until(() => ["pending-forward-op", "pending-reverse-op"].every(id => resumed.operation(id).state === "completed"));
+    assert.throws(() => resumed.link(link.id), /not found/);
+    for (const sent of [forward, reverse]) {
+      assert.equal(s.engine.task(sent.taskId!).status, "cancelled");
+      assert.equal((s.db.prepare("SELECT count(*) n FROM communication_messages WHERE requestId=? AND kind='failure'").get(sent.requestId) as any).n, 1);
+    }
+    const recreated = resumed.createLink(s.workspaceId, "b", "a");
+    assert.notEqual(recreated.id, link.id);
+    assert.equal(resumed.status(s.owner, forward.requestId).request.state, "revoked");
+  } finally {
+    await resumed.close();
+  }
 });

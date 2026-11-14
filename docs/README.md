@@ -4,7 +4,7 @@ This folder contains product knowledge for AI agents inside ufAI that help users
 
 Read the [platform guide](platform.md) to answer questions about workspaces, [agent characters](platform.md#agent-characters), [agent issue bubbles](platform.md#agent-issues), Clusters, managed folders, the flowboard, Agent Presets, Providers, model testing, sign-in, subscription usage and earned resets, themes, and saved data. Its [common questions](platform.md#common-questions) explain frequent points of confusion, and its [planned capabilities](platform.md#planned-capabilities) distinguish future ideas from available features.
 
-Agent execution, host tools, terminal sessions, composer attachments, native image/PDF inputs on supported models, published files, agent messaging, one-time task check-ins, directed communication permissions, and the workspace Inbox are available; the built-in platform assistant is not. These documents prepare app knowledge; their existence does not automatically load them into an agent or connect an assistant. They also do not reveal the user's current connections, credentials, workspaces, or running sessions. Documentation is context, not permission to act on user resources.
+Agent execution, host tools, terminal sessions, composer attachments, native image/PDF inputs on supported models, published files, agent messaging, one-time task check-ins, mutual agent connections, and the workspace Inbox are available; the built-in platform assistant is not. These documents prepare app knowledge; their existence does not automatically load them into an agent or connect an assistant. They also do not reveal the user's current connections, credentials, workspaces, or running sessions. Documentation is context, not permission to act on user resources.
 
 ## Terminology
 
@@ -21,7 +21,7 @@ Some terms describe planned capabilities. Check the platform guide before presen
 | Agent runtime | An existing agent system such as Codex; ufAI currently supports Codex sign-in, model discovery, subscription usage and earned resets, and short prompt tests; task conversations with ufAI-managed tools are supported |
 | Provider | A named saved service/account/endpoint configuration with at least one model; Agent Presets select from these records |
 | Agent | A persistent workspace identity with a customizable character, instructions and a live Agent Preset; Chat and ordinary tasks have host tools; skills and fine-grained tool permissions remain planned |
-| Agent communication connection | A directed permission for an agent to initiate requests or notifications to another agent; different from a saved Provider account |
+| Agent communication connection | A mutual connection that lets both agents discover each other and initiate requests or notifications; different from a saved Provider account |
 | Session | A conversation or isolated task context belonging to an agent |
 | Attachment | A file sent with a Chat or task message; sending waits for every file to be saved, and visual inspection requires model support |
 | Run | An execution attempt with persisted state, tool activity, outputs, and errors |

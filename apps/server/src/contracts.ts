@@ -448,6 +448,7 @@ export interface ArtifactVersion {
 }
 
 export interface CommunicationLink {
+  /** Legacy endpoint names; the connection grants contact in both directions. */
   id: string; workspaceId: string; sourceAgentId: string; targetAgentId: string;
   state: "active" | "revoking"; createdAt: string;
 }

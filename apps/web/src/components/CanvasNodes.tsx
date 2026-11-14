@@ -263,8 +263,8 @@ export const AgentNode = memo(function AgentNode({
       style={cluster ? clusterColor(cluster.colorSlot) : undefined}
     >
       <div className={agentStyles.canvasCharacter}><LiveAgentCharacter agent={agent} /></div>
-      <Handle id="in" type="target" position={Position.Left} className={messagingStyles.handle} aria-label="Receive communication permission" />
-      <Handle id="out" type="source" position={Position.Right} className={messagingStyles.handle} aria-label="Grant outgoing communication permission" />
+      <Handle id="left" type="source" position={Position.Left} className={messagingStyles.handle} aria-label={`Connect ${agent.name} to another agent (left)`} />
+      <Handle id="right" type="source" position={Position.Right} className={messagingStyles.handle} aria-label={`Connect ${agent.name} to another agent (right)`} />
       <div className={agentStyles.nodeCard}>
         <Tooltip content={agent.name}>
           <button
