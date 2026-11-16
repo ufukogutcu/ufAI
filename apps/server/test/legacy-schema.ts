@@ -178,6 +178,7 @@ export function assertCharacterUpgrade(actual: any, previous: any) {
 
 /** Reconstruct v25 storage before assembling an older upgrade fixture. */
 export function restoreClusters(database: Database.Database) {
+  database.exec("DROP TABLE IF EXISTS task_skill_activations; DROP TABLE IF EXISTS skill_installations; DROP TABLE IF EXISTS agent_skills; DROP TABLE IF EXISTS skills");
   if (database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='clusters'").get()) return;
   const locations = database.prepare("SELECT * FROM managed_locations").all() as Record<string, unknown>[];
   const deletions = database.prepare("SELECT * FROM deletion_operations").all() as Record<string, unknown>[];

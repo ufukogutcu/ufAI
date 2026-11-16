@@ -177,6 +177,15 @@ export function createTimelineStore(
 
 type ActionCopy = readonly [string, string];
 export const toolLabels: Record<string, ActionCopy> = {
+  skills_list: ["Checking skills", "Checked skills"],
+  skill_inspect: ["Reading skill details", "Read skill details"],
+  skill_activate: ["Loading skill", "Loaded skill"],
+  skill_create: ["Creating skill", "Created skill"],
+  skill_install: ["Inspecting skill source", "Inspected skill source"],
+  skill_install_commit: ["Installing skill", "Installed skill"],
+  skill_set_enabled: ["Changing enabled skills", "Changed enabled skills"],
+  skill_update: ["Updating shared skill", "Updated shared skill"],
+  skill_remove: ["Removing shared skill", "Removed shared skill"],
   agent_update_instructions: ["Updating instructions", "Updated instructions"],
   agent_inspect: ["Checking agent status", "Checked agent status"],
   agent_connection_inspect: ["Inspecting connected agent", "Inspected connected agent"],

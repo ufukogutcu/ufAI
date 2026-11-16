@@ -2,7 +2,6 @@ import { register } from "node:module";
 import type { TestContext } from "node:test";
 import { JSDOM } from "jsdom";
 import { act, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
 
 // Node exercises component behavior; Vite and catalog checks validate the real SCSS.
 register(`data:text/javascript,${encodeURIComponent(`export async function load(url, context, next) {
@@ -28,6 +27,8 @@ export async function mountComponent(t: TestContext, element: ReactNode) {
   win.matchMedia = (() => ({ matches: true, addEventListener() {}, removeEventListener() {} })) as unknown as typeof win.matchMedia;
   win.HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
   win.HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
+  // Initialize React DOM after the document exists so native input events work.
+  const { createRoot } = await import("react-dom/client");
   const root = createRoot(win.document.getElementById("root")!);
   t.after(async () => {
     await act(async () => root.unmount());

@@ -1,3 +1,4 @@
+import { AgentSkills } from "./AgentSkills";
 import { detailsValues, refreshDetails, type DetailsValues } from "../agent-details";
 import type { AgentAppearance } from "../../../server/src/contracts";
 import { defaultAppearance } from "../agent-appearance";
@@ -746,6 +747,7 @@ export function AgentPanel({
             )}
           </div>
         ))}
+      {tab === "Skills" && <AgentSkills key={agent.id} agentId={agent.id} />}
       {tab === "Files" && <AgentFiles key={agent.id} agentId={agent.id} />}
       {tab === "Memory" && (
         <div className={styles.scroll}>

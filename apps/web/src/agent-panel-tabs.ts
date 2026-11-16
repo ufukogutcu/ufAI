@@ -1,4 +1,4 @@
-export const agentPanelTabs = ["Details", "Chat", "Tasks", "Memory", "Files"] as const;
+export const agentPanelTabs = ["Details", "Chat", "Skills", "Tasks", "Memory", "Files"] as const;
 export type AgentPanelTab = (typeof agentPanelTabs)[number];
 export type AgentPanelTabs = Partial<Record<string, AgentPanelTab>>;
 

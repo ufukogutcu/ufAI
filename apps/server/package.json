@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/bundle-skill-help.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/index.js",
     "test": "tsx --test test/*.test.ts"
@@ -15,14 +15,17 @@
     "@fastify/multipart": "^10.1.8",
     "@fastify/static": "^10.1.10",
     "@openai/codex": "0.167.1",
+    "@ufai/character-catalog": "0.1.0",
     "@ufai/theme-catalog": "0.1.0",
     "better-sqlite3": "^12.11.1",
     "fastify": "^5.12.8",
     "image-size": "^2.1.0",
     "node-pty": "^1.1.0",
-    "@ufai/character-catalog": "0.1.0"
+    "yaml": "^2.9.1",
+    "yauzl": "^3.4.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^9.6.0"
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/yauzl": "^3.4.0"
   }
 }

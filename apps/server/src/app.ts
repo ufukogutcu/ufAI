@@ -1,3 +1,5 @@
+import { Skills } from "./skills.js";
+import { registerSkills } from "./skill-routes.js";
 import { MessagingService, registerMessaging } from "./messaging.js";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -150,6 +152,8 @@ export function createApp(
     changed,
     options.artifacts,
   );
+  const skills = new Skills(database, files, changed, options.agentFiles);
+  registerSkills(app, skills);
   const tools = new AgentTools(
     database,
     files,
@@ -157,6 +161,7 @@ export function createApp(
     artifacts,
     changed,
   );
+  tools.skills = skills;
   execution = new AgentExecution(
     database,
     connections,
@@ -221,6 +226,7 @@ export function createApp(
   });
   app.addHook("onReady", async () => {
     await files.start();
+    await skills.start();
     await artifacts.start();
     messaging.start();
     tools.ready = true;
@@ -230,6 +236,7 @@ export function createApp(
   app.addHook("onClose", async () => artifacts.close());
   app.addHook("onClose", async () => processes.close());
   app.addHook("onClose", async () => messaging.close());
+  app.addHook("onClose", async () => skills.close());
   app.addHook("onClose", async () => execution.close());
 
   const workspaceList = database.prepare(
