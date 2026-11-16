@@ -95,6 +95,9 @@
   svg { flex-shrink: 0; color: var(--muted); }
 }
 a.entry:hover, button.entry:hover { background: var(--hover); }
+.entry[aria-expanded="true"] { background: var(--hover); }
+.confirmation { overflow-wrap: anywhere; }
+.confirmationActions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
 .name {
   min-width: 0;
   flex: 1;

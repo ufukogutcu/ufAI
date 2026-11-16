@@ -129,6 +129,7 @@ test("special filesystem entries are visible but cannot be downloaded", { skip: 
   });
   assert.equal((await f.list()).items[0]!.kind, "unavailable");
   assert.equal((await f.app.inject(`${f.base}/download?path=local.socket`)).statusCode, 409);
+  assert.equal((await removeFile(f, "local.socket")).statusCode, 409);
 });
 
 test("file manager adapters pass the current folder as one argument and report unavailable desktops or launchers", async t => {
@@ -172,6 +173,7 @@ test("unavailable folders retain repair, permissions are reported, and deletion 
   assert.equal(deletion.statusCode, 202);
   assert.equal((await f.app.inject(f.base)).statusCode, 409);
   assert.equal((await f.app.inject(`${f.base}/download?path=anything`)).statusCode, 409);
+  assert.equal((await removeFile(f, "anything")).statusCode, 409);
   assert.equal((await f.app.inject({ method: "POST", url: `${f.base}/open`, payload: {} })).statusCode, 409);
 });
 
@@ -232,4 +234,124 @@ test("a disconnected HTTP download releases its file stream, and shutdown closes
   const paused = await download("agent", "large.bin");
   await browser.close();
   assert.equal(paused.stream.closed, true);
+});
+
+async function removeFile(f: Awaited<ReturnType<typeof fixture>>, path: string, expectedKind = "file", confirmed: unknown = true, headers?: Record<string, string>) {
+  return f.app.inject({ method: "DELETE", url: f.base, headers,
+    payload: { path, expectedKind, confirmFilesDeletion: confirmed } });
+}
+
+test("confirmed entry deletion removes files and nested folders while preserving neighbors and external symlink targets", async t => {
+  const f = await fixture(t);
+  const outside = await mkdtemp(join(tmpdir(), "ufai-entry-outside-"));
+  t.after(() => rm(outside, { recursive: true, force: true }));
+  await writeFile(join(outside, "private.txt"), "outside");
+  await mkdir(join(f.home.path, "folder", "nested"), { recursive: true });
+  await writeFile(join(f.home.path, "folder", "nested", "inside.txt"), "inside");
+  await symlink(outside, join(f.home.path, "folder", "external"));
+  await writeFile(join(f.home.path, "résumé 中文.txt"), "delete me");
+  await writeFile(join(f.home.path, "neighbor.txt"), "keep");
+  assert.equal((await removeFile(f, "résumé 中文.txt")).statusCode, 204);
+  assert.equal((await removeFile(f, "folder", "directory")).statusCode, 204);
+  assert.deepEqual((await f.list()).items.map(item => item.name), ["neighbor.txt"]);
+  assert.equal(await readFile(join(outside, "private.txt"), "utf8"), "outside");
+  assert.equal((await f.app.inject(`/api/agents/${f.agent.id}`)).statusCode, 200);
+});
+
+test("entry deletion requires confirmation, validates kind and path, and rejects links and foreign origins", async t => {
+  const f = await fixture(t);
+  await writeFile(join(f.home.path, "keep.txt"), "keep");
+  await mkdir(join(f.home.path, "folder"));
+  await symlink(join(f.home.path, "folder"), join(f.home.path, "link"));
+  for (const confirmed of [false, "true", null]) assert.equal((await removeFile(f, "keep.txt", "file", confirmed)).statusCode, 400);
+  for (const path of ["", "..", "../keep.txt", "/etc", "C:/Windows", "a\\b", "a//b", "a/./b", "a\0b"])
+    assert.equal((await removeFile(f, path)).statusCode, 400, path);
+  assert.equal((await removeFile(f, "keep.txt", "unavailable")).statusCode, 400);
+  assert.equal((await removeFile(f, "keep.txt", "directory")).statusCode, 409);
+  assert.equal((await removeFile(f, "folder", "file")).statusCode, 409);
+  assert.equal((await removeFile(f, "link", "directory")).statusCode, 409);
+  assert.equal((await removeFile(f, "link/anything")).statusCode, 409);
+  assert.equal((await removeFile(f, "missing")).statusCode, 404);
+  for (const headers of [{ origin: "https://example.com" }, { "sec-fetch-site": "cross-site" }, { host: "example.com" }])
+    assert.equal((await removeFile(f, "keep.txt", "file", true, headers)).statusCode, 403);
+  assert.equal(await readFile(join(f.home.path, "keep.txt"), "utf8"), "keep");
+  assert.equal((await f.app.inject({ method: "DELETE", url: f.base, payload: {} })).statusCode, 400);
+});
+
+test("entry deletion closes only matching downloads and respects unavailable locations and owner fences", async t => {
+  const db = openDatabase(":memory:"), files = new ManagedFiles(db), browser = new AgentFiles(files);
+  files.browser = browser;
+  t.after(async () => { await files.close(); db.close(); });
+  const workspaceId = (db.prepare("SELECT id FROM workspaces LIMIT 1").get() as { id: string }).id;
+  db.prepare("INSERT INTO agents(id,workspaceId,name,createdAt,updatedAt) VALUES ('agent',?,'Agent','now','now')").run(workspaceId);
+  await files.start(); await files.repair("agent", "agent");
+  const home = files.location("agent", "agent").path;
+  await mkdir(join(home, "folder"));
+  await writeFile(join(home, "folder", "remove.txt"), "remove");
+  await writeFile(join(home, "keep.txt"), "keep");
+  const removed = await browser.download("agent", "folder/remove.txt"), kept = await browser.download("agent", "keep.txt");
+  await browser.remove("agent", "folder", "directory", true);
+  assert.equal(removed.stream.closed, true);
+  assert.equal(kept.stream.destroyed, false);
+  db.prepare("UPDATE managed_locations SET state='error' WHERE kind='agent' AND ownerId='agent'").run();
+  await assert.rejects(browser.remove("agent", "keep.txt", "file", true), /unavailable/);
+  db.prepare("UPDATE managed_locations SET state='ready' WHERE kind='agent' AND ownerId='agent'").run();
+  files.requestDeletion("agent", "agent", true);
+  await assert.rejects(browser.remove("agent", "keep.txt", "file", true), /Deletion is in progress/);
+});
+
+test("entry deletion limits concurrency, fences subtree actions, and shutdown waits for in-flight removals", async t => {
+  const db = openDatabase(":memory:"), files = new ManagedFiles(db), browser = new AgentFiles(files);
+  const app = Fastify();
+  registerAgentFiles(app, browser);
+  t.after(async () => { await app.close(); await files.close(); db.close(); });
+  const workspaceId = (db.prepare("SELECT id FROM workspaces LIMIT 1").get() as { id: string }).id;
+  for (const id of ["first", "second", "third"])
+    db.prepare("INSERT INTO agents(id,workspaceId,name,createdAt,updatedAt) VALUES (?,?,?,'now','now')").run(id, workspaceId, id);
+  await files.start();
+  for (const id of ["first", "second", "third"]) {
+    await files.repair("agent", id);
+    await mkdir(join(files.location("agent", id).path, "folder"));
+  }
+  let unblock!: () => void;
+  const gate = new Promise<void>(resolve => { unblock = resolve; });
+  t.after(unblock);
+  let enteredCount = 0, announce!: () => void;
+  const entered = new Promise<void>(resolve => { announce = resolve; });
+  const verify = files.verifyAgentDirectory.bind(files);
+  t.mock.method(files, "verifyAgentDirectory", async (agentId: string) => {
+    if (++enteredCount === 2) announce();
+    await gate;
+    return verify(agentId);
+  });
+  const remove = (id: string, path = "folder") => app.inject({ method: "DELETE", url: `/api/agents/${id}/files`,
+    payload: { path, expectedKind: "directory", confirmFilesDeletion: true } });
+  // light-my-request starts when awaited/then'ed.
+  const first = remove("first").then(result => result);
+  const second = remove("second").then(result => result);
+  await entered;
+  assert.equal((await remove("first", "other")).statusCode, 429);
+  assert.equal((await remove("third")).statusCode, 429);
+  await assert.rejects(browser.list("first", "folder", 100, 0), /being deleted/);
+  await assert.rejects(browser.download("first", "folder/child"), /being deleted/);
+  await assert.rejects(browser.openFolder("first", "folder"), /being deleted/);
+  let closed = false;
+  const closing = browser.close().then(() => { closed = true; });
+  await delay(5); assert.equal(closed, false);
+  unblock();
+  await Promise.all([first, second, closing]);
+  assert.equal(closed, true);
+  await assert.rejects(browser.remove("third", "folder", "directory", true), /shutting down/);
+});
+
+test("entry deletion reports parent permission errors without removing the entry", { skip: process.platform === "win32" || process.getuid?.() === 0 }, async t => {
+  const f = await fixture(t);
+  await writeFile(join(f.home.path, "protected.txt"), "keep");
+  await chmod(f.home.path, 0o500);
+  try {
+    assert.equal((await removeFile(f, "protected.txt")).statusCode, 403);
+    assert.equal(await readFile(join(f.home.path, "protected.txt"), "utf8"), "keep");
+  } finally {
+    await chmod(f.home.path, 0o700);
+  }
 });

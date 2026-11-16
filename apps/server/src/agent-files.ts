@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { constants, type ReadStream } from "node:fs";
-import { lstat, open, opendir } from "node:fs/promises";
+import { lstat, open, opendir, rm } from "node:fs/promises";
 import { basename, join, relative, sep } from "node:path";
 import type { FastifyInstance } from "fastify";
 import type { AgentFileEntry, AgentFileListing } from "./contracts.js";
@@ -57,7 +57,8 @@ export class AgentFiles {
   private stopped = false;
   private reading = 0;
   private opening = 0;
-  private downloads = new Map<ReadStream, { agentId: string; workspaceId: string }>();
+  private downloads = new Map<ReadStream, { agentId: string; workspaceId: string; path: string }>();
+  private removing = new Map<string, { workspaceId: string; path: string; promise: Promise<void> }>();
   constructor(private files: ManagedFiles, private options: AgentFilesOptions = {}) {}
 
   private available(agentId: string) {
@@ -69,8 +70,15 @@ export class AgentFiles {
     return location;
   }
 
-  private async resolve(agentId: string, value: unknown, directory: boolean) {
+  private assertNotRemoving(agentId: string, path: string) {
+    const operation = this.removing.get(agentId);
+    if (operation && (path === operation.path || path.startsWith(`${operation.path}/`)))
+      throw new ConnectionError("This file or folder is being deleted. Refresh after deletion finishes.", 409);
+  }
+
+  private async resolve(agentId: string, value: unknown, directory: boolean, removing = false) {
     const path = filePath(value), location = this.available(agentId);
+    if (!removing) this.assertNotRemoving(agentId, path);
     await this.files.verifyAgentDirectory(agentId);
     const full = join(location.path, ...path.split("/"));
     const rel = relative(location.path, full);
@@ -86,6 +94,7 @@ export class AgentFiles {
         throw new ConnectionError("This folder is no longer available. Refresh the folder or go Up.", 404);
     }
     this.available(agentId);
+    if (!removing) this.assertNotRemoving(agentId, path);
     return { full, path, location };
   }
 
@@ -139,9 +148,11 @@ export class AgentFiles {
         if (!info.isFile() || info.dev !== before.dev || info.ino !== before.ino)
           throw new ConnectionError("This file changed. Refresh the folder and try again.", 409);
         await this.resolve(agentId, path, false);
+        this.available(agentId);
+        this.assertNotRemoving(agentId, target.path);
         if (this.downloads.size >= 16) throw new ConnectionError("Too many downloads. Wait for one to finish and retry.", 429);
         const stream = file.createReadStream();
-        this.downloads.set(stream, { agentId, workspaceId: target.location.workspaceId });
+        this.downloads.set(stream, { agentId, workspaceId: target.location.workspaceId, path: target.path });
         stream.once("close", () => this.downloads.delete(stream));
         return { stream, name: basename(target.full) };
       } catch (error) { await file.close(); throw error; }
@@ -159,14 +170,42 @@ export class AgentFiles {
         throw new ConnectionError("No desktop session is available on the ufAI server. Use Copy path instead.", 503);
       const { command, args } = fileManagerCommand(platform, target.full);
       this.available(agentId);
+      this.assertNotRemoving(agentId, target.path);
       try { await (this.options.launch ?? launch)(command, args); }
       catch { throw new ConnectionError("Could not open the file manager on the ufAI server. Check that a desktop file manager is installed, or use Copy path.", 503); }
     } finally { this.opening--; }
   }
 
-  async settle(scope?: { kind: "agent" | "workspace"; ownerId: string }) {
-    const streams = [...this.downloads].filter(([, owner]) => !scope ||
-      (scope.kind === "agent" ? owner.agentId : owner.workspaceId) === scope.ownerId).map(([stream]) => stream);
+  async remove(agentId: string, value: unknown, expectedKind: unknown, confirmed: unknown) {
+    const path = filePath(value);
+    if (!path || confirmed !== true || (expectedKind !== "file" && expectedKind !== "directory"))
+      throw new ConnectionError("Choose a file or folder and confirm its permanent deletion first.", 400);
+    const location = this.available(agentId);
+    this.assertNotRemoving(agentId, path);
+    if (this.removing.has(agentId) || this.removing.size >= 2)
+      throw new ConnectionError("File deletion is busy. Wait for a deletion to finish and retry.", 429);
+    const promise = this.removeEntry(agentId, path, expectedKind);
+    this.removing.set(agentId, { workspaceId: location.workspaceId, path, promise });
+    try { await promise; }
+    catch (error) { readableError(error); }
+    finally { this.removing.delete(agentId); }
+  }
+
+  private async removeEntry(agentId: string, path: string, expectedKind: "file" | "directory") {
+    await this.resolve(agentId, path, false, true);
+    await this.closeStreams([...this.downloads].filter(([, owner]) => owner.agentId === agentId &&
+      (owner.path === path || owner.path.startsWith(`${path}/`))).map(([stream]) => stream));
+    // Revalidate after settling downloads; do not turn a stale file selection into recursive removal.
+    const target = await this.resolve(agentId, path, false, true);
+    const info = await lstat(target.full);
+    if (info.isSymbolicLink() || (expectedKind === "file" ? !info.isFile() : !info.isDirectory()))
+      throw new ConnectionError("This file or folder changed. Refresh the folder and try again.", 409);
+    this.available(agentId);
+    // rm does not follow interior symlinks. No force/retry: missing entries and partial failures stay visible.
+    await rm(target.full, { recursive: expectedKind === "directory", force: false, maxRetries: 0 });
+  }
+
+  private async closeStreams(streams: ReadStream[]) {
     await Promise.all(streams.map(stream => new Promise<void>(resolve => {
       if (stream.closed) return resolve();
       stream.once("close", resolve);
@@ -174,10 +213,23 @@ export class AgentFiles {
     })));
   }
 
+  async settle(scope?: { kind: "agent" | "workspace"; ownerId: string }) {
+    await Promise.allSettled([...this.removing].filter(([agentId, operation]) => !scope ||
+      (scope.kind === "agent" ? agentId : operation.workspaceId) === scope.ownerId).map(([, operation]) => operation.promise));
+    await this.closeStreams([...this.downloads].filter(([, owner]) => !scope ||
+      (scope.kind === "agent" ? owner.agentId : owner.workspaceId) === scope.ownerId).map(([stream]) => stream));
+  }
+
   async close() { this.stopped = true; await this.settle(); }
 }
 
 export function registerAgentFiles(app: FastifyInstance, browser: AgentFiles) {
+  app.delete<{ Params: { id: string } }>("/api/agents/:id/files", async (req, reply) => {
+    guard(req);
+    const body = objectBody(req.body);
+    await browser.remove(req.params.id, body.path, body.expectedKind, body.confirmFilesDeletion);
+    return reply.code(204).send();
+  });
   app.get<{ Params: { id: string }; Querystring: { path?: string } }>("/api/agents/:id/files", async (req, reply) => {
     guard(req);
     const { limit, offset } = pagination(req.query);
