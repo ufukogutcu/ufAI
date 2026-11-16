@@ -206,7 +206,7 @@ export function createApp(
   registerMessaging(app,messaging,incoming);
   files.bind(execution);
   registerAgents(app, database, execution, files, incoming);
-  registerLocations(app, database, execution, files);
+  registerLocations(app, database, files);
   registerTools(app, database, execution, processes, artifacts);
   registerTimeline(app, database, execution);
   app.addHook("preClose", async () => {

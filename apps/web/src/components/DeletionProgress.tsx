@@ -4,7 +4,7 @@ import { useSettings } from "../settings-store";
 import { request, errorMessage } from "../api";
 import { finishDeletion } from "../managed-files";
 import type { DeletionOperation } from "../../../server/src/contracts";
-import styles from "./Clusters.module.scss";
+import styles from "./ManagedFiles.module.scss";
 export function DeletionProgress({ workspaceId }: { workspaceId: string }) {
   const store = useAgentStore(),
     operations = useAgents((s) => s.deletions[workspaceId] ?? emptyList);
@@ -73,9 +73,7 @@ export function DeletionProgress({ workspaceId }: { workspaceId: string }) {
         <div className={styles.progress} key={op.id}>
           {op.kind === "workspace"
             ? "Workspace"
-            : op.kind === "cluster"
-              ? "Cluster"
-              : "Agent"}{" "}
+            : "Agent"}{" "}
           file deletion: {op.state === "failed" ? op.error : "Cleaning up…"}
           {op.state === "failed" && (
             <button

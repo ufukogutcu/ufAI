@@ -303,10 +303,6 @@ test("v12 upgrade retains existing messages, references and paths; interrupted i
   );
   await oldFiles.repair("task", priorTask.taskId!);
   db.prepare(
-    "INSERT INTO clusters(id,workspaceId,name,colorSlot,createdAt,updatedAt) VALUES ('department',?,'Design',3,'now','now')",
-  ).run(workspaceId);
-  db.prepare("UPDATE agents SET clusterId='department' WHERE id='a'").run();
-  db.prepare(
     "INSERT INTO agent_memories(id,agentId,key,content,kind,sources,createdAt,updatedAt) VALUES ('memory','a','preference','Keep the original','fact','[]','now','now')",
   ).run();
   db.prepare(
@@ -335,7 +331,6 @@ test("v12 upgrade retains existing messages, references and paths; interrupted i
     "agent_tasks",
     "agent_messages",
     "agent_memories",
-    "clusters",
     "managed_locations",
     "model_presets",
     "provider_models",
@@ -350,7 +345,7 @@ test("v12 upgrade retains existing messages, references and paths; interrupted i
   db.close();
   db = openDatabase(path);
   for (const table of preserved) {
-    const rows = db.prepare(`SELECT ${Object.keys((before[table] as any[])[0] ?? {}).join(",") || "*"} FROM ${table} ORDER BY rowid`).all();
+    const rows = db.prepare(`SELECT ${Object.keys((before[table] as any[])[0] ?? {}).filter(key => key !== "clusterId").join(",") || "*"} FROM ${table} ORDER BY rowid`).all();
     if (table === "agents") rows.forEach((row, index) => assertCharacterUpgrade(row, before[table]![index]));
     else assert.deepEqual(rows, before[table], table);
   }
@@ -358,7 +353,7 @@ test("v12 upgrade retains existing messages, references and paths; interrupted i
     (db.prepare("SELECT mode FROM artifact_references").get() as any).mode,
     "file",
   );
-  assert.equal(db.pragma("user_version", { simple: true }), 25);
+  assert.equal(db.pragma("user_version", { simple: true }), 26);
   const files = new ManagedFiles(db, join(root, "files"));
   await files.start();
   const artifacts = new ArtifactService(db, files, () => {});

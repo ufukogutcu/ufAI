@@ -442,7 +442,6 @@ export class AgentTools {
     this.files.assertAvailable(
       owner.workspaceId,
       owner.agentId,
-      this.agentCluster(owner.agentId),
     );
     if (
       !call.id ||
@@ -574,13 +573,6 @@ export class AgentTools {
         turnId,
       );
   }
-  private agentCluster(id: string) {
-    return (
-      this.db.prepare("SELECT clusterId FROM agents WHERE id=?").get(id) as {
-        clusterId: string | null;
-      }
-    )?.clusterId;
-  }
   private owned(owner: ToolOwner, id: string) {
     const p = this.processes.get(id);
     if (p.agentId !== owner.agentId || p.workspaceId !== owner.workspaceId)
@@ -588,14 +580,10 @@ export class AgentTools {
     return p;
   }
   async locations(owner: ToolOwner) {
-    const a = this.db
-      .prepare("SELECT clusterId FROM agents WHERE id=?")
-      .get(owner.agentId) as { clusterId: string | null };
     const entries = await Promise.all([
       this.files.repair("task", owner.taskId),
       this.files.repair("agent", owner.agentId),
       this.files.repair("workspace", owner.workspaceId),
-      ...(a.clusterId ? [this.files.repair("cluster", a.clusterId)] : []),
     ]);
     if (entries.some((x) => x.state !== "ready"))
       throw new ConnectionError(
@@ -617,7 +605,7 @@ export class AgentTools {
     if (["agent_inspect", "agent_task_read"].includes(name)) {
       const agent = this.db
         .prepare(
-          `SELECT a.id,a.name,a.instructions,a.revision,a.presetId,a.workspaceId,a.clusterId
+          `SELECT a.id,a.name,a.instructions,a.revision,a.presetId,a.workspaceId
         FROM agents a JOIN agent_tasks t ON t.agentId=a.id JOIN agent_turns r ON r.taskId=t.id
         WHERE a.id=? AND a.workspaceId=? AND t.id=? AND r.id=? AND r.agentId=a.id`,
         )

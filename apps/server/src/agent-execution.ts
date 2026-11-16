@@ -128,7 +128,7 @@ export class AgentExecution {
       | undefined;
     if (!row) throw new ConnectionError("Agent not found.", 404);
     if (!allowDeleting)
-      this.files?.assertAvailable(row.workspaceId, id, row.clusterId);
+      this.files?.assertAvailable(row.workspaceId, id);
     if (this.deletingWorkspaces.has(row.workspaceId) || this.deleting.has(id))
       throw new ConnectionError("Agent deletion is in progress.", 409);
     const counts = this.db
@@ -699,10 +699,9 @@ export class AgentExecution {
       for (const turn of ready) {
         if (this.deleting.has(turn.agentId)) continue;
         const owner = this.db
-          .prepare("SELECT workspaceId,clusterId FROM agents WHERE id=?")
+          .prepare("SELECT workspaceId FROM agents WHERE id=?")
           .get(turn.agentId) as {
           workspaceId: string;
-          clusterId: string | null;
         };
         try {
           if (turn.taskId)
@@ -713,7 +712,6 @@ export class AgentExecution {
           this.files?.assertAvailable(
             owner.workspaceId,
             turn.agentId,
-            owner.clusterId,
           );
         } catch {
           continue;
@@ -1140,7 +1138,7 @@ export class AgentExecution {
         "SELECT id,name,state FROM artifact_versions WHERE producerTaskId=? AND origin='published' ORDER BY createdAt DESC LIMIT 50",
       )
       .all(turn.taskId);
-    instructions += `\nHost tools are enabled with backend OS permissions. Use process_start for requested shell commands, with pty for interactive terminal programs, and files_write for small text files. Use artifact_publish to attach requested downloadable files after creating them. Report file or command permission failures only when established by actual tool results; earlier claims of a read-only session do not establish current tool permissions. Working locations: ${JSON.stringify(locations)}. The agent location points directly to its persistent files directory. Workspace and Cluster paths are shared directories. These are not sandboxes. Prior tool effects (including failed attempts) are advisory facts; interrupted actions may already have taken effect. Inspect existing state before repeating them. Published versions remain durable. Prior activity: ${JSON.stringify(history).slice(0, 12000)}. Outputs: ${JSON.stringify(outputs)}`;
+    instructions += `\nHost tools are enabled with backend OS permissions. Use process_start for requested shell commands, with pty for interactive terminal programs, and files_write for small text files. Use artifact_publish to attach requested downloadable files after creating them. Report file or command permission failures only when established by actual tool results; earlier claims of a read-only session do not establish current tool permissions. Working locations: ${JSON.stringify(locations)}. The agent location points directly to its persistent files directory. The workspace path is a shared directory. These are not sandboxes. Prior tool effects (including failed attempts) are advisory facts; interrupted actions may already have taken effect. Inspect existing state before repeating them. Published versions remain durable. Prior activity: ${JSON.stringify(history).slice(0, 12000)}. Outputs: ${JSON.stringify(outputs)}`;
     const storedWait = this.db
       .prepare(
         "SELECT checkpoint FROM messaging_waits WHERE turnId=? AND state='resuming'",

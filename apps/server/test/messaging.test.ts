@@ -1,4 +1,4 @@
-import { assertCharacterUpgrade } from "./legacy-schema.js";
+import { assertCharacterUpgrade, restoreClusters } from "./legacy-schema.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { randomUUID, createHash } from "node:crypto";
@@ -181,15 +181,13 @@ test("connected inspection authorizes live links and returns only profiles and p
   const firstTurn = s.db.prepare("SELECT id FROM agent_turns WHERE taskId=?").get(ids[0]) as { id: string };
   const checkin = s.messaging.scheduleCheckIn({ ...s.owner, agentId: "b", taskId: ids[0], turnId: firstTurn.id }, { afterMs: 60000, reason: "Check progress" }, "inspection-checkin");
   const stamp = new Date().toISOString();
-  s.db.prepare("INSERT INTO clusters(id,workspaceId,name,colorSlot,createdAt,updatedAt) VALUES ('team',?,'Research',0,?,?)")
-    .run(s.workspaceId, stamp, stamp);
-  s.db.prepare("UPDATE agents SET clusterId='team' WHERE id='b'").run();
+
   const info = inspect("b");
   assert.ok(Date.parse(info.capturedAt));
   assert.equal(info.agent.id, "b");
   assert.equal(info.agent.instructions, instructions);
   assert.equal(info.agent.revision, 7);
-  assert.deepEqual(info.agent.cluster, { id: "team", name: "Research" });
+  assert.equal(Object.hasOwn(info.agent, "cluster"), false);
   assert.equal(info.agent.modelId, "m");
   assert.ok(info.agent.mediaCapabilities);
   assert.equal(info.total, 12);
@@ -202,7 +200,7 @@ test("connected inspection authorizes live links and returns only profiles and p
   assert.equal(info.tasks[0].nextCheckInAt, (checkin as any).dueAt);
   assert.deepEqual(inspect("b", { offset: 10, limit: 2 }).tasks.map(t => t.id), [ids[2], ids[1]]);
   assert.deepEqual(Object.keys(info).sort(), ["agent", "capturedAt", "limit", "offset", "tasks", "total"]);
-  assert.deepEqual(Object.keys(info.agent).sort(), ["cluster", "id", "instructions", "mediaCapabilities", "modelId", "name", "revision", "state"]);
+  assert.deepEqual(Object.keys(info.agent).sort(), ["id", "instructions", "mediaCapabilities", "modelId", "name", "revision", "state"]);
   assert.deepEqual(Object.keys(info.tasks[0]).sort(), ["id", "nextCheckInAt", "pendingReason", "status", "summary", "summaryTruncated", "title", "updatedAt"]);
   assert.ok(!JSON.stringify(info).includes(chat.taskId!));
   assert.ok(!JSON.stringify(info).includes("Private Chat transcript"));
@@ -222,7 +220,7 @@ test("connected inspection authorizes live links and returns only profiles and p
   s.db.prepare("DELETE FROM deletion_operations WHERE id='deleting-peer'").run();
   const otherWorkspace = randomUUID();
   s.db.prepare("INSERT INTO workspaces(id,name,createdAt,updatedAt) VALUES (?,'Other',?,?)").run(otherWorkspace, stamp, stamp);
-  s.db.prepare("UPDATE agents SET workspaceId=?,clusterId=NULL WHERE id='b'").run(otherWorkspace);
+  s.db.prepare("UPDATE agents SET workspaceId=? WHERE id='b'").run(otherWorkspace);
   assert.throws(() => inspect("b"), /active connection/);
   s.db.prepare("DELETE FROM agents WHERE id='b'").run();
   assert.throws(() => inspect("b"), /active connection/);
@@ -816,12 +814,6 @@ test("v13 upgrade preserves populated records and stable paths while backfilling
   const stamp = new Date().toISOString();
   s.db
     .prepare(
-      "INSERT INTO clusters(id,workspaceId,name,colorSlot,createdAt,updatedAt) VALUES ('department',?,'Original department',3,?,?)",
-    )
-    .run(s.workspaceId, stamp, stamp);
-  s.db.prepare("UPDATE agents SET clusterId='department' WHERE id='a'").run();
-  s.db
-    .prepare(
       "INSERT INTO agent_memories(id,agentId,key,content,kind,sources,createdAt,updatedAt) VALUES ('memory','a','topic','Preserved finding','finding','[]',?,?)",
     )
     .run(stamp, stamp);
@@ -831,11 +823,9 @@ test("v13 upgrade preserves populated records and stable paths while backfilling
     )
     .run();
   s.db.prepare("UPDATE app_settings SET activeThemeId='dark-mode'").run();
-  await s.files.repair("cluster", "department");
   const tables = [
     "agents",
     "agent_memories",
-    "clusters",
     "managed_locations",
     "app_settings",
     "model_presets",
@@ -867,7 +857,7 @@ test("v13 upgrade preserves populated records and stable paths while backfilling
       );
     else assert.deepEqual(rows, retained[table], table);
   }
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 25);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 26);
   assert.deepEqual(
     (upgraded.prepare("SELECT content FROM agent_messages").all() as any[]).map(
       (r) => r.content,
@@ -2765,12 +2755,13 @@ test("v20 routing upgrade preserves existing check-ins and installs missing rout
   await s.engine.close();
   await s.messaging.close();
   removeCommunicationAnchors(s.db);
+  restoreClusters(s.db);
   s.db.exec(
     "DROP INDEX communication_deliveries_turn; DROP TABLE message_transits; ALTER TABLE task_checkins DROP COLUMN returnEnvelope; ALTER TABLE agent_requests DROP COLUMN returnEnvelope; PRAGMA user_version=20",
   );
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 25);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 26);
     const row = upgraded
       .prepare("SELECT * FROM task_checkins WHERE id=?")
       .get(reminder.checkinId) as any;
@@ -2936,6 +2927,7 @@ test("one connection permits independent requests and notifications from either 
 async function restoreDirectedLinks(s: Awaited<ReturnType<typeof setup>>) {
   await s.messaging.close();
   removeCommunicationAnchors(s.db);
+  restoreClusters(s.db);
   s.db.exec("DROP INDEX communication_deliveries_turn; DROP TABLE message_transits; DROP INDEX communication_pair; DROP INDEX communication_target; PRAGMA user_version=21");
 }
 function insertReverseLink(s: Awaited<ReturnType<typeof setup>>, id: string) {
@@ -2944,7 +2936,7 @@ function insertReverseLink(s: Awaited<ReturnType<typeof setup>>, id: string) {
 function upgradeLinks(s: Awaited<ReturnType<typeof setup>>) {
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 25);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 26);
     assert.deepEqual(upgraded.pragma("foreign_key_check"), []);
     assert.deepEqual(upgraded.pragma("integrity_check"), [{ integrity_check: "ok" }]);
   } finally {
@@ -3246,10 +3238,11 @@ test("v22 upgrade preserves old messages without adding retrospective transmissi
   arrive(s);
   await s.messaging.close();
   removeCommunicationAnchors(s.db);
+  restoreClusters(s.db);
   s.db.exec("DROP INDEX communication_deliveries_turn; DROP TABLE message_transits; PRAGMA user_version=22");
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 25);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 26);
     assert.equal((upgraded.prepare("SELECT count(*) n FROM message_transits").get() as any).n, 0);
     assert.equal((upgraded.prepare("SELECT content FROM communication_messages WHERE id=?").get(sent.messageId) as any).content, "Old message");
     assert.deepEqual(upgraded.pragma("foreign_key_check"), []);

@@ -52,7 +52,7 @@ function fixture() {
     create: async (...args) => { calls.push(["create", ...args]); }, save: async (...args) => { calls.push(["save", ...args]); } });
   return { nodes, calls, store };
 }
-test("radial geometry projects onto the circle, normalizes angles, and follows absolute Cluster coordinates", () => {
+test("radial geometry projects onto the circle, normalizes angles, and follows absolute canvas coordinates", () => {
   const center = ringCenter({ x: 300 + 24, y: 100 + 72 });
   assert.deepEqual(center, { x: 412, y: 284 });
   for (const angle of [0, 25.5, 90, 180, 270, 359.9]) {

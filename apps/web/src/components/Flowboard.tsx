@@ -30,9 +30,7 @@ import { AgentPanel, AgentForm } from "./AgentPanel";
 import { Dialog } from "./Dialog";
 import { refreshOnFocus } from "../focus-refresh";
 import { useNavigationGuard } from "../navigation-guard";
-import { AgentNode, ClusterNode } from "./CanvasNodes";
-import { ClusterPanel } from "./ClusterPanel";
-import { dropCluster } from "../canvas-layout";
+import { AgentNode } from "./CanvasNodes";
 import { errorMessage } from "../api";
 import { useSettings } from "../settings-store";
 import { useDashboard } from "../store";
@@ -42,7 +40,7 @@ import { GlassMaterial } from "./GlassMaterial";
 import { Appearance } from "./Appearance";
 
 const edgeTypes = { communication: CommunicationEdge };
-const nodeTypes = { agent: AgentNode, cluster: ClusterNode };
+const nodeTypes = { agent: AgentNode };
 const defaultViewport: Viewport = { x: 0, y: 0, zoom: 1 };
 
 function ViewControls() {
@@ -231,54 +229,10 @@ function Board({ workspaceId }: { workspaceId: string }) {
     },
     [agentStore, workspaceId, guard],
   );
-  const absolutePosition = useCallback(
-    (node: WorkspaceFlowNode) => {
-      const parent = node.parentId
-        ? agentStore.getState().clusters[node.parentId]
-        : undefined;
-      return {
-        x: node.position.x + (parent?.x ?? 0),
-        y: node.position.y + (parent?.y ?? 0),
-      };
-    },
-    [agentStore],
-  );
-  const handleNodeDrag = useCallback(
-    (_event: MouseEvent | TouchEvent, node: WorkspaceFlowNode) => {
-      if (node.type !== "agent") return;
-      const p = absolutePosition(node),
-        groups = Object.values(agentStore.getState().clusters).filter(
-          (c) => c.workspaceId === workspaceId,
-        );
-      const target = dropCluster(groups, p.x, p.y);
-      if (agentStore.getState().dropTarget !== target)
-        agentStore.setState({ dropTarget: target });
-    },
-    [absolutePosition, agentStore, workspaceId],
-  );
   const handleNodeDragStop = useCallback(
     (_event: MouseEvent | TouchEvent, node: WorkspaceFlowNode) => {
       const generation = dragging.current;
-      const p = absolutePosition(node),
-        state = agentStore.getState();
-      const action =
-        node.type === "cluster"
-          ? state.updateCluster(node.id, {
-              x: node.position.x,
-              y: node.position.y,
-            })
-          : state.moveAgent(
-              node.id,
-              p.x,
-              p.y,
-              dropCluster(
-                Object.values(state.clusters).filter(
-                  (c) => c.workspaceId === workspaceId,
-                ),
-                p.x,
-                p.y,
-              ),
-            );
+      const action = agentStore.getState().moveAgent(node.id, node.position.x, node.position.y);
       void action
         .catch((e) => agentStore.setState({ positionError: errorMessage(e) }))
         .finally(() => {
@@ -288,7 +242,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
           setNodes(agentStore.getState().nodes[workspaceId] ?? emptyNodes);
         });
     },
-    [agentStore, absolutePosition, workspaceId, setNodes],
+    [agentStore, workspaceId, setNodes],
   );
   const mode = useSettings((state) => state.snapshot.activeTheme.mode);
   const viewport = useDashboard((state) => state.viewports[workspaceId]);
@@ -302,13 +256,6 @@ function Board({ workspaceId }: { workspaceId: string }) {
     [endInteraction, workspaceId],
   );
   const { setViewport, getViewport } = useReactFlow();
-  const clusterPosition = useMemo(
-    () => ({
-      x: (-viewport!.x + 240) / viewport!.zoom,
-      y: (-viewport!.y + 240) / viewport!.zoom,
-    }),
-    [viewport],
-  );
   const applying = useRef(false);
   useEffect(() => {
     if (!viewport) return;
@@ -351,7 +298,6 @@ function Board({ workspaceId }: { workspaceId: string }) {
         onNodeDragStart={() => {
           dragging.current = agentStore.getState().beginCanvasInteraction();
         }}
-        onNodeDrag={handleNodeDrag}
         onNodeDragStop={handleNodeDragStop}
         nodesDraggable
         nodesFocusable={false}
@@ -394,7 +340,6 @@ function Board({ workspaceId }: { workspaceId: string }) {
         </Appearance>
       )}
       {editor?.workspaceId===workspaceId&&<PermissionEditor key={`${editor.linkId??editor.sourceAgentId??"new"}`} workspaceId={workspaceId}/>}
-      <ClusterPanel workspaceId={workspaceId} position={clusterPosition} />
       {selected && (
         <AgentPanel
           key={selected.id}

@@ -246,7 +246,6 @@ export interface Agent {
   workspaceId: string;
   name: string;
   instructions: string;
-  clusterId: string | null;
   presetId: string | null;
   x: number;
   y: number;
@@ -340,20 +339,7 @@ export interface TaskDetail {
   turns: AgentTurn[];
 }
 
-export interface Cluster {
-  id: string;
-  workspaceId: string;
-  name: string;
-  description: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  colorSlot: number;
-  createdAt: string;
-  updatedAt: string;
-}
-export type LocationKind = "workspace" | "cluster" | "agent" | "task";
+export type LocationKind = "workspace" | "agent" | "task";
 export interface ManagedLocation {
   id: string;
   kind: LocationKind;

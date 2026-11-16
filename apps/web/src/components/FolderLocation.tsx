@@ -6,10 +6,9 @@ import type {
 import { useAgents, useAgentStore } from "../agent-store";
 import { request, errorMessage } from "../api";
 import { refreshOnFocus } from "../focus-refresh";
-import styles from "./Clusters.module.scss";
+import styles from "./ManagedFiles.module.scss";
 const segments = {
   workspace: "workspaces",
-  cluster: "clusters",
   agent: "agents",
   task: "tasks",
 };

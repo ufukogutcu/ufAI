@@ -1,4 +1,3 @@
-import catalog from "@ufai/character-catalog" with { type: "json" };
 import { generateAppearance, validateAppearance, workspaceAppearanceCounts } from "./agent-appearance.js";
 import { assertAgentNameAvailable, generateAgentName, workspaceAgentNameKeys } from "./agent-names.js";
 import { randomUUID } from "node:crypto";
@@ -66,7 +65,6 @@ export function registerAgents(
       "presetId",
       "x",
       "y",
-      "clusterId",
       "appearance",
       ...(existing ? ["expectedRevision"] : []),
     ]);
@@ -74,7 +72,6 @@ export function registerAgents(
       name: "",
       instructions: "",
       presetId: null,
-      clusterId: null,
       x: 0,
       y: 0,
       ...existing,
@@ -147,42 +144,13 @@ export function registerAgents(
           .get() as { id: string } | undefined;
         v.presetId = preset?.id ?? null;
       }
-      if (v.clusterId !== null) {
-        if (typeof v.clusterId !== "string")
-          invalid("clusterId", "Choose a Cluster in this workspace.");
-        const c = db
-          .prepare("SELECT * FROM clusters WHERE id=?")
-          .get(v.clusterId) as
-          | {
-              workspaceId: string;
-              x: number;
-              y: number;
-              width: number;
-              height: number;
-            }
-          | undefined;
-        if (!c || c.workspaceId !== req.params.id)
-          invalid("clusterId", "Choose a Cluster in this workspace.");
-        if (
-          c &&
-          (v.x + catalog.node.width / 2 < c.x ||
-            v.x + catalog.node.width / 2 > c.x + c.width ||
-            v.y + catalog.node.height / 2 < c.y + catalog.node.clusterHeader ||
-            v.y + catalog.node.height / 2 > c.y + c.height)
-        )
-          invalid(
-            "clusterId",
-            "Place the agent inside the Cluster content area.",
-          );
-        files.assertAvailable(req.params.id, undefined, v.clusterId);
-      }
       v.appearance ??= generateAppearance(workspaceAppearanceCounts(db, req.params.id));
       const id = randomUUID(),
         ts = time();
       db.transaction(() => {
         assertAgentNameAvailable(db, req.params.id, v.name);
         db.prepare(
-          "INSERT INTO agents(id,workspaceId,name,instructions,presetId,x,y,clusterId,appearance,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+          "INSERT INTO agents(id,workspaceId,name,instructions,presetId,x,y,appearance,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)",
         ).run(
           id,
           req.params.id,
@@ -191,7 +159,6 @@ export function registerAgents(
           v.presetId,
           v.x,
           v.y,
-          v.clusterId,
           JSON.stringify(v.appearance),
           ts,
           ts,
@@ -218,46 +185,19 @@ export function registerAgents(
   app.patch<{ Params: { id: string } }>("/api/agents/:id", async (req) => {
     const old = execution.requiredAgent(req.params.id);
     const v = validate(req.body, old);
-    if (v.clusterId !== null) {
-      if (typeof v.clusterId !== "string")
-        invalid("clusterId", "Choose a Cluster in this workspace.");
-      const c = db
-        .prepare("SELECT * FROM clusters WHERE id=?")
-        .get(v.clusterId) as
-        | {
-            workspaceId: string;
-            x: number;
-            y: number;
-            width: number;
-            height: number;
-          }
-        | undefined;
-      if (!c || c.workspaceId !== old.workspaceId)
-        invalid("clusterId", "Choose a Cluster in this workspace.");
-      if (
-        c &&
-        (v.x + catalog.node.width / 2 < c.x ||
-          v.x + catalog.node.width / 2 > c.x + c.width ||
-          v.y + catalog.node.height / 2 < c.y + catalog.node.clusterHeader ||
-          v.y + catalog.node.height / 2 > c.y + c.height)
-      )
-        invalid("clusterId", "Drop the agent inside the Cluster content area.");
-    }
-    files.assertAvailable(old.workspaceId, old.id, old.clusterId);
-    files.assertAvailable(old.workspaceId, old.id, v.clusterId);
+    files.assertAvailable(old.workspaceId, old.id);
     db.transaction(() => {
       if (["name", "instructions", "presetId"].some(key => Object.hasOwn(req.body as object, key))) {
         assertAgentNameAvailable(db, old.workspaceId, v.name, old.id);
       }
       db.prepare(
-        "UPDATE agents SET name=?,instructions=?,presetId=?,x=?,y=?,clusterId=?,appearance=?,revision=revision+?,updatedAt=? WHERE id=?",
+        "UPDATE agents SET name=?,instructions=?,presetId=?,x=?,y=?,appearance=?,revision=revision+?,updatedAt=? WHERE id=?",
       ).run(
         v.name,
         v.instructions,
         v.presetId,
         v.x,
         v.y,
-        v.clusterId,
         JSON.stringify(v.appearance),
         Number(
           v.name !== old.name ||

@@ -466,17 +466,10 @@ export class MessagingService {
         } catch {
           /* Discovery remains usable without a configured model. */
         }
-        const c = a.clusterId
-          ? (this.db
-              .prepare("SELECT name FROM clusters WHERE id=?")
-              .get(a.clusterId) as any)
-          : null;
         return {
           id,
           name: a.name,
           description: a.instructions.slice(0, 500),
-          clusterId: a.clusterId,
-          clusterName: c?.name ?? null,
           state: a.state,
           modelId,
           mediaCapabilities: capabilities,
@@ -505,9 +498,7 @@ export class MessagingService {
     } catch {
       // A collaborator remains inspectable while its model is unconfigured.
     }
-    const cluster = a.clusterId
-      ? this.db.prepare("SELECT id,name FROM clusters WHERE id=?").get(a.clusterId) ?? null
-      : null;
+
     const offset = args.offset ?? 0, limit = args.limit ?? 10;
     const tasks = this.db.prepare(`SELECT id,title,status,pendingReason,
       (SELECT min(dueAt) FROM task_checkins WHERE taskId=t.id AND state='scheduled') AS nextCheckInAt,
@@ -520,7 +511,7 @@ export class MessagingService {
     const total = (this.db.prepare("SELECT count(*) AS n FROM agent_tasks WHERE agentId=? AND kind='task'").get(a.id) as { n: number }).n;
     return {
       capturedAt: now(),
-      agent: { id: a.id, name: a.name, instructions: a.instructions, revision: a.revision, cluster, state: a.state, modelId, mediaCapabilities },
+      agent: { id: a.id, name: a.name, instructions: a.instructions, revision: a.revision, state: a.state, modelId, mediaCapabilities },
       tasks: tasks.map(t => ({ ...t, summaryTruncated: Boolean(t.summaryTruncated) })),
       total, offset, limit,
     };

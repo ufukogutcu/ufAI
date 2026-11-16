@@ -1,4 +1,3 @@
-import { clusterColors } from "../cluster-colors";
 import { useSettings } from "../settings-store";
 import {
   useEffect,
@@ -265,11 +264,6 @@ function ThemePreview({
                     </foreignObject>
                   </svg>
                   <div className={styles.agentPanelSample}>Agent conversation</div>
-                  <div className={styles.clusterSample}>
-                    <strong>Research Cluster</strong>
-                    <span className={styles.clusterDropSample}>Drop an agent here</span>
-                    <div className={styles.clusterPalette}>{clusterColors.map((color,i)=><span key={color} title={`Cluster color ${i+1}`} style={{background:color}}/>)}</div>
-                  </div>
                   <pre className={styles.terminalSample}>$ build report{'\n'}Report saved · exit 0</pre>
                   <svg width="100" height="32" role="img" aria-label="Communication link and message envelope preview">
                     <path d="M4 12H96" stroke="var(--communication-edge)" strokeWidth="2" />

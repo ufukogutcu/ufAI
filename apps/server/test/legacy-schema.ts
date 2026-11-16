@@ -1,8 +1,10 @@
+import { migrateLocations } from "../src/locations-schema.js";
 import assert from "node:assert/strict";
 import { validateAppearance } from "../src/agent-appearance.js";
 import type Database from "better-sqlite3";
 
 export function removeCommunicationAnchors(database: Database.Database) {
+  restoreClusters(database);
   const columns = database.pragma("table_info(communication_links)") as { name: string }[];
   for (const name of ["sourceAnchorAngle", "targetAnchorAngle"])
     if (columns.some(column => column.name === name)) database.exec(`ALTER TABLE communication_links DROP COLUMN ${name}`);
@@ -170,6 +172,22 @@ export function assertCharacterUpgrade(actual: any, previous: any) {
       JSON.parse(actual.appearance),
     );
   const { appearance: _actual, ...after } = actual;
-  const { appearance: _previous, ...before } = previous;
+  const { appearance: _previous, clusterId: _membership, ...before } = previous;
   assert.deepEqual(after, { ...before, x: before.x + 24, y: before.y - 60 });
+}
+
+/** Reconstruct v25 storage before assembling an older upgrade fixture. */
+export function restoreClusters(database: Database.Database) {
+  if (database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='clusters'").get()) return;
+  const locations = database.prepare("SELECT * FROM managed_locations").all() as Record<string, unknown>[];
+  const deletions = database.prepare("SELECT * FROM deletion_operations").all() as Record<string, unknown>[];
+  const storage = database.prepare("SELECT installationId FROM managed_storage").get() as { installationId: string };
+  for (const table of ["workspaces", "agents", "agent_tasks"])
+    database.exec(`DROP TRIGGER ${table}_location_insert; DROP TRIGGER ${table}_location_delete;`);
+  database.exec("DROP TABLE managed_locations; DROP TABLE deletion_operations; DROP TABLE managed_storage; DROP TABLE managed_path_cleanup;");
+  migrateLocations(database);
+  database.prepare("UPDATE managed_storage SET installationId=?").run(storage.installationId);
+  database.exec("DELETE FROM managed_locations");
+  for (const [table, rows] of [["managed_locations", locations], ["deletion_operations", deletions]] as const)
+    for (const row of rows) database.prepare(`INSERT INTO ${table} (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
 }

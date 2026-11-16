@@ -9,7 +9,6 @@ import { workspaceNodes } from "./canvas-layout";
 import type { WorkspaceFlowNode } from "./canvas-layout";
 export type {
   AgentFlowNode,
-  ClusterFlowNode,
   WorkspaceFlowNode,
 } from "./canvas-layout";
 import { deleteManaged } from "./managed-files";
@@ -20,7 +19,6 @@ import type {
   ArtifactVersion,
   OwnedProcess,
   ExecutionItem,
-  Cluster,
   DeletionOperation,
   ManagedLocation,
   AgentTask,
@@ -78,27 +76,16 @@ interface AgentState {
     kind: "processes" | "artifacts",
   ) => Promise<void>;
   agents: Record<string, Agent>;
-  clusters: Record<string, Cluster>;
   deletions: Record<string, DeletionOperation[]>;
   locations: Record<string, ManagedLocation>;
-  dropTarget: string | null;
   canvasInteracting: boolean;
   canvasGeneration: number;
   beginCanvasInteraction: () => number;
   endCanvasInteraction: (generation: number) => void;
-  createClusterIn: string | null;
-  selectedCluster: string | null;
-  createCluster: (
-    workspaceId: string,
-    input: { name: string; description: string; x: number; y: number },
-  ) => Promise<Cluster>;
-  updateCluster: (id: string, input: Partial<Cluster>) => Promise<void>;
-  removeCluster: (id: string) => Promise<void>;
   moveAgent: (
     id: string,
     x: number,
     y: number,
-    clusterId: string | null,
   ) => Promise<void>;
   nodes: Record<string, WorkspaceFlowNode[]>;
   tasks: Record<string, AgentTask[]>;
@@ -122,7 +109,7 @@ interface AgentState {
   timelineVersion: number;
   error: string;
   connected: boolean;
-  loadWorkspace: (id: string, layoutMutation?: boolean) => Promise<void>;
+  loadWorkspace: (id: string) => Promise<void>;
   refreshAgent: (id: string) => Promise<void>;
   loadMessages: (
     agentId: string,
@@ -148,7 +135,6 @@ interface AgentState {
     id: string,
     x: number,
     y: number,
-    clusterId?: string | null,
   ) => Promise<void>;
   retryPositions: () => Promise<void>;
   setDraft: (key: string, value: string) => void;
@@ -179,7 +165,6 @@ export function createAgentStore() {
   let anchorRevision = 0;
   const anchorRevisions = new Map<string, number>();
   const pendingRefresh = new Set<string>();
-  const layoutRefresh = new Set<string>();
   // Execution changes do not increment the saved agent revision. Order runtime
   // snapshots independently so a slower read or position save cannot rewind them.
   let snapshotSequence = 0;
@@ -188,10 +173,8 @@ export function createAgentStore() {
     positionWrites = new Map<string, Promise<void>>();
   const pendingPositions = new Map<
     string,
-    { x: number; y: number; clusterId?: string | null }
+    { x: number; y: number }
   >();
-  const clusterWrites = new Map<string, Promise<void>>();
-  const pendingClusterLayouts = new Map<string, Partial<Cluster>>();
   const revisions = new Map<string, number>();
   return createStore<AgentState>((set, get) => {
     function reconcileAgent(
@@ -228,7 +211,6 @@ export function createAgentStore() {
           ...next,
           x: existing.x,
           y: existing.y,
-          clusterId: existing.clusterId,
         };
       return equal(existing, next) ? existing! : next;
     }
@@ -245,9 +227,6 @@ export function createAgentStore() {
       const nodes = workspaceNodes(
         Object.values(agents).filter(
           (a) => a.workspaceId === agent.workspaceId,
-        ),
-        Object.values(state.clusters).filter(
-          (c) => c.workspaceId === agent.workspaceId,
         ),
         old,
       );
@@ -279,16 +258,6 @@ export function createAgentStore() {
         } while (pendingRefresh.has(key));
       });
     }
-    async function writeCluster(id: string, input: Partial<Cluster>) {
-      const cluster = await request<Cluster>(`/clusters/${id}`, "PATCH", input);
-      revisions.set(
-        cluster.workspaceId,
-        (revisions.get(cluster.workspaceId) ?? 0) + 1,
-      );
-      set((s) => ({ clusters: { ...s.clusters, [id]: cluster } }));
-      await loads.get(`workspace:${cluster.workspaceId}`);
-      await get().loadWorkspace(cluster.workspaceId, true);
-    }
     return {
       agents: {},
       chats: {},
@@ -301,7 +270,6 @@ export function createAgentStore() {
           return { fileDrafts: drafts };
         });
       },
-      dropTarget: null,
       canvasInteracting: false,
       canvasGeneration: 0,
       beginCanvasInteraction() {
@@ -309,93 +277,20 @@ export function createAgentStore() {
         set({
           canvasGeneration: generation,
           canvasInteracting: true,
-          dropTarget: null,
         });
         return generation;
       },
       endCanvasInteraction(generation) {
         if (get().canvasGeneration === generation)
-          set({ canvasInteracting: false, dropTarget: null });
+          set({ canvasInteracting: false });
       },
-      clusters: {},
       deletions: {},
       locations: {},
-      createClusterIn: null,
-      selectedCluster: null,
-      async createCluster(workspaceId, input) {
-        const cluster = await request<Cluster>(
-          `/workspaces/${workspaceId}/clusters`,
-          "POST",
-          input,
-        );
-        revisions.set(workspaceId, (revisions.get(workspaceId) ?? 0) + 1);
-        set((s) => ({ clusters: { ...s.clusters, [cluster.id]: cluster } }));
-        await loads.get(`workspace:${workspaceId}`);
-        await get().loadWorkspace(workspaceId);
-        return cluster;
-      },
-      async updateCluster(id, input) {
-        const layout =
-          Object.keys(input).length > 0 &&
-          Object.keys(input).every((key) =>
-            ["x", "y", "width", "height"].includes(key),
-          );
-        if (!layout) {
-          await clusterWrites.get(id)?.catch(() => {});
-          return writeCluster(id, input);
-        }
-        pendingClusterLayouts.set(id, {
-          ...pendingClusterLayouts.get(id),
-          ...input,
-        });
-        const existing = clusterWrites.get(id);
-        if (existing) return existing;
-        const write = (async () => {
-          while (pendingClusterLayouts.has(id)) {
-            const patch = pendingClusterLayouts.get(id)!;
-            pendingClusterLayouts.delete(id);
-            try {
-              await writeCluster(id, patch);
-            } catch (e) {
-              if (!(
-                e instanceof RequestError &&
-                e.status &&
-                e.status >= 400 &&
-                e.status < 500
-              ))
-                pendingClusterLayouts.set(id, {
-                  ...patch,
-                  ...pendingClusterLayouts.get(id),
-                });
-              set({ positionError: errorMessage(e) });
-              throw e;
-            }
-          }
-          if (!pendingPositions.size && !pendingClusterLayouts.size && !pendingAnchors.size)
-            set({ positionError: "" });
-        })().finally(() => clusterWrites.delete(id));
-        clusterWrites.set(id, write);
-        return write;
-      },
-      async removeCluster(id) {
-        const cluster = get().clusters[id];
-        await deleteManaged(`/clusters/${id}`);
-        pendingClusterLayouts.delete(id);
-        if (cluster) {
-          revisions.set(
-            cluster.workspaceId,
-            (revisions.get(cluster.workspaceId) ?? 0) + 1,
-          );
-          set({ selectedCluster: null });
-          await loads.get(`workspace:${cluster.workspaceId}`);
-          await get().loadWorkspace(cluster.workspaceId, true);
-        }
-      },
-      async moveAgent(id, x, y, clusterId) {
+      async moveAgent(id, x, y) {
         const agent = get().agents[id];
         if (!agent) return;
         try {
-          await get().position(id, x, y, clusterId);
+          await get().position(id, x, y);
         } catch (e) {
           set({ positionError: errorMessage(e) });
           throw e;
@@ -540,7 +435,7 @@ export function createAgentStore() {
               throw e;
             }
           }
-          if (!pendingPositions.size && !pendingClusterLayouts.size && !pendingAnchors.size)
+          if (!pendingPositions.size && !pendingAnchors.size)
             set({ positionError: "" });
         })().finally(() => {
           anchorWrites.delete(id);
@@ -666,10 +561,8 @@ export function createAgentStore() {
       timelineVersion: 0,
       error: "",
       connected: true,
-      async loadWorkspace(id, layoutMutation = false) {
-        if (layoutMutation) layoutRefresh.add(id);
+      async loadWorkspace(id) {
         return refresh(`workspace:${id}`, async () => {
-          const applyLayout = layoutRefresh.delete(id);
           try {
             const version = revisions.get(id) ?? 0;
             async function all<T>(path: string) {
@@ -693,19 +586,14 @@ export function createAgentStore() {
             );
             set((s) => ({ deletions: { ...s.deletions, [id]: deletions } }));
             const sequence = ++snapshotSequence;
-            const [allAgents, allClusters] = await Promise.all([
-              all<Agent>(`/workspaces/${id}/agents`),
-              all<Cluster>(`/workspaces/${id}/clusters`),
-            ]);
+            const allAgents = await all<Agent>(`/workspaces/${id}/agents`);
             set((state) => {
               const invalidated = (revisions.get(id) ?? 0) !== version;
               const preserveLayout =
                 invalidated ||
-                (state.canvasInteracting && !applyLayout);
-              const agents = { ...state.agents },
-                clusters = { ...state.clusters };
-              const ids = new Set(allAgents.map((a) => a.id)),
-                cids = new Set(allClusters.map((c) => c.id));
+                state.canvasInteracting;
+              const agents = { ...state.agents };
+              const ids = new Set(allAgents.map((a) => a.id));
               for (const a of Object.values(agents))
                 if (
                   !preserveLayout &&
@@ -713,41 +601,25 @@ export function createAgentStore() {
                   !ids.has(a.id) &&
                   sequence >= (activitySequences.get(a.id) ?? 0)
                 ) delete agents[a.id];
-              for (const c of Object.values(clusters))
-                if (!preserveLayout && c.workspaceId === id && !cids.has(c.id))
-                  delete clusters[c.id];
               for (const a of allAgents)
                 if (!preserveLayout || agents[a.id])
                   agents[a.id] = reconcileAgent(
                     agents[a.id], a, sequence,
                     preserveLayout || layoutPending(a.id), invalidated,
                   );
-              for (const c of allClusters)
-                if (
-                  !preserveLayout &&
-                  !clusterWrites.has(c.id) &&
-                  !pendingClusterLayouts.has(c.id)
-                )
-                  clusters[c.id] = equal(clusters[c.id], c) ? clusters[c.id]! : c;
               const old = state.nodes[id] ?? emptyNodes;
               const nodes = workspaceNodes(
                 Object.values(agents).filter((a) => a.workspaceId === id),
-                Object.values(clusters).filter((c) => c.workspaceId === id),
                 old,
               );
               return {
                 agents,
-                clusters,
                 nodes:
                   nodes === old ? state.nodes : { ...state.nodes, [id]: nodes },
                 selected:
                   state.selected[id] && !agents[state.selected[id]!]
                     ? { ...state.selected, [id]: null }
                     : state.selected,
-                selectedCluster:
-                  state.selectedCluster && !clusters[state.selectedCluster]
-                    ? null
-                    : state.selectedCluster,
                 error: "",
               };
             });
@@ -889,15 +761,14 @@ export function createAgentStore() {
           }));
         }
       },
-      async position(id, x, y, clusterId) {
+      async position(id, x, y) {
         const a = get().agents[id];
         if (!a) return;
         pendingPositions.set(id, {
           x,
           y,
-          ...(clusterId === undefined ? {} : { clusterId }),
         });
-        put({ ...a, x, y, ...(clusterId === undefined ? {} : { clusterId }) });
+        put({ ...a, x, y });
         const running = positionWrites.get(id);
         if (running) return running;
         const write = (async () => {
@@ -916,7 +787,7 @@ export function createAgentStore() {
                 (revisions.get(a.workspaceId) ?? 0) + 1,
               );
               put(saved, sequence, pendingPositions.has(id));
-              if (!pendingPositions.size && !pendingClusterLayouts.size && !pendingAnchors.size)
+              if (!pendingPositions.size && !pendingAnchors.size)
                 set({ positionError: "" });
             } catch (e) {
               if (!pendingPositions.has(id)) pendingPositions.set(id, value);
@@ -933,15 +804,8 @@ export function createAgentStore() {
           try { await get().saveCommunicationAnchors(patch.workspaceId, id, patch.anchors); }
           catch { /* Retain retryable angles and the visible error. */ }
         }
-        for (const [id, patch] of [...pendingClusterLayouts]) {
-          try {
-            await get().updateCluster(id, patch);
-          } catch {
-            /* Keep the retryable layout and visible error. */
-          }
-        }
         for (const [id, p] of [...pendingPositions])
-          await get().position(id, p.x, p.y, p.clusterId);
+          await get().position(id, p.x, p.y);
       },
       submissionId(key, content) {
         const prior = get().submissionIds[key];

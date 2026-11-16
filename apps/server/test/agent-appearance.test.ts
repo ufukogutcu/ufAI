@@ -1,3 +1,4 @@
+import { restoreClusters } from "./legacy-schema.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -110,30 +111,13 @@ test("agent appearance API isolates workspaces, permits manual duplicates and pr
   assert.equal(changed.revision, modern.revision);
   assert.deepEqual((await app.inject(`/api/agents/${modern.id}`)).json<Agent>().appearance, changed.appearance);
   assert.equal((await app.inject("/api/workspaces/missing/agents/appearance-suggestion")).statusCode, 404);
-  const cluster = (await app.inject({ method: "POST", url: `/api/workspaces/${workspace}/clusters`, payload: { name: "Boundary", x: 0, y: 0, width: 320, height: 200 } })).json();
-  const boundary = await create(workspace, { name: "At content edge", x: -88, y: -64, clusterId: cluster.id });
-  assert.equal(boundary.statusCode, 201, boundary.body);
-  assert.equal((await create(workspace, { name: "Beyond right edge", x: 233, y: 0, clusterId: cluster.id })).statusCode, 400);
-  assert.equal((await app.inject({ method: "PATCH", url: `/api/agents/${boundary.json().id}`, payload: { y: 89 } })).statusCode, 400);
-  assert.equal((await app.inject({ method: "PATCH", url: `/api/clusters/${cluster.id}`, payload: { x: 100, y: 100 } })).statusCode, 200);
-  const moved = (await app.inject(`/api/agents/${boundary.json().id}`)).json<Agent>();
-  assert.deepEqual([moved.x, moved.y, moved.clusterId], [12, 36, cluster.id]);
-  const edge = await create(workspace, { name: "At enlarged-node edge", x: 332, y: 188, clusterId: cluster.id });
-  assert.equal(edge.statusCode, 201, edge.body);
-  assert.equal((await app.inject({ method: "PATCH", url: `/api/agents/${edge.json().id}`, payload: { x: 333 } })).statusCode, 400);
-  assert.equal((await app.inject({ method: "PATCH", url: `/api/agents/${edge.json().id}`, payload: { y: 189 } })).statusCode, 400);
-  // A member fits the larger Cluster but prevents shrinking past its enlarged-node center.
-  assert.equal((await app.inject({ method: "PATCH", url: `/api/clusters/${cluster.id}`, payload: { width: 321, height: 201 } })).statusCode, 200);
-  assert.equal((await app.inject({ method: "PATCH", url: `/api/agents/${edge.json().id}`, payload: { x: 333, y: 189 } })).statusCode, 200);
-  assert.equal((await app.inject({ method: "PATCH", url: `/api/clusters/${cluster.id}`, payload: { width: 320 } })).statusCode, 400);
-  assert.equal((await app.inject({ method: "PATCH", url: `/api/clusters/${cluster.id}`, payload: { height: 200 } })).statusCode, 400);
   const initial = (await app.inject("/api/settings")).json();
   assert.equal(initial.settings.characterAnimationsPaused, false);
   assert.equal((await app.inject({ method: "PATCH", url: "/api/settings", payload: { characterAnimationsPaused: true } })).json().settings.characterAnimationsPaused, true);
   assert.equal((await app.inject({ method: "PATCH", url: "/api/settings", payload: { characterAnimationsPaused: "true" } })).statusCode, 400);
 });
 
-test("migration backfills durable distinct appearances while preserving centers, memberships and work", async t => {
+test("migration backfills durable distinct appearances while preserving centers and work through membership retirement", async t => {
   const dir = await mkdtemp(join(tmpdir(), "ufai-characters-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const path = join(dir, "upgrade.sqlite");
@@ -141,6 +125,7 @@ test("migration backfills durable distinct appearances while preserving centers,
   const workspace = (db.prepare("SELECT id FROM workspaces LIMIT 1").get() as { id: string }).id;
   removeCharacters(db);
   db.pragma("user_version = 15");
+  restoreClusters(db);
   db.prepare("INSERT INTO clusters(id,workspaceId,name,x,y,width,height,colorSlot,createdAt,updatedAt) VALUES ('group',?,'Group',0,0,600,360,0,'then','then')").run(workspace);
   const insert = db.prepare("INSERT INTO agents(id,workspaceId,name,instructions,clusterId,x,y,revision,createdAt,updatedAt) VALUES (?,?,'Agent','Keep instructions','group',100,100,7,'then','then')");
   for (let index = 0; index < 4; index++) insert.run(`agent-${index}`, workspace);
@@ -149,12 +134,12 @@ test("migration backfills durable distinct appearances while preserving centers,
     INSERT INTO agent_turns(id,taskId,conversationId,agentId,inputMessageId,attempt,status,snapshot,createdAt,updatedAt) VALUES ('turn','task','conversation','agent-0','message',1,'queued','{"keep":true}','then','then');`);
   db.close(); db = openDatabase(path);
   const agents = db.prepare("SELECT * FROM agents ORDER BY id").all() as any[];
-  assert.equal(db.pragma("user_version", { simple: true }), 25);
+  assert.equal(db.pragma("user_version", { simple: true }), 26);
   assert.equal(new Set(agents.map(agent => appearanceKey(JSON.parse(agent.appearance)))).size, 4);
   for (const agent of agents) {
     assert.equal(agent.x + 176 / 2, 100 + 224 / 2);
     assert.equal(agent.y + 224 / 2, 100 + 104 / 2);
-    assert.equal(agent.clusterId, "group"); assert.equal(agent.revision, 7);
+    assert.equal(Object.hasOwn(agent, "clusterId"), false); assert.equal(agent.revision, 7);
     assert.equal(agent.instructions, "Keep instructions"); assert.equal(agent.updatedAt, "then");
   }
   assert.equal((db.prepare("SELECT snapshot FROM agent_turns WHERE id='turn'").get() as any).snapshot, '{"keep":true}');
@@ -171,6 +156,7 @@ test("compact geometry upgrades version 16 once, preserving metadata and clampin
   const path = join(dir, "upgrade.sqlite");
   let db = openDatabase(path);
   const workspace = (db.prepare("SELECT id FROM workspaces LIMIT 1").get() as { id: string }).id;
+  restoreClusters(db);
   db.prepare("INSERT INTO clusters(id,workspaceId,name,x,y,width,height,colorSlot,createdAt,updatedAt) VALUES ('group',?,'Group',0,0,320,200,0,'then','then')").run(workspace);
   const insert = db.prepare("INSERT INTO agents(id,workspaceId,name,clusterId,x,y,revision,createdAt,updatedAt) VALUES (?,?,'Agent',?,?,0,7,'then','then')");
   for (const [id, x, clusterId] of [["left-edge", -104, "group"], ["right-edge", 216, "group"], ["upper-limit", 1e6, null], ["lower-limit", -1e6, null]] as const)
@@ -180,10 +166,11 @@ test("compact geometry upgrades version 16 once, preserving metadata and clampin
   db.pragma("user_version = 16");
   db.close(); db = openDatabase(path);
   const after = db.prepare("SELECT * FROM agents ORDER BY id").all() as any[];
-  assert.equal(db.pragma("user_version", { simple: true }), 25);
+  assert.equal(db.pragma("user_version", { simple: true }), 26);
   for (let i = 0; i < before.length; i++) {
     const expectedX = Math.max(-1e6, Math.min(1e6, before[i].x + 32) - 16);
-    assert.deepEqual(after[i], { ...before[i], x: expectedX, y: -16 });
+    const { clusterId: _membership, ...retained } = before[i];
+    assert.deepEqual(after[i], { ...retained, x: expectedX, y: -16 });
     if (before[i].id !== "upper-limit") assert.equal(after[i].x + 88, before[i].x + 104);
   }
   db.close(); db = openDatabase(path);
@@ -197,6 +184,7 @@ test("larger character geometry upgrades version 23 once, preserving centers and
   const path = join(dir, "upgrade.sqlite");
   let db = openDatabase(path);
   const workspace = (db.prepare("SELECT id FROM workspaces LIMIT 1").get() as { id: string }).id;
+  restoreClusters(db);
   db.prepare("INSERT INTO clusters(id,workspaceId,name,x,y,width,height,colorSlot,createdAt,updatedAt) VALUES ('group',?,'Group',0,0,320,200,0,'then','then')").run(workspace);
   const insert = db.prepare("INSERT INTO agents(id,workspaceId,name,instructions,clusterId,x,y,revision,createdAt,updatedAt) VALUES (?,?,'Agent','Keep instructions',?,?,?,7,'then','then')");
   for (const [id, x, y, clusterId] of [
@@ -207,20 +195,20 @@ test("larger character geometry upgrades version 23 once, preserving centers and
     ["near-limit", -999990, -999985, null],
   ] as const) insert.run(id, workspace, clusterId, x, y);
   const before = db.prepare("SELECT * FROM agents ORDER BY id").all() as any[];
-  const cluster = db.prepare("SELECT * FROM clusters WHERE id='group'").get();
   removeCommunicationAnchors(db);
   db.pragma("user_version = 23");
   db.close(); db = openDatabase(path);
   const after = db.prepare("SELECT * FROM agents ORDER BY id").all() as any[];
-  assert.equal(db.pragma("user_version", { simple: true }), 25);
+  assert.equal(db.pragma("user_version", { simple: true }), 26);
   for (let i = 0; i < before.length; i++) {
     const x = Math.max(-1e6, before[i].x - 16);
     const y = Math.max(-1e6, before[i].y - 16);
-    assert.deepEqual(after[i], { ...before[i], x, y });
+    const { clusterId: _membership, ...retained } = before[i];
+    assert.deepEqual(after[i], { ...retained, x, y });
     if (before[i].x >= -999984) assert.equal(after[i].x + 176 / 2, before[i].x + 144 / 2);
     if (before[i].y >= -999984) assert.equal(after[i].y + 224 / 2, before[i].y + 192 / 2);
   }
-  assert.deepEqual(db.prepare("SELECT * FROM clusters WHERE id='group'").get(), cluster);
+  assert.equal(db.prepare("SELECT 1 FROM sqlite_master WHERE name='clusters'").get(), undefined);
   db.close(); db = openDatabase(path);
   assert.deepEqual(db.prepare("SELECT * FROM agents ORDER BY id").all(), after);
   db.close();

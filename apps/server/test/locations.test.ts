@@ -64,22 +64,12 @@ async function fixture(t: any) {
     assert.equal(r.statusCode, 201, r.body);
     return r.json();
   }
-  async function cluster(name = "Department") {
-    const r = await app.inject({
-      method: "POST",
-      url: `/api/workspaces/${workspace.id}/clusters`,
-      payload: { name },
-    });
-    assert.equal(r.statusCode, 201, r.body);
-    return r.json();
-  }
-  return { app, root, workspace, location, deleted, agent, cluster };
+  return { app, root, workspace, location, deleted, agent };
 }
 
-test("managed locations persist, task follow-ups reuse directories, names and membership never move files", async (t) => {
+test("managed locations persist, task follow-ups reuse directories, renaming and movement never move files", async (t) => {
   const f = await fixture(t),
-    a = await f.agent(),
-    c = await f.cluster();
+    a = await f.agent();
   const home = await f.location("agents", a.id);
   assert.equal(home.state, "ready");
   await writeFile(join(home.path, "keep.txt"), "original");
@@ -112,115 +102,11 @@ test("managed locations persist, task follow-ups reuse directories, names and me
   const updated = await f.app.inject({
     method: "PATCH",
     url: `/api/agents/${a.id}`,
-    payload: { name: "Renamed", clusterId: c.id, x: 24, y: 72 },
+    payload: { name: "Renamed", x: 24, y: 72 },
   });
   assert.equal(updated.statusCode, 200, updated.body);
   assert.equal((await f.location("agents", a.id)).path, home.path);
   assert.equal(await readFile(join(home.path, "keep.txt"), "utf8"), "original");
-});
-
-test("Clusters have stable least-used colors and atomic member movement with workspace enforcement", async (t) => {
-  const f = await fixture(t),
-    a = await f.agent(),
-    colors = [];
-  for (let i = 0; i < 17; i++) colors.push(await f.cluster(`Department ${i}`));
-  assert.equal(new Set(colors.slice(0, 16).map((c) => c.colorSlot)).size, 16);
-  assert.equal(colors[16].colorSlot, 0);
-  const c = colors[0];
-  assert.equal(
-    (
-      await f.app.inject({
-        method: "PATCH",
-        url: `/api/agents/${a.id}`,
-        payload: { clusterId: c.id, x: 24, y: 72 },
-      })
-    ).statusCode,
-    200,
-  );
-  assert.equal(
-    (
-      await f.app.inject({
-        method: "PATCH",
-        url: `/api/clusters/${c.id}`,
-        payload: { x: 200, y: 100 },
-      })
-    ).statusCode,
-    200,
-  );
-  const moved = (await f.app.inject(`/api/agents/${a.id}`)).json();
-  assert.equal(moved.x, 224);
-  assert.equal(moved.y, 172);
-  assert.equal(
-    (
-      await f.app.inject({
-        method: "PATCH",
-        url: `/api/agents/${a.id}`,
-        payload: { x: 750 },
-      })
-    ).statusCode,
-    400,
-  );
-  const other = (
-    await f.app.inject({
-      method: "POST",
-      url: "/api/workspaces",
-      payload: { name: "Other" },
-    })
-  ).json();
-  const foreign = (
-    await f.app.inject({
-      method: "POST",
-      url: `/api/workspaces/${other.id}/clusters`,
-      payload: { name: "Other department" },
-    })
-  ).json();
-  assert.equal(
-    (
-      await f.app.inject({
-        method: "PATCH",
-        url: `/api/agents/${a.id}`,
-        payload: { clusterId: foreign.id },
-      })
-    ).statusCode,
-    400,
-  );
-  assert.equal(
-    (
-      await f.app.inject({
-        method: "PATCH",
-        url: `/api/agents/${a.id}`,
-        payload: { clusterId: null, x: 750 },
-      })
-    ).statusCode,
-    200,
-  );
-});
-
-test("confirmed Cluster deletion deletes shared files but preserves agents and their files", async (t) => {
-  const f = await fixture(t),
-    a = await f.agent(),
-    c = await f.cluster();
-  await f.app.inject({
-    method: "PATCH",
-    url: `/api/agents/${a.id}`,
-    payload: { clusterId: c.id, x: 24, y: 72 },
-  });
-  const home = await f.location("agents", a.id),
-    shared = await f.location("clusters", c.id);
-  await writeFile(join(home.path, "own.txt"), "agent");
-  await writeFile(join(shared.path, "shared.txt"), "department");
-  assert.equal(
-    (await f.app.inject({ method: "DELETE", url: `/api/clusters/${c.id}` }))
-      .statusCode,
-    400,
-  );
-  assert.equal((await f.deleted("clusters", c.id)).state, "completed");
-  assert.equal(
-    (await f.app.inject(`/api/agents/${a.id}`)).json().clusterId,
-    null,
-  );
-  assert.equal(await readFile(join(home.path, "own.txt"), "utf8"), "agent");
-  await assert.rejects(stat(shared.path), { code: "ENOENT" });
 });
 
 test("deletion never follows interior symlinks, and workspace removal deletes all managed trees", async (t) => {
@@ -308,7 +194,7 @@ test("v10 upgrade backfills folders without altering Phase 1 history and memory,
   await app.ready();
   const original = (await app.inject("/api/agents/legacy-agent")).json();
   assert.equal(original.name, "Legacy");
-  assert.equal(original.clusterId, null);
+  assert.equal(Object.hasOwn(original, "clusterId"), false);
   assert.equal(
     (await app.inject("/api/tasks/legacy-task/messages")).json().items[0]
       .content,
@@ -329,7 +215,7 @@ test("v10 upgrade backfills folders without altering Phase 1 history and memory,
     path,
   );
   db = openDatabase(databasePath);
-  assert.equal(db.pragma("user_version", { simple: true }), 25);
+  assert.equal(db.pragma("user_version", { simple: true }), 26);
   db.close();
 });
 
@@ -421,43 +307,6 @@ test("failed confirmed deletion fences execution and mutations, and restart retr
   );
   assert.equal((await app.inject(`/api/agents/${agent.id}`)).statusCode, 404);
   assert.equal(await readFile(join(outside, "keep.txt"), "utf8"), "untouched");
-});
-
-test("Cluster shrinking cannot exclude member centers and stale cross-workspace membership is rejected by SQLite", async (t) => {
-  const f = await fixture(t),
-    a = await f.agent(),
-    c = await f.cluster();
-  await f.app.inject({
-    method: "PATCH",
-    url: `/api/agents/${a.id}`,
-    payload: { clusterId: c.id, x: 450, y: 240 },
-  });
-  assert.equal(
-    (
-      await f.app.inject({
-        method: "PATCH",
-        url: `/api/clusters/${c.id}`,
-        payload: { width: 320 },
-      })
-    ).statusCode,
-    400,
-  );
-  const other = (
-    await f.app.inject({
-      method: "POST",
-      url: "/api/workspaces",
-      payload: { name: "Other" },
-    })
-  ).json();
-  const db = openDatabase(join(f.root, "test.sqlite"));
-  assert.throws(
-    () =>
-      db
-        .prepare("UPDATE agents SET workspaceId=? WHERE id=?")
-        .run(other.id, a.id),
-    /Cluster must belong/,
-  );
-  db.close();
 });
 
 test(

@@ -1,20 +1,16 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
-import type { Agent, Cluster } from "../../server/src/contracts";
+import type { Agent } from "../../server/src/contracts";
 import { createAgentStore } from "../src/agent-store";
 
 const agent: Agent = {
   id: "agent", workspaceId: "workspace", name: "Assistant", instructions: "",
-  presetId: null, clusterId: null, x: 10, y: 20, revision: 1,
+  presetId: null, x: 10, y: 20, revision: 1,
   createdAt: "now", updatedAt: "now", state: "idle", queuedCount: 0, runningTaskCount: 0,
   appearance: { kind: "pebble", color: "sage", accessories: [] },
   issueCounts: { warning: 1, error: 0 },
 };
 const running: Agent = { ...agent, state: "running", runningTaskCount: 1, issueCounts: { warning: 0, error: 2 } };
-const cluster: Cluster = {
-  id: "cluster", workspaceId: "workspace", name: "Team", description: "",
-  x: 0, y: 0, width: 600, height: 360, colorSlot: 0, createdAt: "now", updatedAt: "now",
-};
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>(r => { resolve = r; });
@@ -31,9 +27,8 @@ function snapshots(t: TestContext) {
     if (path === "/api/agents/agent/status") return Response.json({ agentId: agent.id });
     if (path === "/api/agents/agent/chat") return Response.json({ task: null, turns: [] });
     return Response.json({
-      items: path === "/api/workspaces/workspace/agents" ? [current]
-        : path === "/api/workspaces/workspace/clusters" ? [cluster] : [],
-      total: path?.endsWith("/agents") || path?.endsWith("/clusters") ? 1 : 0,
+      items: path === "/api/workspaces/workspace/agents" ? [current] : [],
+      total: path?.endsWith("/agents") ? 1 : 0,
     });
   });
   return {
@@ -108,15 +103,14 @@ test("canvas interactions accept activity changes while protecting geometry, mem
   const nodes = store.getState().nodes.workspace;
   store.getState().setDraft("chat:agent", "Unsent");
   const generation = store.getState().beginCanvasInteraction();
-  source.set({ ...running, x: 300, y: 400, clusterId: cluster.id });
+  source.set({ ...running, x: 300, y: 400 });
   await store.getState().loadWorkspace(agent.workspaceId);
   assert.equal(store.getState().agents.agent!.state, "running");
   assert.deepEqual(store.getState().agents.agent!.issueCounts, running.issueCounts);
-  source.set({ ...running, state: "waiting", runningTaskCount: 0, x: 300, clusterId: cluster.id });
+  source.set({ ...running, state: "waiting", runningTaskCount: 0, x: 300 });
   await store.getState().refreshAgent(agent.id);
   assert.equal(store.getState().agents.agent!.state, "waiting");
   assert.equal(store.getState().agents.agent!.x, agent.x);
-  assert.equal(store.getState().agents.agent!.clusterId, null);
   assert.equal(store.getState().nodes.workspace, nodes);
   assert.equal(store.getState().drafts["chat:agent"], "Unsent");
   store.getState().endCanvasInteraction(generation);
@@ -129,16 +123,15 @@ test("pending position saves accept activity and their older responses cannot re
   await store.getState().loadWorkspace(agent.workspaceId);
   const gate = deferred<Response>();
   source.intercept((_url, init) => init?.method === "PATCH" ? gate.promise : undefined);
-  const save = store.getState().position(agent.id, 100, 120, cluster.id);
+  const save = store.getState().position(agent.id, 100, 120);
   const nodes = store.getState().nodes.workspace;
   source.set(running);
   await store.getState().refreshAgent(agent.id);
   await store.getState().loadWorkspace(agent.workspaceId);
   assert.equal(store.getState().agents.agent!.state, "running");
   assert.equal(store.getState().agents.agent!.x, 100);
-  assert.equal(store.getState().agents.agent!.clusterId, cluster.id);
   assert.equal(store.getState().nodes.workspace, nodes);
-  gate.resolve(Response.json({ ...agent, x: 100, y: 120, clusterId: cluster.id, revision: 2 }));
+  gate.resolve(Response.json({ ...agent, x: 100, y: 120, revision: 2 }));
   await save;
   assert.equal(store.getState().agents.agent!.state, "running");
   assert.equal(store.getState().agents.agent!.revision, 2);
@@ -150,17 +143,16 @@ test("failed position saves retain local layout through activity refreshes and r
   await store.getState().loadWorkspace(agent.workspaceId);
   source.intercept((_url, init) => init?.method === "PATCH"
     ? Promise.resolve(Response.json({ error: "Offline" }, { status: 503 })) : undefined);
-  await store.getState().position(agent.id, 100, 120, cluster.id);
+  await store.getState().position(agent.id, 100, 120);
   const nodes = store.getState().nodes.workspace;
   source.set({ ...running, state: "waiting", runningTaskCount: 0 });
   await store.getState().loadWorkspace(agent.workspaceId);
   await store.getState().refreshAgent(agent.id);
   assert.equal(store.getState().agents.agent!.state, "waiting");
   assert.equal(store.getState().agents.agent!.x, 100);
-  assert.equal(store.getState().agents.agent!.clusterId, cluster.id);
   assert.equal(store.getState().nodes.workspace, nodes);
   source.intercept((_url, init) => init?.method === "PATCH"
-    ? Promise.resolve(Response.json({ ...running, state: "completed", runningTaskCount: 0, x: 100, y: 120, clusterId: cluster.id, revision: 2 })) : undefined);
+    ? Promise.resolve(Response.json({ ...running, state: "completed", runningTaskCount: 0, x: 100, y: 120, revision: 2 })) : undefined);
   await store.getState().retryPositions();
   assert.equal(store.getState().agents.agent!.state, "completed");
   assert.equal(store.getState().positionError, "");

@@ -85,8 +85,7 @@ test("existing duplicates survive reopening; configuration requires manual resol
   assert.equal((await app.inject("/api/agents/first")).json().instructions, "Saved role");
   assert.equal((await patch("first", { x: 20, y: 30 })).statusCode, 200);
   assert.equal((await patch("first", { appearance: { kind: "bot", color: "sky", accessories: [] } })).statusCode, 200);
-  const cluster = (await app.inject({ method: "POST", url: `/api/workspaces/${workspace}/clusters`, payload: { name: "Team", x: 0, y: 0 } })).json();
-  assert.equal((await patch("first", { clusterId: cluster.id, x: 20, y: 30 })).statusCode, 200);
+  assert.equal((await patch("first", { x: 20, y: 30 })).statusCode, 200);
   const task = await app.inject({ method: "POST", url: "/api/agents/first/tasks", payload: { content: "Still usable", requestId: "legacy_names_task" } });
   assert.equal(task.statusCode, 202, task.body);
   assert.equal((await patch("second", { name: "Maya" })).statusCode, 200);

@@ -394,20 +394,6 @@ export default function Home() {
               </Appearance>
               <div className={styles.creationActions}>
                 <button
-                  className="button"
-                  onClick={() =>
-                    guard(() =>
-                      agentStore.setState((s) => ({
-                        createClusterIn: active.id,
-                        selectedCluster: null,
-                        selected: { ...s.selected, [active.id]: null },
-                      })),
-                    )
-                  }
-                >
-                  <Plus size={15} aria-hidden="true" /> Add Cluster
-                </button>
-                <button
                   className={`button ${styles.addAgent}`}
                   onClick={() =>
                     guard(() => agentStore.setState({ createIn: active.id }))

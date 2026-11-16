@@ -97,6 +97,7 @@ export class ManagedFiles {
         "UPDATE managed_locations SET state='pending',error=NULL WHERE state='ready'",
       )
       .run();
+    await this.cleanupRetiredPaths();
     this.ready = true;
     // Persisted deletion intent fences execution before any asynchronous cleanup.
     this.db
@@ -107,6 +108,33 @@ export class ManagedFiles {
     this.drainDeletions();
     this.kick();
     this.execution?.wake();
+  }
+  private async cleanupRetiredPaths() {
+    // Upgrade intent survives interrupted startup; never expose retired owners again.
+    while (true) {
+      const rows = this.db.prepare(
+        "SELECT relativePath FROM managed_path_cleanup ORDER BY relativePath LIMIT 16",
+      ).all() as { relativePath: string }[];
+      if (!rows.length) return;
+      for (const { relativePath } of rows) {
+        try {
+          // This queue currently contains only trees retired by migration 26.
+          if (!/^workspaces\/[a-zA-Z0-9_-]{1,100}\/clusters\/[a-zA-Z0-9_-]{1,100}$/.test(relativePath))
+            throw new Error("Invalid retired directory.");
+          await this.verifyRoot();
+          const target = this.path(relativePath);
+          try {
+            await this.safeDirectory(dirname(target), false);
+          } catch (error) {
+            if (!missing(error)) throw error;
+          }
+          await rm(target, { recursive: true, force: true, maxRetries: 2 });
+          this.db.prepare("DELETE FROM managed_path_cleanup WHERE relativePath=?").run(relativePath);
+        } catch {
+          throw new Error("Retired shared-folder cleanup failed. Check managed folder permissions and symlinked ancestors, then restart ufAI to retry.");
+        }
+      }
+    }
   }
   async verifyRoot() {
     await this.safeDirectory(this.root, false);
@@ -169,14 +197,13 @@ export class ManagedFiles {
   assertAvailable(
     workspaceId: string,
     agentId?: string,
-    clusterId?: string | null,
   ) {
     const operation = this.db
       .prepare(
         `SELECT id FROM deletion_operations WHERE state!='completed' AND
-      ((kind='workspace' AND ownerId=?) OR (kind='agent' AND ownerId=?) OR (kind='cluster' AND ownerId=?)) LIMIT 1`,
+      ((kind='workspace' AND ownerId=?) OR (kind='agent' AND ownerId=?)) LIMIT 1`,
       )
-      .get(workspaceId, agentId ?? "", clusterId ?? "");
+      .get(workspaceId, agentId ?? "");
     if (operation)
       throw new ConnectionError(
         "Deletion is in progress. Check the deletion operation and retry cleanup if needed.",
@@ -210,7 +237,6 @@ export class ManagedFiles {
                 .get(ownerId) as { agentId: string }
             )?.agentId
           : undefined,
-      kind === "cluster" ? ownerId : undefined,
     );
     try {
       await this.verifyRoot();
@@ -303,29 +329,7 @@ export class ManagedFiles {
         "Another deletion is still in progress in this workspace. Finish it first.",
         409,
       );
-    if (kind === "agent") {
-      const agent = this.db
-        .prepare("SELECT clusterId FROM agents WHERE id=?")
-        .get(ownerId) as { clusterId: string | null };
-      this.assertAvailable(location.workspaceId, ownerId, agent.clusterId);
-    }
-    this.assertAvailable(
-      location.workspaceId,
-      kind === "agent" ? ownerId : undefined,
-      kind === "cluster" ? ownerId : undefined,
-    );
-    if (kind === "cluster") {
-      const busy = this.db
-        .prepare(
-          "SELECT 1 FROM agents a JOIN deletion_operations d ON d.ownerId=a.id AND d.kind='agent' AND d.state!='completed' WHERE a.clusterId=? LIMIT 1",
-        )
-        .get(ownerId);
-      if (busy)
-        throw new ConnectionError(
-          "A member agent is being deleted. Wait for its deletion first.",
-          409,
-        );
-    }
+    this.assertAvailable(location.workspaceId, kind === "agent" ? ownerId : undefined);
     const relativePath = dirname(location.relativePath).split(sep).join("/");
     const count = this.db
       .prepare(
@@ -404,14 +408,8 @@ export class ManagedFiles {
                 .prepare("SELECT id FROM agents WHERE workspaceId=?")
                 .all(op.ownerId) as { id: string }[]
             ).map((a) => a.id)
-          : op.kind === "agent"
-            ? [op.ownerId]
-            : (
-                this.db
-                  .prepare("SELECT id FROM agents WHERE clusterId=?")
-                  .all(op.ownerId) as { id: string }[]
-              ).map((a) => a.id);
-      if(op.kind!=="cluster") await this.execution?.messaging?.deletingAgents(ids);
+          : [op.ownerId];
+      await this.execution?.messaging?.deletingAgents(ids);
       await this.execution?.settleAgents(ids);
       if (op.kind === "workspace")
         await this.execution?.settleWorkspaceFiles(op.ownerId);
@@ -446,7 +444,7 @@ export class ManagedFiles {
         }
         this.db
           .prepare(
-            `DELETE FROM ${op.kind === "workspace" ? "workspaces" : op.kind === "agent" ? "agents" : "clusters"} WHERE id=?`,
+            `DELETE FROM ${op.kind === "workspace" ? "workspaces" : "agents"} WHERE id=?`,
           )
           .run(op.ownerId);
         this.db
