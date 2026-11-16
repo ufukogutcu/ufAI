@@ -273,3 +273,88 @@ test("MCP forms preserve omitted secrets and explicitly remove null values", () 
     /strings/,
   );
 });
+
+test("OAuth feedback retains actionable errors, reuses sign-in links and hides completed links", async (t) => {
+  let current: McpServerDetail = {
+    ...detail,
+    authentication: "oauth",
+    headerKeys: [],
+    status: "auth_required",
+    error:
+      "This server requires a registered OAuth client. Save its client ID in MCP settings.",
+    authErrorCode: "client_registration_required",
+    authPending: false,
+  };
+  const authorizationUrl = "https://example.org/authorize?state=fixture";
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/oauth/sign-in") && init?.method === "POST") {
+        current = {
+          ...current,
+          error: null,
+          authErrorCode: undefined,
+          authPending: true,
+        };
+        return Response.json({
+          status: "auth_required",
+          authenticated: false,
+          authorizationUrl,
+        });
+      }
+      return Response.json(
+        url.includes("/servers?") ? { items: [current], total: 1 } : current,
+      );
+    },
+  );
+  const agents = createAgentStore();
+  const p = await mountComponent(
+    t,
+    h(
+      AgentContext.Provider,
+      { value: agents },
+      h(
+        UnsavedContext.Provider,
+        {
+          value: {
+            setDirty() {},
+            attempt(action) {
+              action();
+              return true;
+            },
+          },
+        },
+        h(AgentMcp, { agentId: "a" }),
+      ),
+    ),
+  );
+  await p.click(p.document.querySelector("[data-mcp-id='server']")!);
+  assert.match(
+    p.document.querySelector("[role='alert']")?.textContent ?? "",
+    /registered OAuth client/,
+  );
+  const button = [
+    ...p.document.querySelectorAll<HTMLButtonElement>("button"),
+  ].find((b) => b.textContent === "Sign In")!;
+  await p.click(button);
+  const link = p.document.querySelector<HTMLAnchorElement>(
+    "a[href^='https://example.org/authorize']",
+  )!;
+  assert.equal(link.textContent, "Continue MCP Sign-In");
+  assert.equal(link.rel, "noopener noreferrer");
+  assert.match(p.document.body.textContent ?? "", /connects automatically/);
+  assert.match(p.document.body.textContent ?? "", /Waiting for sign-in/);
+  current = {
+    ...current,
+    authenticated: true,
+    status: "connected",
+    authPending: false,
+  };
+  await act(async () => agents.setState({ eventVersion: 3 }));
+  assert.equal(
+    p.document.querySelector("a[href^='https://example.org/authorize']"),
+    null,
+  );
+  assert.ok(p.document.body.textContent?.includes("OAuth signed in"));
+});

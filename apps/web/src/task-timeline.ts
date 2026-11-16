@@ -177,6 +177,15 @@ export function createTimelineStore(
 
 type ActionCopy = readonly [string, string];
 export const toolLabels: Record<string, ActionCopy> = {
+  mcp_server_inspect: ["Inspecting MCP server", "Inspected MCP server"],
+  mcp_server_install: ["Installing MCP server", "Installed MCP server configuration"],
+  mcp_server_update: ["Updating shared MCP server", "Updated shared MCP server"],
+  mcp_server_set_enabled: ["Changing MCP access", "Changed MCP access"],
+  mcp_server_remove: ["Removing shared MCP server", "Removed shared MCP server"],
+  mcp_server_connect: ["Connecting MCP server", "Connected MCP server"],
+  mcp_server_disconnect: ["Disconnecting MCP server", "Disconnected MCP server"],
+  mcp_authenticate: ["Starting MCP sign-in", "Checked MCP sign-in"],
+  mcp_sign_out: ["Signing out of shared MCP server", "Signed out of shared MCP server"],
   mcp_servers_list: ["Checking MCP servers", "Checked MCP servers"],
   mcp_tools_list: ["Discovering MCP tools", "Discovered MCP tools"],
   mcp_tool_call: ["Calling MCP tool", "Called MCP tool"],
@@ -242,7 +251,9 @@ export function actionLabel(item: TimelineEntry) {
     "Finished action",
   ];
   const active = item.status === "running" || item.status === "waiting";
-  const label = labels[item.status === "completed" ? 1 : 0];
+  const label = item.name === "process_output" && item.status === "failed"
+    ? "Could not read command output"
+    : labels[item.status === "completed" ? 1 : 0];
   const a = item.arguments ?? {};
   const context = item.contextName
     ? ["agent_send", "agent_message"].includes(item.name ?? "")

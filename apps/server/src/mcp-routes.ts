@@ -168,10 +168,12 @@ export function registerMcp(app: FastifyInstance, service: McpService) {
           "default-src 'none'; frame-ancestors 'none'",
         )
         .header("Referrer-Policy", "no-referrer");
-      await service.callback(new URL(req.url, "http://127.0.0.1").searchParams);
+      const result = await service.callback(new URL(req.url, "http://127.0.0.1").searchParams);
       return reply
         .type("text/plain; charset=utf-8")
-        .send("MCP sign-in completed. Return to ufAI and connect the server.");
+        .send(result.status === "connected"
+          ? "MCP sign-in completed and the server is connected. Return to ufAI."
+          : "MCP sign-in completed, but the server could not connect. Return to ufAI to inspect the connection error and retry.");
     },
   );
   app.post("/api/mcp/imports", { bodyLimit: 1048576 }, async (req, reply) => {

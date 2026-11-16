@@ -36,6 +36,7 @@ import {
 } from "./connections.js";
 import { SelectionConfirmationError } from "./provider-models.js";
 import { ConnectionError } from "./model-providers.js";
+import { McpAuthError } from "./mcp-auth-errors.js";
 import type {
   Compaction,
   ModelPreset,
@@ -103,6 +104,8 @@ export function createApp(
       return reply
         .code(409)
         .send({ error: error.message, selectionImpact: error.impact });
+    if (error instanceof McpAuthError)
+      return reply.code(error.statusCode).send({ error: error.message, code: error.code });
     if (error instanceof ConnectionError)
       return reply.code(error.statusCode).send({ error: error.message });
     if (error instanceof InputError)

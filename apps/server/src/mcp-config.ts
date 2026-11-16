@@ -26,6 +26,7 @@ export interface McpSecrets {
   tokens?: StoredOAuthTokens;
 }
 export interface McpOAuthFlow {
+  cancelled?: boolean;
   state: string;
   serverId: string;
   agentId: string;

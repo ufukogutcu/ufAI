@@ -116,6 +116,7 @@ test("failed refresh preserves history and recovers on the next request", async 
 });
 test("every discoverable tool has readable copy and failures never claim success", () => {
   for (const tool of taskTools) assert.ok(toolLabels[tool.name], tool.name);
+  assert.match(actionLabel({ ...item("read"), name: "process_output", arguments: {}, status: "failed" }), /^Could not read command output$/);
   assert.match(
     actionLabel({ ...item("a"), status: "failed" }),
     /^Reading file/,

@@ -515,7 +515,7 @@ function ServerEditor({
         setAuth(status);
         setNotice(
           status.authorizationUrl
-            ? "Open the sign-in link, finish signing in, then return here and connect."
+            ? "Open the sign-in link and finish signing in. The server connects automatically; then return here."
             : "MCP authentication is ready.",
         );
       } else
@@ -659,7 +659,14 @@ function ServerEditor({
                   {statuses[saved.status]}
                   {saved.authenticated ? " · OAuth signed in" : ""}
                 </p>
-                {saved.error && <p className="errorBanner">{saved.error}</p>}
+                {saved.error && saved.error !== error && <p className="errorBanner" role="alert">{saved.error}</p>}
+                {saved.authPending && !saved.authenticated && (
+                  <p className={styles.help} role="status">
+                    {auth?.authorizationUrl
+                      ? "Waiting for sign-in to complete."
+                      : "Waiting for sign-in. Use Sign In to retrieve the current link if you started from chat."}
+                  </p>
+                )}
                 <div className={styles.actions}>
                   <button
                     type="button"
@@ -700,7 +707,7 @@ function ServerEditor({
                     </button>
                   </div>
                 )}
-                {auth?.authorizationUrl && (
+                {auth?.authorizationUrl && !saved.authenticated && saved.authPending !== false && (
                   <a
                     className={styles.authLink}
                     href={auth.authorizationUrl}

@@ -18,6 +18,9 @@ import { ArtifactService } from "../src/artifact-service.js";
 import { ConnectionSecrets } from "../src/connection-secrets.js";
 import { McpService } from "../src/mcp-service.js";
 import { mcpClient } from "../src/mcp-client.js";
+import { mcpAuthError } from "../src/mcp-auth-errors.js";
+import { taskTimeline } from "../src/task-timeline.js";
+import { OAuthError } from "@modelcontextprotocol/client";
 import type { McpServerInput } from "../src/mcp-types.js";
 const script = fileURLToPath(
   new URL("fixtures/mcp-server.cjs", import.meta.url),
@@ -134,6 +137,143 @@ async function until(check: () => boolean) {
   assert.fail("Fixture did not settle");
 }
 
+test("journaled management installs, inspects, enables and updates shared configuration with safe removal", async (t) => {
+  const f = await fixture(t);
+  const { env: _env, ...config } = local;
+  const callId = randomUUID();
+  const installed = await f.dispatch(
+    "mcp_server_install",
+    { server: config },
+    callId,
+  );
+  assert.equal(installed.ok, true, JSON.stringify(installed));
+  const s = installed.server as any;
+  assert.equal(s.enabled, true);
+  assert.equal(
+    taskTimeline(f.db, f.engine, f.owner.taskId).items.find(
+      (i) => i.name === "mcp_server_install",
+    )?.contextName,
+    local.name,
+  );
+  assert.equal(f.mcp.detail(s.id, "b").enabled, false);
+  assert.equal(
+    f.db.prepare("SELECT count(*) n FROM owned_processes").get()!.n,
+    0,
+  );
+  assert.deepEqual(
+    await f.dispatch("mcp_server_install", { server: config }, callId),
+    JSON.parse(JSON.stringify(installed)),
+  );
+  assert.equal(f.mcp.list().total, 1);
+  assert.equal(
+    (await f.dispatch("mcp_server_install", { server: config })).ok,
+    false,
+  );
+  await f.dispatch("mcp_server_set_enabled", {
+    serverId: s.id,
+    enabled: false,
+  });
+  assert.equal((await f.dispatch("mcp_servers_list", {})).total, 0);
+  assert.equal(
+    (await f.dispatch("mcp_servers_list", { includeDisabled: true })).total,
+    1,
+  );
+  const inspected = await f.dispatch("mcp_server_inspect", { serverId: s.id });
+  assert.equal((inspected.server as any).enabled, false);
+  assert.equal(
+    (await f.dispatch("mcp_server_connect", { serverId: s.id })).ok,
+    false,
+  );
+  await f.dispatch("mcp_server_set_enabled", { serverId: s.id, enabled: true });
+  const connected = await f.dispatch("mcp_server_connect", { serverId: s.id });
+  assert.equal((connected.server as any).status, "connected");
+  await f.mcp.setEnabled("b", s.id, true);
+  const updated = await f.dispatch("mcp_server_update", {
+    serverId: s.id,
+    expectedRevision: 1,
+    server: { ...config, name: "Renamed" },
+  });
+  assert.equal((updated.server as any).revision, 2);
+  assert.equal(f.mcp.detail(s.id, "b").enabled, true);
+  assert.equal(
+    (
+      await f.dispatch("mcp_server_update", {
+        serverId: s.id,
+        expectedRevision: 1,
+        server: config,
+      })
+    ).ok,
+    false,
+  );
+  assert.equal(
+    (
+      await f.dispatch("mcp_server_remove", {
+        serverId: s.id,
+        expectedRevision: 2,
+        confirmed: true,
+        affectedAgentIds: ["a"],
+      })
+    ).ok,
+    false,
+  );
+  const removed = await f.dispatch("mcp_server_remove", {
+    serverId: s.id,
+    expectedRevision: 2,
+    confirmed: true,
+    affectedAgentIds: ["b", "a"],
+  });
+  assert.equal(removed.removed, true);
+  assert.equal(f.mcp.list().total, 0);
+});
+
+test("management inspection and updates preserve saved secrets without exposing values", async (t) => {
+  const f = await fixture(t),
+    s = await f.mcp.create("a", local);
+  const inspected = await f.dispatch("mcp_server_inspect", { serverId: s.id });
+  assert.ok(!JSON.stringify(inspected).includes("encrypted-value"));
+  assert.deepEqual((inspected.server as any).envKeys, ["MCP_VALUE"]);
+  const updated = await f.dispatch("mcp_server_update", {
+    serverId: s.id,
+    expectedRevision: 1,
+    server: {
+      name: "Renamed",
+      transport: "stdio",
+      command: local.command,
+      args: local.args,
+    },
+  });
+  assert.equal(updated.ok, true);
+  assert.deepEqual((updated.server as any).envKeys, ["MCP_VALUE"]);
+  assert.equal(
+    (
+      await f.dispatch("mcp_server_install", {
+        server: { ...local, name: "No secret inputs" },
+      })
+    ).ok,
+    false,
+  );
+});
+
+test("OAuth failures expose only safe actionable categories", () => {
+  for (const [code, expected] of [
+    ["invalid_client", "invalid_client"],
+    ["unauthorized_client", "invalid_client"],
+    ["invalid_scope", "invalid_scope"],
+    ["invalid_grant", "sign_in_expired"],
+    ["access_denied", "sign_in_denied"],
+  ]) {
+    const error = mcpAuthError(
+      new OAuthError(code!, "private-token-and-upstream-body"),
+    );
+    assert.equal(error.code, expected);
+    assert.ok(!error.message.includes("private-token"));
+  }
+  assert.equal(
+    mcpAuthError(new Error("private upstream body")).code,
+    "oauth_discovery_failed",
+  );
+});
+
 test("MCP migration, shared library, agent enablement, encrypted and redacted secrets, revisions", async (t) => {
   const f = await fixture(t),
     server = await f.mcp.create("a", local);
@@ -195,6 +335,15 @@ test("stdio tools, resources, templates, prompts, schemas, pagination, journal r
     taskTools.filter((x) => x.name.startsWith("mcp_")).map((x) => x.name),
     [
       "mcp_servers_list",
+      "mcp_server_inspect",
+      "mcp_server_install",
+      "mcp_server_update",
+      "mcp_server_set_enabled",
+      "mcp_server_remove",
+      "mcp_server_connect",
+      "mcp_server_disconnect",
+      "mcp_authenticate",
+      "mcp_sign_out",
       "mcp_tools_list",
       "mcp_tool_call",
       "mcp_resources_list",
@@ -441,13 +590,14 @@ test("SDK no-deadline compatibility intercepts only timeout zero", async () => {
   Reflect.apply(Reflect.get(client, "_cleanupTimeout"), client, [2]);
   await client.close();
 });
-async function httpFixture(t: TestContext, oauth = false) {
+async function httpFixture(t: TestContext, oauth = false, registration = true) {
   let validAccess = "first-token",
     refreshes = 0,
     tokenCalls = 0,
     clientRegistrations = 0,
     expectedChallenge = "";
   let headerLeak = false;
+  let failInitialize = false;
   let tokenDelay = 0;
   const messages: any[] = [],
     tokenBodies: URLSearchParams[] = [];
@@ -473,7 +623,7 @@ async function httpFixture(t: TestContext, oauth = false) {
         issuer: base,
         authorization_endpoint: `${base}/authorize`,
         token_endpoint: `${base}/token`,
-        registration_endpoint: `${base}/register`,
+        ...(registration ? { registration_endpoint: `${base}/register` } : {}),
         response_types_supported: ["code"],
         grant_types_supported: ["authorization_code", "refresh_token"],
         code_challenge_methods_supported: ["S256"],
@@ -531,6 +681,8 @@ async function httpFixture(t: TestContext, oauth = false) {
       return res.end();
     }
     let result: unknown;
+    if (message.method === "initialize" && failInitialize)
+      return json(503, { error: "fixture unavailable" });
     if (message.method === "initialize")
       result = {
         protocolVersion: "2025-11-25",
@@ -605,6 +757,9 @@ async function httpFixture(t: TestContext, oauth = false) {
     delayTokens(ms: number) {
       tokenDelay = ms;
     },
+    failConnections(value: boolean) {
+      failInitialize = value;
+    },
     challenge(v: string) {
       expectedChallenge = v;
     },
@@ -656,6 +811,203 @@ test("Streamable HTTP uses saved headers and supports tools, resources and promp
   );
   await f.mcp.disconnect(s.id, "a");
   assert.equal(f.mcp.detail(s.id, "a").status, "not_connected");
+});
+
+test("chat OAuth reports a missing registration prerequisite, retains its status, then completes with registered credentials", async (t) => {
+  const h = await httpFixture(t, true, false),
+    f = await fixture(t);
+  const config = {
+    name: "GitHub-like",
+    transport: "http",
+    url: `${h.base}/mcp`,
+    authentication: "oauth",
+  };
+  const installed = await f.dispatch("mcp_server_install", { server: config });
+  const s = installed.server as any;
+  const connection = await f.dispatch("mcp_server_connect", { serverId: s.id });
+  assert.equal(connection.code, "client_registration_required");
+  const failure = await f.dispatch("mcp_authenticate", { serverId: s.id });
+  assert.equal(failure.ok, false);
+  assert.equal(failure.code, "client_registration_required");
+  assert.match(
+    String(failure.error),
+    /does not support automatic OAuth client registration/,
+  );
+  assert.match(String(failure.error), /do not need to switch/);
+  const observed = (await f.dispatch("mcp_servers_list", {})).items as any[];
+  assert.equal(observed[0].authErrorCode, "client_registration_required");
+  assert.equal(observed[0].status, "auth_required");
+  assert.equal(f.mcp.list("a").items[0]!.error, failure.error);
+  assert.equal(f.mcp.detail(s.id, "b").error, null);
+  await f.dispatch("mcp_server_update", {
+    serverId: s.id,
+    expectedRevision: 1,
+    server: { ...config, oauthClientId: "registered-app" },
+  });
+  assert.equal(f.mcp.detail(s.id, "a").error, null);
+  const startId = randomUUID();
+  const start = await f.dispatch(
+    "mcp_authenticate",
+    { serverId: s.id },
+    startId,
+  );
+  assert.equal(start.ok, true, JSON.stringify(start));
+  assert.equal(start.authenticated, false);
+  const u = new URL(String(start.authorizationUrl));
+  assert.equal(u.searchParams.get("client_id"), "registered-app");
+  assert.equal(f.mcp.detail(s.id, "a").authPending, true);
+  // Retry and committed journal replay keep the user's current sign-in link valid.
+  assert.equal(
+    (await f.dispatch("mcp_authenticate", { serverId: s.id })).authorizationUrl,
+    start.authorizationUrl,
+  );
+  assert.deepEqual(
+    await f.dispatch("mcp_authenticate", { serverId: s.id }, startId),
+    start,
+  );
+  h.challenge(u.searchParams.get("code_challenge")!);
+  const result = await f.mcp.callback(
+    new URLSearchParams({
+      state: u.searchParams.get("state")!,
+      code: "fixture-code",
+      iss: h.base,
+    }),
+  );
+  assert.equal(result.status, "connected");
+  assert.equal(f.mcp.detail(s.id, "a").authPending, false);
+  assert.equal(f.mcp.detail(s.id, "a").error, null);
+  const signedIn = await f.dispatch("mcp_authenticate", { serverId: s.id });
+  assert.equal(signedIn.authenticated, true);
+  assert.equal(signedIn.authorizationUrl, undefined);
+  assert.equal(h.counts().clientRegistrations, 0);
+  assert.equal(h.counts().tokenCalls, 1);
+  assert.equal(
+    (await f.dispatch("mcp_server_connect", { serverId: s.id })).ok,
+    true,
+  );
+  assert.equal(
+    (await f.dispatch("mcp_sign_out", { serverId: s.id, expectedRevision: 2 }))
+      .authenticated,
+    false,
+  );
+});
+
+test("post-consent auto-connect cannot connect a server edited after the code exchange", async (t) => {
+  const h = await httpFixture(t, true),
+    other = await httpFixture(t),
+    f = await fixture(t);
+  const config: McpServerInput = {
+    name: "Revision-bound consent",
+    transport: "http",
+    url: `${h.base}/mcp`,
+    authentication: "oauth",
+  };
+  const s = await f.mcp.create("a", config);
+  const start = await f.mcp.signIn(s.id, "a", callback),
+    u = new URL(start.authorizationUrl!);
+  h.challenge(u.searchParams.get("code_challenge")!);
+  let reachedConnect = false,
+    release!: () => void;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  const connect = f.mcp.connect.bind(f.mcp);
+  f.mcp.connect = async (...args) => {
+    reachedConnect = true;
+    await gate;
+    return connect(...args);
+  };
+  const completing = f.mcp.callback(
+    new URLSearchParams({
+      state: u.searchParams.get("state")!,
+      code: "fixture-code",
+      iss: h.base,
+    }),
+  );
+  const rejected = assert.rejects(completing, /configuration changed/);
+  await until(() => reachedConnect);
+  await f.mcp.update(s.id, "a", s.revision, {
+    ...config,
+    url: `${other.base}/mcp`,
+  });
+  release();
+  await rejected;
+  assert.equal(other.messages.length, 0);
+  assert.equal(f.mcp.detail(s.id).authenticated, false);
+});
+
+test("callback connection failure preserves completed OAuth and permits a transport-only retry", async (t) => {
+  const h = await httpFixture(t, true),
+    f = await fixture(t);
+  const s = await f.mcp.create("a", {
+    name: "Unavailable after consent",
+    transport: "http",
+    url: `${h.base}/mcp`,
+    authentication: "oauth",
+  });
+  const start = await f.dispatch("mcp_authenticate", { serverId: s.id });
+  const u = new URL(String(start.authorizationUrl));
+  h.challenge(u.searchParams.get("code_challenge")!);
+  h.failConnections(true);
+  const result = await f.mcp.callback(
+    new URLSearchParams({
+      state: u.searchParams.get("state")!,
+      code: "fixture-code",
+      iss: h.base,
+    }),
+  );
+  assert.equal(result.authenticated, true);
+  assert.equal(result.status, "error");
+  assert.equal(f.mcp.detail(s.id, "a").authenticated, true);
+  assert.equal(f.mcp.detail(s.id, "a").authPending, false);
+  assert.match(f.mcp.detail(s.id, "a").error!, /Cannot connect/);
+  h.failConnections(false);
+  assert.equal(
+    (await f.dispatch("mcp_server_connect", { serverId: s.id })).ok,
+    true,
+  );
+  assert.equal(h.counts().tokenCalls, 1);
+});
+
+test("OAuth setup is cancellable and late failures cannot restore status after revocation", async (t) => {
+  let started = false;
+  const f = await fixture(t, {
+    fetcher: async (_url, init) => {
+      init?.signal?.throwIfAborted();
+      started = true;
+      return new Promise<Response>((_resolve, reject) =>
+        init?.signal?.addEventListener(
+          "abort",
+          () => reject(init.signal!.reason),
+          { once: true },
+        ),
+      );
+    },
+  });
+  const s = await f.mcp.create("a", {
+    name: "Slow OAuth",
+    transport: "http",
+    url: "https://example.org/mcp",
+    authentication: "oauth",
+  });
+  const controller = new AbortController();
+  const pending = f.dispatch(
+    "mcp_authenticate",
+    { serverId: s.id },
+    randomUUID(),
+    controller.signal,
+  );
+  const rejected = assert.rejects(pending, /abort/i);
+  await until(() => started);
+  controller.abort();
+  await rejected;
+  assert.equal(f.mcp.detail(s.id, "a").authPending, false);
+  started = false;
+  const revoking = f.dispatch("mcp_authenticate", { serverId: s.id });
+  await until(() => started);
+  await f.mcp.setEnabled("a", s.id, false);
+  assert.equal((await revoking).ok, false);
+  assert.equal(f.mcp.detail(s.id, "a").error, null);
 });
 
 test("OAuth PKCE registration, callback state/replay, token refresh, persistence and sign-out", async (t) => {
@@ -847,6 +1199,58 @@ test("MCP HTTP routes enforce origin guards and revisioned CRUD/import contracts
     headers: { "sec-fetch-site": "cross-site" },
   });
   assert.equal(cb.statusCode, 400);
+  const oauth = await httpFixture(t, true, false);
+  const oauthConfig = {
+    name: "OAuth API",
+    transport: "http",
+    url: `${oauth.base}/mcp`,
+    authentication: "oauth",
+  };
+  const authServer = (
+    await app.inject({
+      method: "POST",
+      url: "/api/mcp/servers",
+      payload: { agentId: agent.id, server: oauthConfig },
+    })
+  ).json();
+  const signInPath = `/api/mcp/servers/${authServer.id}/oauth/sign-in`;
+  const authFailure = await app.inject({
+    method: "POST",
+    url: signInPath,
+    payload: { agentId: agent.id },
+  });
+  assert.equal(authFailure.statusCode, 400);
+  assert.equal(authFailure.json().code, "client_registration_required");
+  const observedAuth = (
+    await app.inject(`/api/mcp/servers/${authServer.id}?agentId=${agent.id}`)
+  ).json();
+  assert.equal(observedAuth.authErrorCode, "client_registration_required");
+  assert.equal(observedAuth.status, "auth_required");
+  await app.inject({
+    method: "PATCH",
+    url: `/api/mcp/servers/${authServer.id}`,
+    payload: {
+      agentId: agent.id,
+      expectedRevision: 1,
+      server: { ...oauthConfig, oauthClientId: "registered" },
+    },
+  });
+  const started = (
+    await app.inject({
+      method: "POST",
+      url: signInPath,
+      payload: { agentId: agent.id },
+    })
+  ).json();
+  const authorization = new URL(started.authorizationUrl);
+  oauth.challenge(authorization.searchParams.get("code_challenge")!);
+  const completed = await app.inject({
+    url: `/api/mcp/oauth/callback?${new URLSearchParams({ state: authorization.searchParams.get("state")!, code: "fixture-code", iss: oauth.base })}`,
+    headers: { "sec-fetch-site": "cross-site" },
+  });
+  assert.equal(completed.statusCode, 200, completed.body);
+  assert.match(completed.body, /completed and the server is connected/);
+  assert.equal(completed.headers["cache-control"], "no-store");
   const removed = await app.inject({
     method: "DELETE",
     url: `/api/mcp/servers/${server.id}`,
@@ -884,7 +1288,22 @@ for (const provider of ["openai-compatible", "codex"] as const) {
     if (provider === "codex") {
       f.connections.executeTask = async (_snapshot, r) => {
         assert.ok(r.tools.some((x) => x.name === "mcp_tool_call"));
+        assert.ok(r.tools.some((x) => x.name === "mcp_authenticate"));
         assert.match(r.instructions, /external data/);
+        assert.match(r.instructions, /mcp_server_\* management tools/);
+        const installed = await r.onTool({
+          id: "install",
+          name: "mcp_server_install",
+          arguments: {
+            server: {
+              name: "From chat",
+              transport: "stdio",
+              command: local.command,
+              args: local.args,
+            },
+          },
+        });
+        assert.equal(installed.ok, true, JSON.stringify(installed));
         const discovery = await r.onTool({
           id: "discover",
           name: "mcp_servers_list",
@@ -903,10 +1322,23 @@ for (const provider of ["openai-compatible", "codex"] as const) {
     } else {
       f.connections.toolRound = async (_snapshot, r) => {
         assert.ok(r.tools.some((x) => x.name === "mcp_tool_call"));
+        assert.ok(r.tools.some((x) => x.name === "mcp_authenticate"));
         if (rounds++ === 0)
           return {
             text: "",
             calls: [
+              {
+                id: "install",
+                name: "mcp_server_install",
+                arguments: {
+                  server: {
+                    name: "From chat",
+                    transport: "stdio",
+                    command: local.command,
+                    args: local.args,
+                  },
+                },
+              },
               {
                 id: "call",
                 name: "mcp_tool_call",
@@ -917,7 +1349,7 @@ for (const provider of ["openai-compatible", "codex"] as const) {
             usage: null,
           };
         assert.equal(
-          (r.continuation as any)[0].results[0].result.mcp.structuredContent
+          (r.continuation as any)[0].results[1].result.mcp.structuredContent
             .count,
           1,
         );
@@ -934,6 +1366,7 @@ for (const provider of ["openai-compatible", "codex"] as const) {
       return turn.status === "completed";
     });
     assert.ok(rounds > 0);
+    assert.equal(f.mcp.list().total, 2);
     assert.equal(
       (
         f.db
@@ -1027,7 +1460,7 @@ test("pre-registered OAuth credentials skip registration and edits fence an in-f
       iss: h.base,
     }),
   );
-  const rejected = assert.rejects(exchange, /could not be completed/);
+  const rejected = assert.rejects(exchange, /timed out or was interrupted/);
   await until(() => h.counts().tokenCalls === 1);
   await f.mcp.update(s.id, "a", s.revision, {
     ...input,

@@ -1,4 +1,5 @@
 import { mcpTools } from "./mcp-tools.js";
+import { McpAuthError } from "./mcp-auth-errors.js";
 import { browserTools } from "./browser-tools.js";
 import { browserAction } from "./browser-validation.js";
 import { randomUUID, createHash } from "node:crypto";
@@ -582,6 +583,7 @@ export class AgentTools {
         signal.throwIfAborted();
         result = {
           ok: false,
+          ...(e instanceof McpAuthError ? { code: e.code } : {}),
           error:
             e instanceof ConnectionError
               ? e.message

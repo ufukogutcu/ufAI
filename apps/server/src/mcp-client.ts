@@ -58,6 +58,7 @@ export function mcpFetch(
   signal: AbortSignal,
 ): typeof fetch {
   return async (input, init) => {
+    signal.throwIfAborted();
     const url = input instanceof Request ? input.url : String(input);
     mcpUrl(url);
     const response = await fetcher(input, {

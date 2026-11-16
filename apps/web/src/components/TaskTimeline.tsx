@@ -212,7 +212,7 @@ function TimelineRow({
           <span
             className={`${styles.state} ${item.status === "failed" || item.status === "interrupted" ? styles.failure : ""}`}
           >
-            {statusLabels[item.status]}
+            {item.name === "process_output" && item.status === "failed" ? "Output read failed" : statusLabels[item.status]}
           </span>
         )}
         <ChevronRight
@@ -223,7 +223,7 @@ function TimelineRow({
       </button>
       {item.process && (
         <p className={styles.processState}>
-          Process {item.process.state}
+          {item.name === "process_output" ? "Underlying command" : "Process"} {item.process.state}
           {item.process.exitCode !== null
             ? ` · exit ${item.process.exitCode}`
             : ""}

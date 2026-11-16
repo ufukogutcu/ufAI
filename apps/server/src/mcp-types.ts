@@ -4,6 +4,15 @@ export type McpAuthentication = "none" | "headers" | "oauth";
 export type McpStatus =
   "not_connected" | "connecting" | "connected" | "auth_required" | "error";
 export type McpCapabilityKind = "tools" | "resources" | "templates" | "prompts";
+export type McpAuthErrorCode =
+  | "client_registration_required"
+  | "invalid_client"
+  | "invalid_scope"
+  | "sign_in_expired"
+  | "sign_in_denied"
+  | "oauth_timeout"
+  | "oauth_discovery_failed"
+  | "oauth_exchange_failed";
 export interface McpServerInput {
   name: string;
   transport: McpTransport;
@@ -27,6 +36,8 @@ export interface McpServerSummary {
   status: McpStatus;
   error: string | null;
   authenticated: boolean;
+  authErrorCode?: McpAuthErrorCode;
+  authPending?: boolean;
   createdAt: string;
   updatedAt: string;
 }
