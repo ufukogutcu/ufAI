@@ -18,6 +18,7 @@ import type {
   ManagedLocation,
 } from "./contracts.js";
 import type { AgentExecution } from "./agent-execution.js";
+import type { AgentFiles } from "./agent-files.js";
 import { ConnectionError } from "./model-providers.js";
 
 type LocationRow = Omit<ManagedLocation, "path">;
@@ -33,6 +34,7 @@ export class ManagedFiles {
   private repairs = new Map<string, Promise<ManagedLocation>>();
   private operations = new Map<string, Promise<void>>();
   private execution?: AgentExecution;
+  browser?: AgentFiles;
   constructor(
     readonly db: Database.Database,
     private configuredRoot?: string,
@@ -151,6 +153,10 @@ export class ManagedFiles {
       (await readFile(marker, "utf8")) !== owner
     )
       throw new Error("Invalid managed file root.");
+  }
+  async verifyAgentDirectory(agentId: string) {
+    await this.verifyRoot();
+    await this.safeDirectory(this.location("agent", agentId).path, false);
   }
   private async safeDirectory(path: string, create: boolean) {
     const full = resolve(path);
@@ -413,6 +419,7 @@ export class ManagedFiles {
       await this.execution?.settleAgents(ids);
       if (op.kind === "workspace")
         await this.execution?.settleWorkspaceFiles(op.ownerId);
+      await this.browser?.settle(op);
       await this.verifyRoot();
       const target = this.path(op.relativePath);
       try {
@@ -464,6 +471,7 @@ export class ManagedFiles {
   }
   async close() {
     this.stopped = true;
+    await this.browser?.close();
     await this.worker;
     await Promise.allSettled([...this.repairs.values()]);
     await Promise.allSettled([...this.operations.values()]);

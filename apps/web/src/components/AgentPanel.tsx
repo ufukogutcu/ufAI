@@ -39,6 +39,7 @@ import type {
   TaskDetail,
 } from "../../../server/src/contracts";
 import { FolderLocation } from "./FolderLocation";
+import { AgentFiles } from "./AgentFiles";
 import { Field } from "./FormField";
 import { Dialog } from "./Dialog";
 import styles from "./AgentPanel.module.scss";
@@ -589,7 +590,7 @@ export function AgentPanel({
         </button>
       </header>
       <nav className={styles.tabs} aria-label="Agent sections">
-        {["Chat", "Tasks", "Memory", "Configuration"].map((v) => (
+        {["Chat", "Tasks", "Files", "Memory", "Configuration"].map((v) => (
           <button
             key={v}
             aria-current={tab === v ? "page" : undefined}
@@ -739,6 +740,7 @@ export function AgentPanel({
             )}
           </div>
         ))}
+      {tab === "Files" && <AgentFiles key={agent.id} agentId={agent.id} />}
       {tab === "Memory" && (
         <div className={styles.scroll}>
           <p className={styles.muted}>
@@ -767,7 +769,6 @@ export function AgentPanel({
       {tab === "Configuration" && (
         <div className={styles.scroll}>
           <AgentForm agent={agent} onSave={save} />
-          <FolderLocation kind="agent" ownerId={agent.id} label="Agent files" />
           <hr />
           <p className={styles.muted}>
             Deleting this agent removes its conversations and memories, and

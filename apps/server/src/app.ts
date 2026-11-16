@@ -17,6 +17,7 @@ import { registerTools } from "./tool-routes.js";
 import { registerTimeline } from "./task-timeline.js";
 import { ManagedFiles } from "./managed-files.js";
 import { registerLocations } from "./locations.js";
+import { AgentFiles, registerAgentFiles, type AgentFilesOptions } from "./agent-files.js";
 import { registerAgents } from "./agents.js";
 import { registerSettings } from "./settings.js";
 import { registerThemes } from "./themes.js";
@@ -79,6 +80,7 @@ export function createApp(
     processes?: ProcessOptions;
     artifacts?: ArtifactOptions;
     uploads?: UploadOptions;
+    agentFiles?: AgentFilesOptions;
   } = {},
 ) {
   const app = Fastify({
@@ -132,6 +134,8 @@ export function createApp(
     connections,
   );
   const files = new ManagedFiles(database, options.filesRoot);
+  const agentFiles = new AgentFiles(files, options.agentFiles);
+  files.browser = agentFiles;
   let execution!: AgentExecution;
   const changed = (id: string) => execution?.workspaceEvent(id, "activity");
   const processes = new ProcessService(
@@ -207,9 +211,11 @@ export function createApp(
   files.bind(execution);
   registerAgents(app, database, execution, files, incoming);
   registerLocations(app, database, files);
+  registerAgentFiles(app, agentFiles);
   registerTools(app, database, execution, processes, artifacts);
   registerTimeline(app, database, execution);
   app.addHook("preClose", async () => {
+    await agentFiles.close();
     await incoming.close();
     await artifacts.quiesce();
   });

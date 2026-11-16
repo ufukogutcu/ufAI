@@ -13,7 +13,7 @@ Some terms describe planned capabilities. Check the platform guide before presen
 | Term | Meaning |
 | --- | --- |
 | Workspace | A grouping for related agents and work; currently a name, optional description, and agent flowboard |
-| Managed folder | A ufAI-created working location whose path can be copied; agents can use it through file and command tools; folders do not isolate host access |
+| Managed folder | A ufAI-created working location whose path can be copied; the agent Files tab browses persistent agent files and downloads them; agents can use folders through file and command tools; folders do not isolate host access |
 | Flowboard | The visual board belonging to a workspace |
 | Agent Preset | A named reusable configuration with optional saved Provider/model choices and compaction settings |
 | Model provider | A service or local endpoint offering model access; ufAI supports connection setup, model discovery, shared model context windows, and short prompt tests; task inference with tools where the selected model supports them is supported through Agent Presets |

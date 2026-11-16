@@ -350,6 +350,19 @@ export interface ManagedLocation {
   state: "pending" | "ready" | "error";
   error: string | null;
 }
+export interface AgentFileEntry {
+  name: string;
+  /** Slash-separated path relative to the agent's persistent files folder. */
+  path: string;
+  kind: "directory" | "file" | "unavailable";
+  size: number | null;
+  modifiedAt: string | null;
+}
+export interface AgentFileListing {
+  path: string;
+  items: AgentFileEntry[];
+  total: number;
+}
 export interface DeletionOperation {
   id: string;
   kind: Exclude<LocationKind, "task">;
