@@ -170,7 +170,7 @@ test("skills are shared across workspaces, per-agent defaults persist, and built
   assert.equal(defaults.total, 2);
   assert.equal(
     defaults.items.find((s) => s.name === "skill-creation")!.enabled,
-    true,
+    false,
   );
   assert.equal(
     defaults.items.find((s) => s.name === "ufai-help")!.enabled,
@@ -197,7 +197,7 @@ test("skills are shared across workspaces, per-agent defaults persist, and built
   assert.equal(
     (await f.list(other.id)).items.find((s) => s.name === "skill-creation")!
       .enabled,
-    true,
+    false,
   );
   const toggle = await f.app.inject({
     method: "PUT",
@@ -225,7 +225,7 @@ test("skills are shared across workspaces, per-agent defaults persist, and built
       await f.app.inject({
         method: "PUT",
         url: `/api/agents/${f.a.id}/skills/${builtin.id}`,
-        payload: { enabled: false },
+        payload: { enabled: true },
       })
     ).statusCode,
     200,
@@ -233,7 +233,7 @@ test("skills are shared across workspaces, per-agent defaults persist, and built
   await f.restart();
   assert.equal(
     (await f.list()).items.find((s) => s.id === builtin.id)!.enabled,
-    false,
+    true,
   );
   assert.equal(
     (await f.list(f.b.id)).items.find((s) => s.id === custom.id)!.enabled,
@@ -545,6 +545,30 @@ async function runtimeFixture(t: TestContext, provider = "openai-compatible") {
   };
 }
 
+test("built-ins require explicit enablement in filters, details, catalogs and activation", async (t) => {
+  const f = await runtimeFixture(t);
+  const creator = "builtin-skill-creation";
+  assert.equal(f.skills.list("a", { status: "enabled" }).total, 0);
+  assert.equal(f.skills.list("a", { status: "disabled" }).total, 2);
+  assert.deepEqual(f.skills.catalog("a"), []);
+  for (const skillId of [creator, "builtin-ufai-help"]) {
+    const detail = await f.skills.detail(skillId, "a");
+    assert.equal(detail.enabled, false);
+    assert.deepEqual(detail.enabledAgents, []);
+    assert.equal((await f.dispatch("skill_activate", { skillId })).ok, false);
+  }
+  f.skills.setEnabled("a", creator, true);
+  assert.equal(f.skills.list("a", { status: "enabled" }).total, 1);
+  assert.deepEqual(f.skills.catalog("a").map(skill => skill.id), [creator]);
+  assert.deepEqual((await f.skills.detail(creator, "a")).enabledAgents.map(agent => agent.id), ["a"]);
+  assert.equal((await f.dispatch("skill_activate", { skillId: creator })).ok, true);
+  assert.equal(f.skills.activeContext("a", f.owner.taskId).length, 1);
+  f.skills.setEnabled("a", creator, false);
+  assert.deepEqual(f.skills.catalog("a"), []);
+  assert.deepEqual(f.skills.activeContext("a", f.owner.taskId), []);
+  assert.deepEqual((await f.skills.detail(creator, "a")).enabledAgents, []);
+});
+
 test("agent management is journaled, disabled activation fails, and global removal requires confirmation", async (t) => {
   const f = await runtimeFixture(t);
   const created = await f.dispatch("skill_create", { skill: input }, "create");
@@ -649,7 +673,7 @@ for (const provider of ["openai-compatible", "codex"])
     if (provider === "codex") {
       // Use the runtime boundary with the same dynamic callbacks as a Codex session.
       f.connections.executeTask = async (_snapshot, request) => {
-        assert.match(request.instructions, /skill-creation/);
+        assert.doesNotMatch(request.instructions, /skill-creation/);
         if (rounds > 0) {
           assert.ok(request.instructions.includes(input.instructions));
           rounds++;
@@ -682,7 +706,7 @@ for (const provider of ["openai-compatible", "codex"])
         if (createdId && !request.continuation?.length)
           assert.ok(request.instructions.includes(input.instructions));
         if (rounds++ === 0) {
-          assert.match(request.instructions, /skill-creation/);
+          assert.doesNotMatch(request.instructions, /skill-creation/);
           return {
             text: "",
             calls: [
@@ -851,7 +875,7 @@ test("v26 agents receive built-in defaults without changing existing records", a
   const items = response.json<SkillPage>().items;
   assert.equal(
     items.find((skill) => skill.name === "skill-creation")!.enabled,
-    true,
+    false,
   );
   assert.equal(
     items.find((skill) => skill.name === "ufai-help")!.enabled,

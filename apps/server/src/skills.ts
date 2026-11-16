@@ -125,7 +125,7 @@ export class Skills {
     const saved = this.db
       .prepare("SELECT enabled FROM agent_skills WHERE agentId=? AND skillId=?")
       .get(agentId, row.id) as { enabled: number } | undefined;
-    return saved ? !!saved.enabled : row.id === "builtin-skill-creation";
+    return !!saved?.enabled;
   }
   private summary(row: Row, agentId?: string): SkillSummary {
     return {
@@ -311,7 +311,7 @@ export class Skills {
       params.push(query.origin === "builtin" ? 1 : 0);
     }
     const enabled = agentId
-      ? "coalesce(a.enabled,CASE WHEN s.id='builtin-skill-creation' THEN 1 ELSE 0 END)"
+      ? "coalesce(a.enabled,0)"
       : "0";
     if (query.status && query.status !== "all") {
       where.push(`${enabled}=?`);
@@ -345,12 +345,9 @@ export class Skills {
     const enabledAgents = this.db
       .prepare(
         `SELECT a.id,a.name,a.workspaceId FROM agents a LEFT JOIN agent_skills e ON e.agentId=a.id AND e.skillId=?
-      WHERE coalesce(e.enabled,?)=1 ORDER BY a.name,a.id`,
+      WHERE coalesce(e.enabled,0)=1 ORDER BY a.name,a.id`,
       )
-      .all(
-        id,
-        id === "builtin-skill-creation" ? 1 : 0,
-      ) as SkillDetail["enabledAgents"];
+      .all(id) as SkillDetail["enabledAgents"];
     return {
       ...this.summary(row, agentId),
       instructions: row.instructions,
@@ -869,7 +866,7 @@ export class Skills {
     return (
       this.db
         .prepare(
-          `SELECT s.* FROM skills s LEFT JOIN agent_skills e ON e.skillId=s.id AND e.agentId=? WHERE coalesce(e.enabled,CASE WHEN s.id='builtin-skill-creation' THEN 1 ELSE 0 END)=1 ORDER BY s.name,s.id`,
+          `SELECT s.* FROM skills s LEFT JOIN agent_skills e ON e.skillId=s.id AND e.agentId=? WHERE coalesce(e.enabled,0)=1 ORDER BY s.name,s.id`,
         )
         .all(agentId) as Row[]
     )
@@ -912,7 +909,7 @@ export class Skills {
   activeContext(agentId: string, taskId: string): SkillActivation[] {
     return this.db
       .prepare(
-        `SELECT x.skillId,s.revision,s.name,s.instructions,s.folder AS path FROM task_skill_activations x JOIN skills s ON s.id=x.skillId LEFT JOIN agent_skills e ON e.skillId=s.id AND e.agentId=? WHERE x.taskId=? AND s.error IS NULL AND coalesce(e.enabled,CASE WHEN s.id='builtin-skill-creation' THEN 1 ELSE 0 END)=1 ORDER BY x.name,x.skillId`,
+        `SELECT x.skillId,s.revision,s.name,s.instructions,s.folder AS path FROM task_skill_activations x JOIN skills s ON s.id=x.skillId LEFT JOIN agent_skills e ON e.skillId=s.id AND e.agentId=? WHERE x.taskId=? AND s.error IS NULL AND coalesce(e.enabled,0)=1 ORDER BY x.name,x.skillId`,
       )
       .all(agentId, taskId) as SkillActivation[];
   }
