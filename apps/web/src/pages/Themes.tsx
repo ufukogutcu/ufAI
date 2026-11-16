@@ -8,7 +8,7 @@ import {
   type FormEvent,
   type CSSProperties,
 } from "react";
-import { ArrowLeft, Check, ChevronDown, Copy, Home, ListTodo, LockKeyhole, MoreHorizontal, Palette, Plus, Settings, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Copy, Home, ListTodo, LockKeyhole, Palette, Plus, Settings, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Dialog } from "../components/Dialog";
 import { Appearance, AppearanceGroup } from "../components/Appearance";
 import { Disclosure } from "../components/Disclosure";
@@ -257,7 +257,6 @@ function ThemePreview({
                     <foreignObject x="21" y="0" width="176" height="224">
                       <div className={styles.agentSample}>
                         <AgentCharacter appearance={defaultAppearance} paused decorative className={styles.agentSampleCharacter} />
-                        <MoreHorizontal className={styles.agentSampleMenu} size={16} aria-hidden="true" />
                         <span>Researcher</span>
                         <small><Check size={14} aria-label="Ready" /><ListTodo size={14} aria-hidden="true" /> 0</small>
                       </div>

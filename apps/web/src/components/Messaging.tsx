@@ -6,7 +6,7 @@ import {
   type FormEvent,
 } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { Inbox, Link as LinkIcon } from "lucide-react";
+import { Inbox } from "lucide-react";
 import { useAgents, useAgentStore, emptyList } from "../agent-store";
 import { request, errorMessage } from "../api";
 import type {
@@ -510,60 +510,6 @@ export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
           </div>
         </Dialog>
       )}
-    </>
-  );
-}
-export function CommunicationMenuAction({
-  workspaceId,
-  sourceAgentId,
-  onDone,
-}: {
-  workspaceId: string;
-  sourceAgentId: string;
-  onDone: () => void;
-}) {
-  const store = useAgentStore();
-  const links = useAgents(
-    useShallow((s) =>
-      (s.communication[workspaceId]?.links ?? []).filter(
-        (l) =>
-          l.sourceAgentId === sourceAgentId ||
-          l.targetAgentId === sourceAgentId,
-      ),
-    ),
-  );
-  const names = useAgents(
-    useShallow((s) =>
-      Object.fromEntries(
-        Object.values(s.agents)
-          .filter((a) => a.workspaceId === workspaceId)
-          .map((a) => [a.id, a.name]),
-      ),
-    ),
-  );
-  function edit(linkId?: string) {
-    store.setState({
-      communicationEditor: { workspaceId, sourceAgentId, linkId },
-    });
-    onDone();
-  }
-  return (
-    <>
-      <button type="button" className="button secondary" onClick={() => edit()}>
-        <LinkIcon size={14} />
-        Connect agents
-      </button>
-      {links.map((link) => (
-        <button
-          type="button"
-          className="textButton"
-          key={link.id}
-          onClick={() => edit(link.id)}
-        >
-          {names[link.sourceAgentId]} and {names[link.targetAgentId]} ·{" "}
-          {link.state === "active" ? "Edit connection" : "Removal in progress"}
-        </button>
-      ))}
     </>
   );
 }
