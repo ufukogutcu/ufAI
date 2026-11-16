@@ -4,21 +4,37 @@
   min-height: 0;
   position: relative;
 }
-.empty {
+.emptyRegion {
   position: absolute;
   z-index: 2;
-  top: 50%;
+  top: calc(var(--workspace-chrome-bottom, 100%) + 24px);
+  // Reserve the controls' 8px shell, 24px bottom margin and 24px clearance.
+  bottom: calc(var(--zoom-control-size) + 56px);
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  container: workspace-empty / size;
+  pointer-events: none;
+}
+.empty {
+  display: none;
+  position: relative;
   left: calc(50% + 36px);
-  transform: translate(-50%, -40%);
+  transform: translateX(-50%);
   width: min(480px, calc(100% - 144px));
-  max-height: 40%;
+  max-height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
   text-align: center;
   pointer-events: auto;
+  &:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   h2 { font-size: clamp(28px, 3vw, 38px); letter-spacing: -0.05em; font-weight: 500; margin: 24px 0 14px; text-wrap: balance; }
   p { font-size: 14px; color: var(--muted); line-height: 1.7; margin: 0; text-wrap: pretty; }
   .comingSoon { margin-top: 12px; font-size: 12px; color: var(--faint); }
+}
+@container workspace-empty (min-height: 120px) {
+  .empty { display: block; }
 }
 .illustration {
   width: 56px;
@@ -47,7 +63,7 @@
   .hint:global(.react-flow__panel) { display: none; }
 }
 @media (max-height: 520px) {
-  .empty { top: 64%; left: 58%; max-height: 32%; h2 { font-size: 24px; margin-top: 8px; } }
+  .empty { left: 58%; h2 { font-size: 24px; margin-top: 8px; } }
   .illustration { display: none; }
   .empty .comingSoon { display: none; }
 }

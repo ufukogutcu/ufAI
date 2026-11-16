@@ -326,18 +326,25 @@ function Board({ workspaceId }: { workspaceId: string }) {
         </Panel>
       </ReactFlow>
       {!savedNodes.length && (
-        <Appearance>
-          <div className={styles.empty}>
-            <div className={styles.illustration} aria-hidden="true">
-              <Workflow size={34} strokeWidth={1.25} />
+        <div className={styles.emptyRegion}>
+          <Appearance>
+            <div
+              className={styles.empty}
+              role="region"
+              aria-label="Empty workspace introduction"
+              tabIndex={0}
+            >
+              <div className={styles.illustration} aria-hidden="true">
+                <Workflow size={34} strokeWidth={1.25} />
+              </div>
+              <h2>Your workspace starts here</h2>
+              <p>A canvas for your agents and the ways they work together.</p>
+              <p className={styles.comingSoon}>
+                Use Add Agent beside the workspace title to start a conversation.
+              </p>
             </div>
-            <h2>Your workspace starts here</h2>
-            <p>A canvas for your agents and the ways they work together.</p>
-            <p className={styles.comingSoon}>
-              Use Add Agent beside the workspace title to start a conversation.
-            </p>
-          </div>
-        </Appearance>
+          </Appearance>
+        </div>
       )}
       {editor?.workspaceId===workspaceId&&<PermissionEditor key={`${editor.linkId??editor.sourceAgentId??"new"}`} workspaceId={workspaceId}/>}
       {selected && (

@@ -4,7 +4,7 @@ import { FolderLocation } from "../components/FolderLocation";
 import { DeletionProgress } from "../components/DeletionProgress";
 import { useNavigationGuard } from "../navigation-guard";
 import { useSettings } from "../settings-store";
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import {
   ArrowRight,
   ChevronDown,
@@ -194,12 +194,40 @@ export default function Home() {
   const load = useDashboard((state) => state.loadWorkspaces);
   const updateSettings = useSettings((state) => state.update);
   const [action, setAction] = useState<WorkspaceAction | null>(null);
+  const home = useRef<HTMLElement>(null);
+  const chrome = useRef<HTMLDivElement>(null);
   const tabList = useRef<HTMLDivElement>(null);
   const active = selectedWorkspace;
   const tabs =
     active && !workspaces.some((workspace) => workspace.id === active.id)
       ? [...workspaces, active]
       : workspaces;
+  // Measure changed content before paint; observe later reflows without React state.
+  useLayoutEffect(() => {
+    const container = home.current;
+    const header = chrome.current;
+    if (!container || !header) return;
+    let frame = 0;
+    function measure() {
+      const bottom = Math.ceil(
+        header!.getBoundingClientRect().bottom - container!.getBoundingClientRect().top,
+      );
+      container!.style.setProperty("--workspace-chrome-bottom", `${bottom}px`);
+    }
+    function scheduleMeasure() {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    }
+    const observer = new ResizeObserver(scheduleMeasure);
+    observer.observe(container);
+    observer.observe(header);
+    measure();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      container.style.removeProperty("--workspace-chrome-bottom");
+    };
+  }, [active?.id, active?.name, active?.description, agentError, agentConnected, error]);
   useEffect(() => {
     const list = tabList.current;
     if (!list) return;
@@ -266,8 +294,8 @@ export default function Home() {
     if (active) guard(() => agentStore.setState({ createIn: active.id }));
   }
   return (
-    <section className={styles.home} aria-label="Home">
-      <div className={styles.workspaceChrome}>
+    <section ref={home} className={styles.home} aria-label="Home">
+      <div ref={chrome} className={styles.workspaceChrome}>
         <div className={`${styles.workspaceBar} glassSurface`}>
           <GlassMaterial />
           <div

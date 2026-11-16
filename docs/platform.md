@@ -62,7 +62,7 @@ One local installation holds one shared setup across browser sessions. There are
 
 - **Status:** partial
 - **Purpose:** Provide a visual board for each workspace.
-- **Steps:** Drag to pan, scroll to zoom, or use the zoom and reset-view buttons. Each workspace remembers its own completed view changes across reloads and restarts.
+- **Steps:** Drag to pan, scroll to zoom, or use the zoom and reset-view buttons. Each workspace remembers its own completed view changes across reloads and restarts. On an empty flowboard, the introductory hint appears below the workspace heading and description, clear of the bottom controls. It hides when there is too little room and returns when space is available; Add Agent remains available.
 - **Limitations:** Choose Add Agent at the upper-right of the workspace area, beside its title, then open its node to configure it or chat. Drag nodes to arrange them, or focus their name button and use arrow keys. Positions are saved after movement. Mutual agent communication links are created through the rings around agents. Select an existing connection line or endpoint grip to edit it. Failed position or connection-point saves offer Retry saves; unsaved adjustments are not durable until saved.
 
 ### agent-characters
