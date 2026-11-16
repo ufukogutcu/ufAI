@@ -40,6 +40,7 @@ import type {
 } from "../../../server/src/contracts";
 import { FolderLocation } from "./FolderLocation";
 import { AgentFiles } from "./AgentFiles";
+import { agentPanelTabs, type AgentPanelTab } from "../agent-panel-tabs";
 import { Field } from "./FormField";
 import { Dialog } from "./Dialog";
 import styles from "./AgentPanel.module.scss";
@@ -463,8 +464,11 @@ export function AgentPanel({
   const store = useAgentStore(),
     guard = useNavigationGuard();
   const [editingCharacter, setEditingCharacter] = useState(false);
-  const [tab, setTab] = useState("Chat"),
-    [taskId, setTaskId] = useState<string | null>(null),
+  const tab = useAgents(s => s.panelTabs[agent.id] ?? "Chat");
+  const setTab = useCallback((value: AgentPanelTab) => {
+    store.getState().setPanelTab(agent.id, value);
+  }, [agent.id, store]);
+  const [taskId, setTaskId] = useState<string | null>(null),
     [newTask, setNewTask] = useState(false),
     [error, setError] = useState(""),
     [deleting, setDeleting] = useState(false),
@@ -476,12 +480,12 @@ export function AgentPanel({
   const requestedTask=useAgents(s=>s.requestedTask?.agentId===agent.id?s.requestedTask:null);
   const openConversation = useCallback(async (id: string, signal?: AbortSignal) => {
     const detail = await request<TaskDetail>(`/tasks/${id}`, "GET", undefined, signal);
-    if (detail.task.agentId !== agent.id) return;
+    if (signal?.aborted || detail.task.agentId !== agent.id) return;
     if (detail.task.kind === "chat") {
       await store.getState().refreshAgent(agent.id);
       if (!signal?.aborted) setTab("Chat");
     } else { setTab("Tasks"); setTaskId(id); setNewTask(false); }
-  }, [agent.id, store]);
+  }, [agent.id, store, setTab]);
   useEffect(() => {
     if (!requestedTask) return;
     const controller = new AbortController();
@@ -592,7 +596,7 @@ export function AgentPanel({
         </button>
       </header>
       <nav className={styles.tabs} aria-label="Agent sections">
-        {["Chat", "Tasks", "Files", "Memory", "Details"].map((v) => (
+        {agentPanelTabs.map((v) => (
           <button
             key={v}
             aria-current={tab === v ? "page" : undefined}

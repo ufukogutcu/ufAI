@@ -229,6 +229,10 @@ function Board({ workspaceId }: { workspaceId: string }) {
     },
     [agentStore, workspaceId, guard],
   );
+  const handlePaneClick = useCallback(() => {
+    if (agentStore.getState().selected[workspaceId])
+      guard(() => agentStore.getState().select(workspaceId, null));
+  }, [agentStore, workspaceId, guard]);
   const handleNodeDragStop = useCallback(
     (_event: MouseEvent | TouchEvent, node: WorkspaceFlowNode) => {
       const generation = dragging.current;
@@ -295,6 +299,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onNodeClick={handleNodeClick}
+        onPaneClick={handlePaneClick}
         onNodeDragStart={() => {
           dragging.current = agentStore.getState().beginCanvasInteraction();
         }}

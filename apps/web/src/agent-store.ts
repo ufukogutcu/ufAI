@@ -12,6 +12,7 @@ export type {
   WorkspaceFlowNode,
 } from "./canvas-layout";
 import { deleteManaged } from "./managed-files";
+import { readAgentPanelTabs, saveAgentPanelTabs, type AgentPanelTab, type AgentPanelTabs } from "./agent-panel-tabs";
 import { request, errorMessage, RequestError } from "./api";
 import type {
   Agent,
@@ -104,6 +105,8 @@ interface AgentState {
   memoryTotals: Record<string, number>;
   workloads: Record<string, AgentWorkload>;
   selected: Record<string, string | null>;
+  panelTabs: AgentPanelTabs;
+  setPanelTab: (agentId: string, tab: AgentPanelTab) => void;
   drafts: Record<string, string>;
   fileDrafts: Record<string, DraftAttachment[]>;
   setFileDraft: (key: string, files: DraftAttachment[]) => void;
@@ -186,6 +189,13 @@ export function createAgentStore() {
   >();
   const revisions = new Map<string, number>();
   return createStore<AgentState>((set, get) => {
+    function forgetPanelTabs(ids: string[]) {
+      if (!ids.some(id => Object.hasOwn(get().panelTabs, id))) return;
+      const panelTabs = { ...get().panelTabs };
+      for (const id of ids) delete panelTabs[id];
+      set({ panelTabs });
+      saveAgentPanelTabs(panelTabs);
+    }
     function forgetAppearanceSuggestion(workspaceId: string) {
       const pending = appearanceRequests.get(workspaceId);
       appearanceRequests.delete(workspaceId);
@@ -571,6 +581,13 @@ export function createAgentStore() {
       memoryTotals: {},
       workloads: {},
       selected: {},
+      panelTabs: readAgentPanelTabs(),
+      setPanelTab(agentId, tab) {
+        if (get().panelTabs[agentId] === tab) return;
+        const panelTabs = { ...get().panelTabs, [agentId]: tab };
+        set({ panelTabs });
+        saveAgentPanelTabs(panelTabs);
+      },
       drafts: {},
       createIn: null,
       appearanceSuggestions: {},
@@ -640,6 +657,7 @@ export function createAgentStore() {
             set((s) => ({ deletions: { ...s.deletions, [id]: deletions } }));
             const sequence = ++snapshotSequence;
             const allAgents = await all<Agent>(`/workspaces/${id}/agents`);
+            const removedIds: string[] = [];
             set((state) => {
               const invalidated = (revisions.get(id) ?? 0) !== version;
               const preserveLayout =
@@ -653,7 +671,10 @@ export function createAgentStore() {
                   a.workspaceId === id &&
                   !ids.has(a.id) &&
                   sequence >= (activitySequences.get(a.id) ?? 0)
-                ) delete agents[a.id];
+                ) {
+                  delete agents[a.id];
+                  removedIds.push(a.id);
+                }
               for (const a of allAgents)
                 if (!preserveLayout || agents[a.id])
                   agents[a.id] = reconcileAgent(
@@ -676,6 +697,7 @@ export function createAgentStore() {
                 error: "",
               };
             });
+            forgetPanelTabs(removedIds);
           } catch (e) {
             set({ error: errorMessage(e) });
           }
@@ -791,6 +813,7 @@ export function createAgentStore() {
       async remove(id) {
         const a = get().agents[id];
         await deleteManaged(`/agents/${id}`);
+        forgetPanelTabs([id]);
         pendingPositions.delete(id);
         const owned = new Set((get().tasks[id] ?? []).map((t) => t.id));
         const chatId = get().chats[id]?.task?.id;
