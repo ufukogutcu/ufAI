@@ -31,6 +31,7 @@ import type {
   TaskDetail,
   Page,
   CommunicationLink,
+  CommunicationAnchors,
   InboxEntry,
 } from "../../server/src/contracts";
 
@@ -56,7 +57,10 @@ interface AgentState {
     workspaceId: string,
     sourceAgentId: string,
     targetAgentId: string,
+    anchors?: Partial<CommunicationAnchors>,
   ) => Promise<void>;
+  anchorDrafts: Record<string, Partial<CommunicationAnchors>>;
+  saveCommunicationAnchors: (workspaceId: string, linkId: string, anchors: Partial<CommunicationAnchors>) => Promise<void>;
   toolData: Record<
     string,
     {
@@ -170,6 +174,10 @@ function merge<T extends { id: string }>(before: T[], after: T[]) {
 export function createAgentStore() {
   const toolRefresh = new Set<string>();
   const communicationRefresh = new Set<string>();
+  const anchorWrites = new Map<string, Promise<void>>();
+  const pendingAnchors = new Map<string, { workspaceId: string; anchors: Partial<CommunicationAnchors> }>();
+  let anchorRevision = 0;
+  const anchorRevisions = new Map<string, number>();
   const pendingRefresh = new Set<string>();
   const layoutRefresh = new Set<string>();
   // Execution changes do not increment the saved agent revision. Order runtime
@@ -363,7 +371,7 @@ export function createAgentStore() {
               throw e;
             }
           }
-          if (!pendingPositions.size && !pendingClusterLayouts.size)
+          if (!pendingPositions.size && !pendingClusterLayouts.size && !pendingAnchors.size)
             set({ positionError: "" });
         })().finally(() => clusterWrites.delete(id));
         clusterWrites.set(id, write);
@@ -489,6 +497,58 @@ export function createAgentStore() {
         });
       },
       communication: {},
+      anchorDrafts: {},
+      async saveCommunicationAnchors(workspaceId, id, anchors) {
+        anchorRevisions.set(id, ++anchorRevision);
+        pendingAnchors.set(id, { workspaceId, anchors: { ...pendingAnchors.get(id)?.anchors, ...anchors } });
+        set(s => ({ anchorDrafts: { ...s.anchorDrafts, [id]: { ...s.anchorDrafts[id], ...anchors } } }));
+        const running = anchorWrites.get(id);
+        if (running) return running;
+        const write = (async () => {
+          while (pendingAnchors.has(id)) {
+            const patch = pendingAnchors.get(id)!;
+            pendingAnchors.delete(id);
+            try {
+              const saved = await request<CommunicationLink>(`/communication-links/${id}/anchors`, "PATCH", patch.anchors);
+              anchorRevisions.set(id, ++anchorRevision);
+              set(s => {
+                const workspace = s.communication[workspaceId];
+                const drafts = { ...s.anchorDrafts };
+                const next = pendingAnchors.get(id);
+                if (next) drafts[id] = next.anchors;
+                else delete drafts[id];
+                return {
+                  anchorDrafts: drafts,
+                  ...(workspace ? { communication: { ...s.communication, [workspaceId]: {
+                    ...workspace, links: workspace.links.map(link => link.id === id ? {
+                      ...link, sourceAnchorAngle: saved.sourceAnchorAngle, targetAnchorAngle: saved.targetAnchorAngle,
+                    } : link),
+                  } } } : {}),
+                };
+              });
+            } catch (e) {
+              const permanent = e instanceof RequestError && e.status !== undefined && e.status >= 400 && e.status < 500;
+              const active = get().communication[workspaceId]?.links.some(link => link.id === id && link.state === "active");
+              if (!permanent && active) pendingAnchors.set(id, {
+                workspaceId, anchors: { ...patch.anchors, ...pendingAnchors.get(id)?.anchors },
+              });
+              else {
+                pendingAnchors.delete(id);
+                set(s => { const drafts = { ...s.anchorDrafts }; delete drafts[id]; return { anchorDrafts: drafts }; });
+              }
+              set({ positionError: errorMessage(e) });
+              throw e;
+            }
+          }
+          if (!pendingPositions.size && !pendingClusterLayouts.size && !pendingAnchors.size)
+            set({ positionError: "" });
+        })().finally(() => {
+          anchorWrites.delete(id);
+          if (!get().communication[workspaceId]?.links.some(link => link.id === id)) anchorRevisions.delete(id);
+        });
+        anchorWrites.set(id, write);
+        return write;
+      },
       requestedTask: null,
       communicationEditor: null,
       async loadCommunication(id) {
@@ -501,6 +561,7 @@ export function createAgentStore() {
         return single(key, async () => {
           do {
             communicationRefresh.delete(id);
+            const readRevision = anchorRevision;
             try {
               const links: CommunicationLink[] = [];
               let offset = 0,
@@ -519,6 +580,23 @@ export function createAgentStore() {
               >(`/workspaces/${id}/inbox?limit=50`);
               set((s) => {
                 const old = s.communication[id];
+                const linkIds = new Set(links.map(link => link.id));
+                for (const link of old?.links ?? [])
+                  if (!linkIds.has(link.id) && !anchorWrites.has(link.id)) anchorRevisions.delete(link.id);
+                // A read started before a completed anchor save cannot rewind it.
+                for (let i = 0; i < links.length; i++) {
+                  const link = links[i]!;
+                  if ((anchorRevisions.get(link.id) ?? 0) <= readRevision) continue;
+                  const current = old?.links.find(item => item.id === link.id);
+                  if (current) links[i] = { ...link, sourceAnchorAngle: current.sourceAnchorAngle, targetAnchorAngle: current.targetAnchorAngle };
+                }
+                for (const [linkId, patch] of pendingAnchors) {
+                  if (patch.workspaceId === id && !links.some(link => link.id === linkId && link.state === "active")) {
+                    pendingAnchors.delete(linkId);
+                  }
+                }
+                const anchorDrafts = Object.fromEntries(Object.entries(s.anchorDrafts).filter(([linkId]) =>
+                  !old?.links.some(link => link.id === linkId) || links.some(link => link.id === linkId && link.state === "active")));
                 if (
                   old &&
                   !old.error &&
@@ -541,6 +619,7 @@ export function createAgentStore() {
                       error: "",
                     },
                   },
+                  ...(equal(s.anchorDrafts, anchorDrafts) ? {} : { anchorDrafts }),
                 };
               });
             } catch (e) {
@@ -561,11 +640,11 @@ export function createAgentStore() {
           } while (communicationRefresh.has(id));
         });
       },
-      async createCommunicationLink(workspaceId, sourceAgentId, targetAgentId) {
+      async createCommunicationLink(workspaceId, sourceAgentId, targetAgentId, anchors) {
         await request(
           `/workspaces/${workspaceId}/communication-links`,
           "POST",
-          { sourceAgentId, targetAgentId },
+          { sourceAgentId, targetAgentId, ...anchors },
         );
         await get().loadCommunication(workspaceId);
       },
@@ -837,7 +916,7 @@ export function createAgentStore() {
                 (revisions.get(a.workspaceId) ?? 0) + 1,
               );
               put(saved, sequence, pendingPositions.has(id));
-              if (!pendingPositions.size && !pendingClusterLayouts.size)
+              if (!pendingPositions.size && !pendingClusterLayouts.size && !pendingAnchors.size)
                 set({ positionError: "" });
             } catch (e) {
               if (!pendingPositions.has(id)) pendingPositions.set(id, value);
@@ -850,6 +929,10 @@ export function createAgentStore() {
         return write;
       },
       async retryPositions() {
+        for (const [id, patch] of [...pendingAnchors]) {
+          try { await get().saveCommunicationAnchors(patch.workspaceId, id, patch.anchors); }
+          catch { /* Retain retryable angles and the visible error. */ }
+        }
         for (const [id, patch] of [...pendingClusterLayouts]) {
           try {
             await get().updateCluster(id, patch);

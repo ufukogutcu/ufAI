@@ -9,8 +9,8 @@ import {
   type FormEvent,
 } from "react";
 import { CommunicationMenuAction } from "./Messaging";
-import messagingStyles from "./Messaging.module.scss";
-import { Handle, Position, NodeResizeControl, useUpdateNodeInternals, type NodeProps } from "@xyflow/react";
+import { AgentConnectionRing } from "./ConnectionRings";
+import { NodeResizeControl, type NodeProps } from "@xyflow/react";
 import { Ban, Check, CircleAlert, Clock, Hourglass, Layers, ListTodo, LoaderCircle, MessageCircle, MoreHorizontal, Pencil, TriangleAlert } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useAgents, useAgentStore } from "../agent-store";
@@ -219,22 +219,7 @@ export const AgentNode = memo(function AgentNode({
   const [menu, setMenu] = useState(false);
   const paused = useSettings(s => s.snapshot.settings.characterAnimationsPaused);
   const hidden = useContext(CharacterVisibilityContext);
-  const updateNodeInternals = useUpdateNodeInternals();
   const hasIssues = !!agent && (agent.issueCounts.warning > 0 || agent.issueCounts.error > 0);
-  useEffect(() => {
-    const media = window.matchMedia("(any-pointer: coarse)");
-    let frame = 0;
-    function updateHandles() {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => updateNodeInternals(id));
-    }
-    updateHandles();
-    media.addEventListener("change", updateHandles);
-    return () => {
-      cancelAnimationFrame(frame);
-      media.removeEventListener("change", updateHandles);
-    };
-  }, [id, hasIssues, updateNodeInternals]);
   if (!agent) return null;
   const state = agentStates[agent.state];
   const StateIcon = state.icon;
@@ -281,8 +266,7 @@ export const AgentNode = memo(function AgentNode({
       style={cluster ? clusterColor(cluster.colorSlot) : undefined}
     >
       <div className={agentStyles.canvasCharacter}><LiveAgentCharacter agent={agent} /></div>
-      <Handle id="left" type="source" position={Position.Left} className={messagingStyles.handle} aria-label={`Connect ${agent.name} to another agent (left)`} />
-      <Handle id="right" type="source" position={Position.Right} className={messagingStyles.handle} aria-label={`Connect ${agent.name} to another agent (right)`} />
+      <AgentConnectionRing id={id} name={agent.name} />
       <div className={agentStyles.nodeCard}>
         <Tooltip content={agent.name}>
           <button

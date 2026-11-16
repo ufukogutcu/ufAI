@@ -11,6 +11,8 @@ import { useAgents, useAgentStore, emptyList } from "../agent-store";
 import { request, errorMessage } from "../api";
 import type {
   InboxEntry,
+  CommunicationAnchors,
+  CommunicationLink,
   MessagingOperation,
   Page,
   RevocationImpact,
@@ -21,6 +23,34 @@ import { MessageAttachments } from "./MessageAttachments";
 import { Tooltip } from "./Tooltip";
 import styles from "./Messaging.module.scss";
 import { RichText } from "./RichText";
+function ConnectionAngles({ link, sourceName, targetName }: { link: CommunicationLink; sourceName: string; targetName: string }) {
+  const store = useAgentStore();
+  const savedDraft = useAgents(s => s.anchorDrafts[link.id]);
+  const [patch, setPatch] = useState<Partial<Record<keyof CommunicationAnchors, string>>>({});
+  const [busy, setBusy] = useState(false), [error, setError] = useState(""), [saved, setSaved] = useState(false);
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true); setError(""); setSaved(false);
+    try {
+      const angles = Object.fromEntries(Object.entries(patch).map(([key, value]) => [key, Number(value)]));
+      await store.getState().saveCommunicationAnchors(link.workspaceId, link.id, angles);
+      setPatch({}); setSaved(true);
+    } catch (e) { setError(errorMessage(e)); }
+    finally { setBusy(false); }
+  }
+  return <form className={styles.form} onSubmit={event => void submit(event)}>
+    <p>Connection points run clockwise from 0° on the right.</p>
+    {([["sourceAnchorAngle", sourceName], ["targetAnchorAngle", targetName]] as const).map(([key, name]) =>
+      <label key={key}>{name} connection angle
+        <input type="number" name={key} min="0" max="359.99999999999994" step="any" required
+          value={patch[key] ?? savedDraft?.[key] ?? link[key]} disabled={busy || link.state !== "active"}
+          onChange={event => { setPatch(previous => ({ ...previous, [key]: event.target.value })); setSaved(false); }} />
+      </label>)}
+    <button type="submit" className="button secondary" disabled={busy || link.state !== "active" || !Object.keys(patch).length}>Apply connection points</button>
+    {error && <p role="alert" className="error">{error}</p>}
+    {saved && <p role="status">Connection points saved.</p>}
+  </form>;
+}
 function AttachedFiles({ ids }: { ids: string[] }) {
   return (
     <MessageAttachments
@@ -149,6 +179,9 @@ export function PermissionEditor({ workspaceId }: { workspaceId: string }) {
                   link.targetAgentId}
               </strong>
             </p>
+            <ConnectionAngles key={link.id} link={link}
+              sourceName={agents.find(agent => agent.id === link.sourceAgentId)?.name ?? "First agent"}
+              targetName={agents.find(agent => agent.id === link.targetAgentId)?.name ?? "Second agent"} />
             {!impact && !operation && (
               <button
                 className="button danger"

@@ -1,4 +1,5 @@
 import { MessageTransits } from "./message-transits.js";
+import { facingAnchorAngles } from "./communication-anchors.js";
 import { createHash, randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { FastifyInstance } from "fastify";
@@ -8,12 +9,24 @@ import type { ToolOwner } from "./process-service.js";
 import { ConnectionError } from "./model-providers.js";
 import { guard } from "./connections.js";
 import { pagination, objectBody } from "./validation.js";
-import type { AgentTask, TaskCheckIn } from "./contracts.js";
+import type { AgentTask, TaskCheckIn, CommunicationAnchors } from "./contracts.js";
 
 const now = () => new Date().toISOString();
 const fail = (message: string, code = 409): never => {
   throw new ConnectionError(message, code);
 };
+function validateAnchors(input: Record<string, unknown>, required = false): Partial<CommunicationAnchors> {
+  const result: Partial<CommunicationAnchors> = {};
+  for (const key of ["sourceAnchorAngle", "targetAnchorAngle"] as const) {
+    if (!(key in input)) continue;
+    const angle = input[key];
+    if (typeof angle !== "number" || !Number.isFinite(angle) || angle < 0 || angle >= 360)
+      fail("Connection angles must be finite numbers from 0 up to, but excluding, 360 degrees.", 400);
+    result[key] = angle as number;
+  }
+  if (required && !Object.keys(result).length) fail("Provide at least one connection angle.", 400);
+  return result;
+}
 export interface MessageEnvelope {
   source?: "user" | "agent" | "system";
   senderId?: string;
@@ -376,7 +389,8 @@ export class MessagingService {
     if (!l) fail("Communication link not found.", 404);
     return l;
   }
-  createLink(workspaceId: string, source: string, target: string) {
+  createLink(workspaceId: string, source: string, target: string, input: Partial<CommunicationAnchors> = {}) {
+    const anchors = validateAnchors(input);
     if (
       typeof source !== "string" ||
       typeof target !== "string" ||
@@ -404,10 +418,23 @@ export class MessagingService {
     const id = randomUUID();
     this.db
       .prepare(
-        "INSERT INTO communication_links(id,workspaceId,sourceAgentId,targetAgentId,createdAt) VALUES (?,?,?,?,?)",
+        "INSERT INTO communication_links(id,workspaceId,sourceAgentId,targetAgentId,createdAt,sourceAnchorAngle,targetAnchorAngle) VALUES (?,?,?,?,?,?,?)",
       )
-      .run(id, workspaceId, source, target, now());
+      .run(id, workspaceId, source, target, now(),
+        anchors.sourceAnchorAngle ?? facingAnchorAngles(a, b).sourceAnchorAngle,
+        anchors.targetAnchorAngle ?? facingAnchorAngles(a, b).targetAnchorAngle);
     this.changed(workspaceId);
+    return this.link(id);
+  }
+  updateAnchors(id: string, input: Record<string, unknown>) {
+    if (Object.keys(input).some(key => !["sourceAnchorAngle", "targetAnchorAngle"].includes(key)))
+      fail("Only connection angles can be changed here.", 400);
+    const anchors = validateAnchors(input, true);
+    const link = this.link(id);
+    if (link.state !== "active") fail("This link is being revoked.");
+    this.db.prepare("UPDATE communication_links SET sourceAnchorAngle=?,targetAnchorAngle=? WHERE id=?")
+      .run(anchors.sourceAnchorAngle ?? link.sourceAnchorAngle, anchors.targetAnchorAngle ?? link.targetAnchorAngle, id);
+    this.changed(link.workspaceId);
     return this.link(id);
   }
   find(owner: ToolOwner, args: any) {
@@ -1557,6 +1584,7 @@ export function registerMessaging(
             req.params.id,
             b.sourceAgentId as string,
             b.targetAgentId as string,
+            validateAnchors(b),
           ),
         );
     }),
@@ -1572,6 +1600,10 @@ export function registerMessaging(
           )
           .get(req.params.id) ?? null,
     })),
+  );
+  app.patch(
+    "/api/communication-links/:id/anchors",
+    checked(req => service.updateAnchors(req.params.id, objectBody(req.body))),
   );
   app.post(
     "/api/communication-links/:id/revocation-preview",

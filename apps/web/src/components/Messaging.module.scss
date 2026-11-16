@@ -66,12 +66,6 @@
     padding-block: 8px;
   }
 }
-.handle {
-  background: var(--communication-edge) !important;
-  border-color: var(--panel) !important;
-  width: 12px !important;
-  height: 12px !important;
-}
 .edge :global(.react-flow__edge-path) {
   stroke: var(--communication-edge);
   stroke-width: 1.5;
@@ -82,26 +76,6 @@
 }
 .badge {
   font-variant-numeric: tabular-nums;
-}
-@media (any-pointer: coarse) {
-  .handle {
-    width: 44px !important;
-    height: 44px !important;
-    background: transparent !important;
-    border: none !important;
-    &::after {
-      content: "";
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%);
-      width: 12px;
-      height: 12px;
-      border: 2px solid var(--panel);
-      border-radius: 50%;
-      background: var(--communication-edge);
-    }
-  }
 }
 
 .panel > p {

@@ -7,7 +7,7 @@ import { appearanceAt, appearanceSpaceSize, createAppearanceAllocator, appearanc
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
 import type { Agent } from "../src/contracts.js";
-import { removeChat, removeCharacters } from "./legacy-schema.js";
+import { removeChat, removeCharacters, removeCommunicationAnchors } from "./legacy-schema.js";
 
 function seededRandom(seed = 42) {
   return () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
@@ -149,7 +149,7 @@ test("migration backfills durable distinct appearances while preserving centers,
     INSERT INTO agent_turns(id,taskId,conversationId,agentId,inputMessageId,attempt,status,snapshot,createdAt,updatedAt) VALUES ('turn','task','conversation','agent-0','message',1,'queued','{"keep":true}','then','then');`);
   db.close(); db = openDatabase(path);
   const agents = db.prepare("SELECT * FROM agents ORDER BY id").all() as any[];
-  assert.equal(db.pragma("user_version", { simple: true }), 24);
+  assert.equal(db.pragma("user_version", { simple: true }), 25);
   assert.equal(new Set(agents.map(agent => appearanceKey(JSON.parse(agent.appearance)))).size, 4);
   for (const agent of agents) {
     assert.equal(agent.x + 176 / 2, 100 + 224 / 2);
@@ -180,7 +180,7 @@ test("compact geometry upgrades version 16 once, preserving metadata and clampin
   db.pragma("user_version = 16");
   db.close(); db = openDatabase(path);
   const after = db.prepare("SELECT * FROM agents ORDER BY id").all() as any[];
-  assert.equal(db.pragma("user_version", { simple: true }), 24);
+  assert.equal(db.pragma("user_version", { simple: true }), 25);
   for (let i = 0; i < before.length; i++) {
     const expectedX = Math.max(-1e6, Math.min(1e6, before[i].x + 32) - 16);
     assert.deepEqual(after[i], { ...before[i], x: expectedX, y: -16 });
@@ -208,10 +208,11 @@ test("larger character geometry upgrades version 23 once, preserving centers and
   ] as const) insert.run(id, workspace, clusterId, x, y);
   const before = db.prepare("SELECT * FROM agents ORDER BY id").all() as any[];
   const cluster = db.prepare("SELECT * FROM clusters WHERE id='group'").get();
+  removeCommunicationAnchors(db);
   db.pragma("user_version = 23");
   db.close(); db = openDatabase(path);
   const after = db.prepare("SELECT * FROM agents ORDER BY id").all() as any[];
-  assert.equal(db.pragma("user_version", { simple: true }), 24);
+  assert.equal(db.pragma("user_version", { simple: true }), 25);
   for (let i = 0; i < before.length; i++) {
     const x = Math.max(-1e6, before[i].x - 16);
     const y = Math.max(-1e6, before[i].y - 16);

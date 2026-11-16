@@ -1,5 +1,10 @@
 import { memo, useEffect, useRef } from "react";
-import { BaseEdge, getBezierPath, type EdgeProps } from "@xyflow/react";
+import { BaseEdge, useInternalNode, type EdgeProps } from "@xyflow/react";
+import { useStore } from "zustand";
+import { useAgents } from "../agent-store";
+import type { CommunicationLink } from "../../../server/src/contracts";
+import { circlePoint, radialPath, ringCenter } from "../connection-geometry";
+import { ConnectionGrip, useConnectionRings } from "./ConnectionRings";
 import { Mail } from "lucide-react";
 import { useMessageTransits, type VisualTransit } from "../message-transit-store";
 import styles from "./CommunicationEdge.module.scss";
@@ -58,10 +63,29 @@ function Envelopes({ path, source, transits }: { path: string; source: string; t
 }
 
 export const CommunicationEdge = memo(function CommunicationEdge(props: EdgeProps) {
+  const link = props.data?.link as CommunicationLink;
+  const source = useInternalNode(props.source), target = useInternalNode(props.target);
+  const savedDraft = useAgents(s => s.anchorDrafts[props.id]);
+  const { store } = useConnectionRings();
+  const dragAngle = useStore(store, s => s.drag?.kind === "edit" && s.drag.linkId === props.id ? s.drag.angle : undefined);
+  const dragEndpoint = useStore(store, s => s.drag?.kind === "edit" && s.drag.linkId === props.id ? s.drag.endpoint : undefined);
+  const hovered = useStore(store, s => s.hoveredLink === props.id);
+  const sourceName = useAgents(s => s.agents[props.source]?.name ?? "agent");
+  const targetName = useAgents(s => s.agents[props.target]?.name ?? "agent");
   const transits = useMessageTransits(props.id);
-  const [path] = getBezierPath(props);
-  return <>
+  if (!source || !target) return null;
+  const sourceAngle = (dragEndpoint === "sourceAnchorAngle" ? dragAngle : undefined) ?? savedDraft?.sourceAnchorAngle ?? link.sourceAnchorAngle;
+  const targetAngle = (dragEndpoint === "targetAnchorAngle" ? dragAngle : undefined) ?? savedDraft?.targetAnchorAngle ?? link.targetAnchorAngle;
+  const from = circlePoint(ringCenter(source.internals.positionAbsolute), sourceAngle);
+  const to = circlePoint(ringCenter(target.internals.positionAbsolute), targetAngle);
+  const path = radialPath(from, sourceAngle, to, targetAngle);
+  return <g onMouseEnter={() => store.getState().hover(props.id)} onMouseLeave={() => store.getState().hover(null)}
+    onFocus={() => store.getState().hover(props.id)} onBlur={() => store.getState().hover(null)}>
     <BaseEdge id={props.id} path={path} style={props.style} interactionWidth={props.interactionWidth} />
     {transits.length > 0 && <Envelopes path={path} source={props.source} transits={transits} />}
-  </>;
+    {link.state === "active" && <>
+      <ConnectionGrip linkId={props.id} endpoint="sourceAnchorAngle" agentName={sourceName} peerName={targetName} {...from} angle={sourceAngle} visible={hovered || dragAngle !== undefined} />
+      <ConnectionGrip linkId={props.id} endpoint="targetAnchorAngle" agentName={targetName} peerName={sourceName} {...to} angle={targetAngle} visible={hovered || dragAngle !== undefined} />
+    </>}
+  </g>;
 });

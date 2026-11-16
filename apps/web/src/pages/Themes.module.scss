@@ -798,6 +798,10 @@
     color: var(--muted); font-size: 12px; svg:first-child { margin-right: 8px; }
   }
 }
+.agentSampleScene { display: block; width: 100%; max-width: 218px; height: auto; overflow: visible; flex-shrink: 0; }
+.agentSampleRing { opacity: 0.1; transition: opacity 160ms ease-out; }
+.agentSampleScene:hover .agentSampleRing { opacity: 0.2; }
+@media (prefers-reduced-motion: reduce) { .agentSampleRing { transition: none; } }
 .agentSample .agentSampleCharacter { position: relative; z-index: 0; width: 160px; height: 160px; margin: 0 auto -36px; filter: drop-shadow(0 2px 3px var(--agent-node-shadow)); }
 .agentSampleMenu { position: absolute; top: 8px; right: 8px; color: var(--muted); }
 .agentPanelSample { background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius-panel); padding: 12px; box-shadow: 0 12px 36px var(--agent-panel-shadow); }

@@ -14,7 +14,7 @@ import { AgentTools, validateTool } from "../src/agent-tools.js";
 import { AgentExecution } from "../src/agent-execution.js";
 import { ConnectionService } from "../src/connection-service.js";
 import { MessagingService } from "../src/messaging.js";
-import { removeMessagingTables } from "./legacy-schema.js";
+import { removeMessagingTables, removeCommunicationAnchors } from "./legacy-schema.js";
 import { createApp } from "../src/app.js";
 import { connectedAgentSummaries } from "../src/connection-awareness.js";
 import type { TaskRequest, ToolCall, ToolResult } from "../src/execution-types.js";
@@ -30,6 +30,15 @@ function arrive(s: { db: ReturnType<typeof openDatabase>; messaging: MessagingSe
   s.db.prepare("UPDATE message_transits SET arrivesAt='2000-01-01T00:00:00.000Z' WHERE state='in_flight'").run();
   while (s.db.prepare("SELECT 1 FROM message_transits WHERE state='in_flight' LIMIT 1").get()) s.messaging.transits.reconcile();
 }
+test("anchor edits reject invalid numbers and revoking links without changing permission endpoints", async t => {
+  const s = await setup(t);
+  const link = s.messaging.createLink(s.workspaceId, "a", "b");
+  for (const value of [NaN, Infinity, -Infinity, -0.01, 360, null, "20"])
+    assert.throws(() => s.messaging.updateAnchors(link.id, { sourceAnchorAngle: value }), /finite/);
+  s.db.prepare("UPDATE communication_links SET state='revoking' WHERE id=?").run(link.id);
+  assert.throws(() => s.messaging.updateAnchors(link.id, { sourceAnchorAngle: 20 }), /revoked/);
+  assert.deepEqual(s.messaging.link(link.id), { ...link, state: "revoking" });
+});
 async function setup(t: any, run = false) {
   const directory = await mkdtemp(join(tmpdir(), "ufai-messages-")),
     path = join(directory, "app.sqlite"),
@@ -858,7 +867,7 @@ test("v13 upgrade preserves populated records and stable paths while backfilling
       );
     else assert.deepEqual(rows, retained[table], table);
   }
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 24);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 25);
   assert.deepEqual(
     (upgraded.prepare("SELECT content FROM agent_messages").all() as any[]).map(
       (r) => r.content,
@@ -2755,12 +2764,13 @@ test("v20 routing upgrade preserves existing check-ins and installs missing rout
   );
   await s.engine.close();
   await s.messaging.close();
+  removeCommunicationAnchors(s.db);
   s.db.exec(
     "DROP INDEX communication_deliveries_turn; DROP TABLE message_transits; ALTER TABLE task_checkins DROP COLUMN returnEnvelope; ALTER TABLE agent_requests DROP COLUMN returnEnvelope; PRAGMA user_version=20",
   );
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 24);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 25);
     const row = upgraded
       .prepare("SELECT * FROM task_checkins WHERE id=?")
       .get(reminder.checkinId) as any;
@@ -2925,6 +2935,7 @@ test("one connection permits independent requests and notifications from either 
 
 async function restoreDirectedLinks(s: Awaited<ReturnType<typeof setup>>) {
   await s.messaging.close();
+  removeCommunicationAnchors(s.db);
   s.db.exec("DROP INDEX communication_deliveries_turn; DROP TABLE message_transits; DROP INDEX communication_pair; DROP INDEX communication_target; PRAGMA user_version=21");
 }
 function insertReverseLink(s: Awaited<ReturnType<typeof setup>>, id: string) {
@@ -2933,7 +2944,7 @@ function insertReverseLink(s: Awaited<ReturnType<typeof setup>>, id: string) {
 function upgradeLinks(s: Awaited<ReturnType<typeof setup>>) {
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 24);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 25);
     assert.deepEqual(upgraded.pragma("foreign_key_check"), []);
     assert.deepEqual(upgraded.pragma("integrity_check"), [{ integrity_check: "ok" }]);
   } finally {
@@ -3234,10 +3245,11 @@ test("v22 upgrade preserves old messages without adding retrospective transmissi
   const sent = s.messaging.send(s.owner, { agentId: "b", content: "Old message" }, "upgrade-transit");
   arrive(s);
   await s.messaging.close();
+  removeCommunicationAnchors(s.db);
   s.db.exec("DROP INDEX communication_deliveries_turn; DROP TABLE message_transits; PRAGMA user_version=22");
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 24);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 25);
     assert.equal((upgraded.prepare("SELECT count(*) n FROM message_transits").get() as any).n, 0);
     assert.equal((upgraded.prepare("SELECT content FROM communication_messages WHERE id=?").get(sent.messageId) as any).content, "Old message");
     assert.deepEqual(upgraded.pragma("foreign_key_check"), []);

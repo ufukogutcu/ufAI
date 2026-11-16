@@ -239,12 +239,22 @@ function ThemePreview({
                     <GlassMaterial />
                     − &nbsp; 100% &nbsp; +
                   </span>
-                  <div className={styles.agentSample}>
-                    <AgentCharacter appearance={defaultAppearance} paused decorative className={styles.agentSampleCharacter} />
-                    <MoreHorizontal className={styles.agentSampleMenu} size={16} aria-hidden="true" />
-                    <span>Researcher</span>
-                    <small><Check size={14} aria-label="Ready" /><ListTodo size={14} aria-hidden="true" /> 0</small>
-                  </div>
+                  <svg className={styles.agentSampleScene} viewBox="0 0 218 224" role="img" aria-label="Agent connection ring and endpoint grips">
+                    <g transform="translate(12 0)">
+                      <circle className={styles.agentSampleRing} cx="97" cy="112" r="95" fill="none" stroke="var(--communication-edge)" strokeWidth="5" />
+                      <path d="M2 112H-10M192 112H204" stroke="var(--communication-edge)" strokeWidth="1.5" />
+                      <circle cx="2" cy="112" r="5" fill="var(--communication-edge-selected)" stroke="var(--panel)" strokeWidth="2" />
+                      <circle cx="192" cy="112" r="5" fill="var(--communication-edge-selected)" stroke="var(--panel)" strokeWidth="2" />
+                    </g>
+                    <foreignObject x="21" y="0" width="176" height="224">
+                      <div className={styles.agentSample}>
+                        <AgentCharacter appearance={defaultAppearance} paused decorative className={styles.agentSampleCharacter} />
+                        <MoreHorizontal className={styles.agentSampleMenu} size={16} aria-hidden="true" />
+                        <span>Researcher</span>
+                        <small><Check size={14} aria-label="Ready" /><ListTodo size={14} aria-hidden="true" /> 0</small>
+                      </div>
+                    </foreignObject>
+                  </svg>
                   <div className={styles.agentPanelSample}>Agent conversation</div>
                   <div className={styles.clusterSample}>
                     <strong>Research Cluster</strong>

@@ -1,4 +1,5 @@
 import { CommunicationEdge } from "./CommunicationEdge";
+import { ConnectionPreview, ConnectionRingsProvider, useConnectionRings } from "./ConnectionRings";
 import { createMessageTransitStore, MessageTransitContext } from "../message-transit-store";
 import { useShallow } from "zustand/react/shallow";
 import { PermissionEditor } from "./Messaging";
@@ -6,7 +7,6 @@ import messagingStyles from "./Messaging.module.scss";
 import { useCallback, useEffect, useRef, useMemo, useState } from "react";
 import {
   ConnectionMode,
-  type Connection,
   type Edge,
   Background,
   BackgroundVariant,
@@ -104,6 +104,7 @@ function ViewControls() {
 
 function Board({ workspaceId }: { workspaceId: string }) {
   const agentStore = useAgentStore();
+  const { store: ringStore } = useConnectionRings();
   const [transitStore] = useState(createMessageTransitStore);
   const savedNodes = useAgents((s) => s.nodes[workspaceId] ?? emptyNodes);
   const links = useAgents(s => s.communication[workspaceId]?.links ?? emptyList);
@@ -112,23 +113,28 @@ function Board({ workspaceId }: { workspaceId: string }) {
     link.id,
     `Connection between ${s.agents[link.sourceAgentId]?.name ?? "agent"} and ${s.agents[link.targetAgentId]?.name ?? "agent"}`,
   ]))));
-  const sourceOnLeft = useAgents(useShallow(s => Object.fromEntries(links.map(link => [
-    link.id,
-    (s.agents[link.sourceAgentId]?.x ?? 0) <= (s.agents[link.targetAgentId]?.x ?? 0),
-  ]))));
   const edges = useMemo<Edge[]>(() => links.map(link => ({
     id: link.id,
     type: "communication",
     source: link.sourceAgentId,
     target: link.targetAgentId,
-    sourceHandle: sourceOnLeft[link.id] ? "right" : "left",
-    targetHandle: sourceOnLeft[link.id] ? "left" : "right",
+    sourceHandle: "ring",
+    targetHandle: "ring",
+    data: { link },
+    reconnectable: false,
     className: editor?.linkId === link.id ? messagingStyles.selected : messagingStyles.edge,
     ariaLabel: edgeNames[link.id],
-  })), [links, editor?.linkId, edgeNames, sourceOnLeft]);
-  const connect=useCallback((connection:Connection)=>{
-    if(connection.source && connection.target) void agentStore.getState().createCommunicationLink(workspaceId,connection.source,connection.target).catch(e=>agentStore.setState({positionError:errorMessage(e)}));
-  },[agentStore,workspaceId]);
+    domAttributes: {
+      onFocus: () => ringStore.getState().hover(link.id),
+      onBlur: () => ringStore.getState().hover(null),
+      onKeyDown: event => {
+        if (event.key === "Enter") {
+          event.preventDefault(); event.stopPropagation();
+          agentStore.setState({ communicationEditor: { workspaceId, linkId: link.id } });
+        }
+      },
+    },
+  })), [links, editor?.linkId, edgeNames, ringStore, agentStore, workspaceId]);
   const selectedId = useAgents((s) => s.selected[workspaceId]);
   const selected = useAgents((s) =>
     selectedId ? s.agents[selectedId] : undefined,
@@ -349,11 +355,11 @@ function Board({ workspaceId }: { workspaceId: string }) {
         onNodeDragStop={handleNodeDragStop}
         nodesDraggable
         nodesFocusable={false}
-        nodesConnectable
+        nodesConnectable={false}
         connectionMode={ConnectionMode.Loose}
+        edgesReconnectable={false}
         edgesFocusable
         edges={edges}
-        onConnect={connect}
         onEdgeClick={(_event,edge)=>agentStore.setState({communicationEditor:{workspaceId,linkId:edge.id}})}
         onEdgeDoubleClick={(_event,edge)=>agentStore.setState({communicationEditor:{workspaceId,linkId:edge.id}})}
         elementsSelectable
@@ -368,6 +374,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
           color="var(--canvas-dots)"
         />
         <ViewControls />
+        <ConnectionPreview />
         <Panel position="bottom-right" className={styles.hint}>
           Drag to pan <span>·</span> Scroll to zoom
         </Panel>
@@ -447,7 +454,9 @@ export function Flowboard({ workspaceId }: { workspaceId: string }) {
       )}
       {viewport ? (
         <ReactFlowProvider key={workspaceId}>
-          <Board workspaceId={workspaceId} />
+          <ConnectionRingsProvider workspaceId={workspaceId}>
+            <Board workspaceId={workspaceId} />
+          </ConnectionRingsProvider>
         </ReactFlowProvider>
       ) : (
         <Appearance>

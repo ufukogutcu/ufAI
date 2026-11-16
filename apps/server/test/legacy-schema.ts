@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { validateAppearance } from "../src/agent-appearance.js";
 import type Database from "better-sqlite3";
 
+export function removeCommunicationAnchors(database: Database.Database) {
+  const columns = database.pragma("table_info(communication_links)") as { name: string }[];
+  for (const name of ["sourceAnchorAngle", "targetAnchorAngle"])
+    if (columns.some(column => column.name === name)) database.exec(`ALTER TABLE communication_links DROP COLUMN ${name}`);
+}
+
 // Reconstruct columns removed in v9 when an upgrade fixture starts from today's schema.
 export function restoreOutputColumns(database: Database.Database) {
   removeExecutionTables(database);
@@ -14,6 +20,7 @@ export function restoreOutputColumns(database: Database.Database) {
 
 // Reconstruct v18 state before any older-schema fixture is assembled.
 export function removeCheckIns(database: Database.Database) {
+  removeCommunicationAnchors(database);
   database.exec("DROP INDEX IF EXISTS communication_deliveries_turn; DROP TABLE IF EXISTS message_transits");
   database.exec("DROP TABLE IF EXISTS task_checkins");
   const columns = database.pragma("table_info(agent_tasks)") as {

@@ -450,8 +450,10 @@ export interface ArtifactVersion {
 export interface CommunicationLink {
   /** Legacy endpoint names; the connection grants contact in both directions. */
   id: string; workspaceId: string; sourceAgentId: string; targetAgentId: string;
+  sourceAnchorAngle: number; targetAnchorAngle: number;
   state: "active" | "revoking"; createdAt: string;
 }
+export type CommunicationAnchors = Pick<CommunicationLink, "sourceAnchorAngle" | "targetAnchorAngle">;
 export interface TaskCheckIn {
   id: string;
   taskId: string;

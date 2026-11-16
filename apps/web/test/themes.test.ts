@@ -300,7 +300,7 @@ test("application color literals and CSS variables must come from the theme cata
         // Local color aliases resolve to catalog scopes; other exceptions describe layout.
         if ([
           "--swatch", "--cluster-color", "--character-body", "--radius-floating", "--radius-panel",
-          "--radius-control", "--radius-compact", "--issue-gap",
+          "--radius-control", "--radius-compact", "--issue-gap", "--connection-grip-scale",
           "--control-height", "--icon-control-size", "--nav-target-size",
           "--nav-gap", "--nav-index", "--dock-padding", "--dock-padding-block", "--dock-left",
           "--dock-width", "--shell-gutter", "--toolbar-top",
