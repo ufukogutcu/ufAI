@@ -334,6 +334,65 @@ test("tool calls are journaled, deduplicated, validate ownership and optimistic 
   );
   await s.processes.stop(p.id);
 });
+test("oversized command waits execute once with normalized arguments and retain original journal evidence", async t => {
+  const s = await setup(t);
+  const originalStart = s.processes.start.bind(s.processes);
+  const start = t.mock.method(s.processes, "start", originalStart);
+  const call = { id: "capped-command", name: "process_start", arguments: Object.freeze({ command: "printf 'capped wait'", yieldMs: 10000 }) };
+  const dispatch = () => s.tools.dispatch(s.owner, call, s.signal, async () => ({}));
+  const [first, concurrentReplay] = await Promise.all([dispatch(), dispatch()]);
+  assert.equal(first.ok, true);
+  assert.deepEqual(concurrentReplay, first);
+  assert.deepEqual(await dispatch(), first);
+  assert.equal(start.mock.callCount(), 1);
+  assert.equal(start.mock.calls[0].arguments[1].yieldMs, 1000);
+  assert.equal(call.arguments.yieldMs, 10000);
+  const invocation = s.db.prepare("SELECT arguments FROM tool_invocations WHERE turnId=? AND callId=?").get(s.owner.turnId, call.id) as any;
+  assert.deepEqual(JSON.parse(invocation.arguments), call.arguments);
+  const activity = s.db.prepare("SELECT content FROM execution_items WHERE turnId=? AND kind='tool_call'").all(s.owner.turnId) as any[];
+  assert.equal(activity.length, 1);
+  assert.deepEqual(JSON.parse(activity[0].content).arguments, call.arguments);
+  await assert.rejects(() => s.tools.dispatch(s.owner, { ...call, arguments: { ...call.arguments, yieldMs: 1000 } }, s.signal, async () => ({})), /reused with different arguments/);
+  assert.equal(start.mock.callCount(), 1);
+  const process = first.process as any;
+  await s.processes.wait(process.id, s.signal);
+  assert.equal(s.processes.get(process.id).exitCode, 0);
+  assert.equal(Buffer.from((await s.processes.output(process.id)).data, "base64").toString(), "capped wait");
+  assert.equal((s.db.prepare("SELECT count(*) AS count FROM owned_processes WHERE turnId=?").get(s.owner.turnId) as any).count, 1);
+});
+test("invalid command waits return actionable errors without launching a process", async t => {
+  const s = await setup(t);
+  const start = t.mock.method(s.processes, "start", s.processes.start.bind(s.processes));
+  for (const [index, yieldMs] of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1, "1000", null].entries()) {
+    const result = await s.tools.dispatch(s.owner, { id: `bad-wait-${index}`, name: "process_start", arguments: { command: "true", yieldMs } }, s.signal, async () => ({}));
+    assert.equal(result.ok, false);
+    assert.match(result.error as string, /^process_start\.yieldMs: .*nonnegative safe integer.*0–1000 ms inclusive/);
+  }
+  assert.equal(start.mock.callCount(), 0);
+  assert.equal((s.db.prepare("SELECT count(*) AS count FROM owned_processes").get() as any).count, 0);
+});
+test("direct process starts validate waits before effects and defensively cap the scheduled delay", async t => {
+  const s = await setup(t);
+  const verifyRoot = t.mock.method(s.files, "verifyRoot", s.files.verifyRoot.bind(s.files));
+  for (const yieldMs of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1, NaN, Infinity, "1000", null])
+    await assert.rejects(() => s.processes.start(s.owner, { command: "true", yieldMs }, s.signal), /process_start\.yieldMs: .*nonnegative safe integer/);
+  assert.equal(verifyRoot.mock.callCount(), 0);
+  assert.equal((s.db.prepare("SELECT count(*) AS count FROM owned_processes").get() as any).count, 0);
+  const originalTimeout = globalThis.setTimeout;
+  const delays: number[] = [];
+  const timer = t.mock.method(globalThis, "setTimeout", (callback: () => void, ms: number) => {
+    delays.push(ms);
+    return originalTimeout(callback, ms);
+  });
+  for (const [args, expected] of [[{}, 100], [{ yieldMs: 0 }, 0], [{ yieldMs: 10000 }, 1000]] as const) {
+    delays.length = 0;
+    const process = await s.processes.start(s.owner, { command: "true", ...args }, s.signal);
+    assert.deepEqual(delays, [expected]);
+    await s.processes.wait(process.id, s.signal);
+    assert.equal(s.processes.get(process.id).exitCode, 0);
+  }
+  timer.mock.restore();
+});
 test("artifacts snapshot bytes, publish versions, materialize, and survive producer deletion", async (t) => {
   const s = await setup(t),
     file = join(s.files.location("task", s.owner.taskId).path, "report.txt");
@@ -503,6 +562,22 @@ test("artifact HTTP routes reject foreign origins and expose no path download ro
     ).statusCode,
     404,
   );
+});
+test("process HTTP argument errors retain their status and response shape", async t => {
+  const app = createApp({ databasePath: ":memory:", execution: { autoStart: false } });
+  t.after(() => app.close());
+  await app.ready();
+  for (const [operation, payload, path, correction] of [
+    ["resize", { cols: 0, rows: 30 }, "process_resize.cols", /20 to 500 inclusive/],
+    ["input", {}, "process_input.data", /Missing required argument.*Expected string/],
+  ] as const) {
+    const response = await app.inject({ method: "POST", url: `/api/processes/missing/${operation}`, payload });
+    assert.equal(response.statusCode, 400);
+    const body = response.json();
+    assert.deepEqual(Object.keys(body), ["error"]);
+    assert.ok(body.error.startsWith(`${path}: `));
+    assert.match(body.error, correction);
+  }
 });
 
 test("guardian disconnect settles owned commands without relaunch or stale PID signals", async (t) => {

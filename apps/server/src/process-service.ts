@@ -8,6 +8,7 @@ import type { OwnedProcess, ProcessOutput } from "./contracts.js";
 import type { ManagedFiles } from "./managed-files.js";
 import { managedDirectory, managedFile } from "./host-paths.js";
 import { ConnectionError } from "./model-providers.js";
+import { normalizeProcessYieldMs, processYieldDefaultMs } from "./process-start-options.js";
 
 export interface ToolOwner {
   workspaceId: string;
@@ -71,6 +72,9 @@ export class ProcessService {
     signal: AbortSignal,
   ) {
     signal.throwIfAborted();
+    const yieldMs = Object.hasOwn(args, "yieldMs")
+      ? normalizeProcessYieldMs(args.yieldMs)
+      : processYieldDefaultMs;
     await this.files.verifyRoot();
     this.files.assertAvailable(owner.workspaceId, owner.agentId);
     if (this.stopped)
@@ -228,7 +232,7 @@ export class ProcessService {
         rows: args.rows ?? 30,
       });
       await new Promise<void>((r) =>
-        setTimeout(r, Math.min(args.yieldMs ?? 100, 1000)),
+        setTimeout(r, yieldMs),
       );
       return this.get(id);
     } catch (error) {

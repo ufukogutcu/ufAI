@@ -11,6 +11,13 @@ import type { ManagedFiles } from "./managed-files.js";
 import type { ProcessService, ToolOwner } from "./process-service.js";
 import type { ArtifactService } from "./artifact-service.js";
 import { ConnectionError } from "./model-providers.js";
+import {
+  normalizeProcessYieldMs,
+  processYieldDefaultMs,
+  processYieldGuidance,
+  processYieldMaxMs,
+  processYieldMinMs,
+} from "./process-start-options.js";
 const str = (description: string, maxLength = 4096) => ({
   type: "string",
   description,
@@ -225,13 +232,17 @@ const allTaskTools: ToolSpec[] = [
   ),
   spec(
     "process_start",
-    "Start an OS shell command. Use pty for interactive terminal programs. Returns a process handle; background processes may outlive the reply. Use process_wait to yield until completion.",
+    `Start an OS shell command. Use pty for interactive terminal programs. Returns a process handle; background processes may outlive the reply. yieldMs: ${processYieldGuidance}`,
     {
       command: str("Shell command", 16000),
       cwd: str("Absolute working directory"),
       pty: bool,
       background: bool,
-      yieldMs: number(0, 1000),
+      yieldMs: {
+        ...number(processYieldMinMs, processYieldMaxMs),
+        default: processYieldDefaultMs,
+        description: processYieldGuidance,
+      },
       cols: number(20, 500),
       rows: number(5, 200),
       env: {
@@ -320,11 +331,39 @@ allTaskTools.push(...mcpTools);
 export const taskTools = allTaskTools.filter(t => t.name !== "agent_wait");
 export function validateTool(name: string, args: unknown) {
   const definition = allTaskTools.find((t) => t.name === name);
-  if (!definition) throw new ConnectionError("Unknown tool.", 400);
-  validate(args, definition.parameters);
-  return args as Record<string, any>;
+  if (!definition)
+    throw new ConnectionError(`${name}: Unknown tool. Use an exact name from the supplied tool definitions.`, 400);
+  const normalized = name === "process_start" && args !== null && typeof args === "object" && !Array.isArray(args)
+    ? {
+        ...args,
+        ...(Object.hasOwn(args, "yieldMs")
+          ? { yieldMs: normalizeProcessYieldMs((args as Record<string, unknown>).yieldMs) }
+          : {}),
+      }
+    : args;
+  validate(normalized, definition.parameters, name);
+  return normalized as Record<string, any>;
 }
-function validate(value: any, schema: any) {
+function argumentPath(path: string, key: string) {
+  return /^[A-Za-z_$][\w$]*$/.test(key)
+    ? `${path}.${key}`
+    : `${path}[${JSON.stringify(key)}]`;
+}
+function numericRequirement(schema: any) {
+  const min = schema.minimum ?? Number.MIN_SAFE_INTEGER;
+  const max = schema.maximum ?? Number.MAX_SAFE_INTEGER;
+  return `Expected a safe integer from ${min} to ${max} inclusive. Supply a whole number within these bounds.`;
+}
+function typeRequirement(schema: any) {
+  const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+  return types.includes("integer") && types.length === 1
+    ? numericRequirement(schema)
+    : `Expected ${types.join(" or ")}. Supply a value of that type.`;
+}
+function validate(value: any, schema: any, path: string) {
+  const invalid = (correction: string): never => {
+    throw new ConnectionError(`${path}: ${correction}`, 400);
+  };
   const types = Array.isArray(schema.type) ? schema.type : [schema.type];
   const kind =
     value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
@@ -332,51 +371,48 @@ function validate(value: any, schema: any) {
     !types.includes(kind) &&
     !(types.includes("integer") && Number.isSafeInteger(value))
   )
-    throw new ConnectionError("Invalid tool argument type.", 400);
+    invalid(typeRequirement(schema));
   if (schema.enum && !schema.enum.includes(value))
-    throw new ConnectionError("Invalid tool choice.", 400);
+    invalid(`Invalid choice. Use one of: ${schema.enum.map((v: unknown) => JSON.stringify(v)).join(", ")}.`);
   if (Array.isArray(value)) {
     if (
       value.length < (schema.minItems ?? 0) ||
-      value.length > (schema.maxItems ?? Infinity) ||
-      (schema.uniqueItems && new Set(value).size !== value.length)
+      value.length > (schema.maxItems ?? Infinity)
     )
-      throw new ConnectionError(
-        "Invalid tool array length or duplicate items.",
-        400,
-      );
-    for (const item of value) validate(item, schema.items);
+      invalid(`Invalid array length. Supply at least ${schema.minItems ?? 0} items${schema.maxItems === undefined ? "" : ` and at most ${schema.maxItems} items`}.`);
+    if (schema.uniqueItems && new Set(value).size !== value.length)
+      invalid("Duplicate array items. Remove duplicates so every item is unique.");
+    for (const [index, item] of value.entries()) validate(item, schema.items, `${path}[${index}]`);
   }
   if (
     typeof value === "string" &&
     (value.length > (schema.maxLength ?? Infinity) ||
-      value.length < (schema.minLength ?? 0) ||
-      value.includes("\u0000"))
+      value.length < (schema.minLength ?? 0))
   )
-    throw new ConnectionError(
-      "Invalid tool text length or NUL character.",
-      400,
-    );
+    invalid(`Invalid text length. Supply at least ${schema.minLength ?? 0} characters${schema.maxLength === undefined ? "" : ` and at most ${schema.maxLength} characters`}.`);
+  if (typeof value === "string" && value.includes("\u0000"))
+    invalid("NUL characters are not allowed. Remove all NUL characters from this text.");
   if (
     typeof value === "number" &&
     (!Number.isSafeInteger(value) ||
       value < (schema.minimum ?? -Infinity) ||
       value > (schema.maximum ?? Infinity))
   )
-    throw new ConnectionError("Invalid tool number.", 400);
+    invalid(numericRequirement(schema));
   if (kind === "object") {
     if (Object.keys(value).length > (schema.maxProperties ?? 100))
-      throw new ConnectionError("Too many tool arguments.", 400);
+      invalid(`Too many properties. Supply at most ${schema.maxProperties ?? 100} properties; remove extra properties.`);
     for (const key of schema.required ?? [])
-      if (!(key in value))
-        throw new ConnectionError(`Missing tool argument: ${key}.`, 400);
-    for (const [key, v] of Object.entries(value)) {
+      if (!Object.hasOwn(value, key))
+        throw new ConnectionError(`${argumentPath(path, key)}: Missing required argument. ${typeRequirement(schema.properties[key])}`, 400);
+    for (const key of Object.keys(value).sort()) {
+      const childPath = argumentPath(path, key);
       if (["__proto__", "constructor", "prototype"].includes(key))
-        throw new ConnectionError("Invalid tool argument.", 400);
-      const child = schema.properties?.[key] ?? schema.additionalProperties;
+        throw new ConnectionError(`${childPath}: Prohibited property. Remove this field.`, 400);
+      const child = (Object.hasOwn(schema.properties ?? {}, key) ? schema.properties[key] : undefined) ?? schema.additionalProperties;
       if (!child || child === false)
-        throw new ConnectionError(`Unknown tool argument: ${key}.`, 400);
-      if (typeof child === "object") validate(v, child);
+        throw new ConnectionError(`${childPath}: Unknown argument. Remove this field; use only fields from the tool schema.`, 400);
+      if (typeof child === "object") validate(value[key], child, childPath);
     }
   }
 }
@@ -518,7 +554,7 @@ export class AgentTools {
     const promise = (async () => {
       let result: ToolResult;
       try {
-        validateTool(call.name, args);
+        const validatedArgs = validateTool(call.name, args);
         if (call.name === "task_yield" && !allowYield)
           throw new ConnectionError(
             "Call task_yield alone after all other tools finish.",
@@ -529,7 +565,7 @@ export class AgentTools {
           ...(await this.execute(
             owner,
             call.name,
-            args,
+            validatedArgs,
             signal,
             wait,
             waitAgent,
