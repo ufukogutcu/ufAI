@@ -61,7 +61,9 @@ export function AgentForm({
     expectedRevision?: number;
   }) => Promise<Agent | void>;
 }) {
-  const [appearance, setAppearance] = useState<AgentAppearance | null>(null);
+  const suggestion = useAgents(s => workspaceId ? s.appearanceSuggestions[workspaceId] : undefined);
+  const loadAppearance = useAgents(s => s.loadAppearanceSuggestion);
+  const [appearance, setAppearance] = useState<AgentAppearance | null>(suggestion?.appearance ?? null);
   const [appearanceError, setAppearanceError] = useState("");
   const [appearanceAttempt, setAppearanceAttempt] = useState(0);
   const [editingCharacter, setEditingCharacter] = useState(false);
@@ -71,11 +73,11 @@ export function AgentForm({
     if (agent || !workspaceId || appearanceTouched.current) return;
     let alive = true;
     setAppearanceError("");
-    void request<{ appearance: AgentAppearance }>(`/workspaces/${workspaceId}/agents/appearance-suggestion`)
-      .then(result => { if (alive && !appearanceTouched.current) setAppearance(result.appearance); })
+    void loadAppearance(workspaceId, appearanceAttempt > 0)
+      .then(result => { if (alive && !appearanceTouched.current) setAppearance(result); })
       .catch(failure => { if (alive && !appearanceTouched.current) setAppearanceError(errorMessage(failure)); });
     return () => { alive = false; };
-  }, [agent, workspaceId, appearanceAttempt]);
+  }, [agent, workspaceId, appearanceAttempt, loadAppearance]);
   const presets = useDashboard((s) => s.presets),
     load = useDashboard((s) => s.loadPresets),
     presetTotal = useDashboard((s) => s.presetTotal),

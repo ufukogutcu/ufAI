@@ -1,0 +1,79 @@
+.addAgent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 0 12px 0 0;
+  gap: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--panel);
+  box-shadow: none;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: auto;
+  transition: background-color 160ms;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--secondary-hover);
+  }
+
+  &:hover .character,
+  &:focus-visible .character {
+    transform: translateY(-2px) rotate(-6deg);
+  }
+
+  &[data-paused="true"] .character {
+    transform: none;
+    transition: none;
+  }
+}
+
+.preview {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 56px;
+  width: 56px;
+  height: 48px;
+}
+
+.character {
+  width: 56px;
+  height: 56px;
+  transition: transform 160ms ease-out;
+}
+
+.badge {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-compact);
+  background: var(--primary-background);
+  color: var(--primary-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .addAgent {
+    transition: none;
+    .character {
+      transition: none;
+    }
+    .character,
+    &:hover .character,
+    &:focus-visible .character {
+      transform: none;
+    }
+  }
+}

@@ -33,6 +33,12 @@ import type {
   InboxEntry,
 } from "../../server/src/contracts";
 
+interface AppearanceSuggestion {
+  appearance: AgentAppearance | null;
+  error: string;
+  loading: boolean;
+}
+
 interface AgentState {
   communication: Record<
     string,
@@ -102,6 +108,8 @@ interface AgentState {
   fileDrafts: Record<string, DraftAttachment[]>;
   setFileDraft: (key: string, files: DraftAttachment[]) => void;
   createIn: string | null;
+  appearanceSuggestions: Record<string, AppearanceSuggestion>;
+  loadAppearanceSuggestion: (workspaceId: string, retry?: boolean) => Promise<AgentAppearance>;
   positionError: string;
   submissionIds: Record<string, { content: string; id: string }>;
   submissionId: (key: string, content: string) => string;
@@ -158,6 +166,7 @@ function merge<T extends { id: string }>(before: T[], after: T[]) {
   return [...map.values()];
 }
 export function createAgentStore() {
+  const appearanceRequests = new Map<string, { promise: Promise<AgentAppearance>; controller: AbortController }>();
   const toolRefresh = new Set<string>();
   const communicationRefresh = new Set<string>();
   const anchorWrites = new Map<string, Promise<void>>();
@@ -177,6 +186,15 @@ export function createAgentStore() {
   >();
   const revisions = new Map<string, number>();
   return createStore<AgentState>((set, get) => {
+    function forgetAppearanceSuggestion(workspaceId: string) {
+      const pending = appearanceRequests.get(workspaceId);
+      appearanceRequests.delete(workspaceId);
+      pending?.controller.abort();
+      set(s => {
+        const { [workspaceId]: removed, ...appearanceSuggestions } = s.appearanceSuggestions;
+        return { appearanceSuggestions };
+      });
+    }
     function reconcileAgent(
       existing: Agent | undefined,
       agent: Agent,
@@ -555,6 +573,41 @@ export function createAgentStore() {
       selected: {},
       drafts: {},
       createIn: null,
+      appearanceSuggestions: {},
+      loadAppearanceSuggestion(workspaceId, retry = false) {
+        const pending = appearanceRequests.get(workspaceId);
+        if (pending) return pending.promise;
+        const cached = get().appearanceSuggestions[workspaceId];
+        if (!retry && cached?.appearance) return Promise.resolve(cached.appearance);
+        if (!retry && cached?.error) return Promise.reject(new Error(cached.error));
+        // Bound the temporary cache, retaining the open creation dialog's draft source.
+        if (!cached && Object.keys(get().appearanceSuggestions).length >= 16) {
+          const oldest = Object.keys(get().appearanceSuggestions).find(id => id !== get().createIn);
+          if (oldest) forgetAppearanceSuggestion(oldest);
+        }
+        const controller = new AbortController();
+        const promise = request<{ appearance: AgentAppearance }>(
+          `/workspaces/${workspaceId}/agents/appearance-suggestion`, "GET", undefined, controller.signal,
+        ).then(result => {
+          if (appearanceRequests.get(workspaceId)?.promise === promise) {
+            set(s => ({ appearanceSuggestions: { ...s.appearanceSuggestions,
+              [workspaceId]: { appearance: result.appearance, loading: false, error: "" } } }));
+          }
+          return result.appearance;
+        }).catch(error => {
+          if (appearanceRequests.get(workspaceId)?.promise === promise) {
+            set(s => ({ appearanceSuggestions: { ...s.appearanceSuggestions,
+              [workspaceId]: { appearance: null, loading: false, error: errorMessage(error) } } }));
+          }
+          throw error;
+        }).finally(() => {
+          if (appearanceRequests.get(workspaceId)?.promise === promise) appearanceRequests.delete(workspaceId);
+        });
+        appearanceRequests.set(workspaceId, { promise, controller });
+        set(s => ({ appearanceSuggestions: { ...s.appearanceSuggestions,
+          [workspaceId]: { appearance: null, loading: true, error: "" } } }));
+        return promise;
+      },
       positionError: "",
       submissionIds: {},
       eventVersion: 0,
@@ -724,6 +777,8 @@ export function createAgentStore() {
           createIn: null,
           selected: { ...s.selected, [workspaceId]: a.id },
         }));
+        forgetAppearanceSuggestion(workspaceId);
+        void get().loadAppearanceSuggestion(workspaceId).catch(() => {});
         return a;
       },
       async update(id, input) {

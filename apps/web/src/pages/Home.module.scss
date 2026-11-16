@@ -106,6 +106,7 @@
   overflow-wrap: anywhere;
   h1 {
     display: block;
+    flex: 1;
     min-width: 0;
     max-height: 25vh;
     overflow-y: auto;
@@ -129,10 +130,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-}
-.addAgent {
-  flex-shrink: 0;
-  pointer-events: auto;
 }
 .canvas {
   height: 100%;
@@ -194,12 +191,4 @@
   flex-wrap: wrap;
   gap: 8px;
   flex-shrink: 0;
-}
-@media (max-width: 767px) {
-  .workspaceHeadingRow {
-    flex-wrap: wrap;
-  }
-  .creationActions {
-    flex-shrink: 1;
-  }
 }

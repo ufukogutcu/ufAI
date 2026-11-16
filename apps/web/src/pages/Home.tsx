@@ -23,6 +23,7 @@ import { Tooltip } from "../components/Tooltip";
 import styles from "./Home.module.scss";
 import { GlassMaterial } from "../components/GlassMaterial";
 import { Appearance } from "../components/Appearance";
+import { AddAgentButton } from "../components/AddAgentButton";
 
 type WorkspaceAction =
   | { kind: "create" }
@@ -261,6 +262,9 @@ export default function Home() {
   function handleMore() {
     void load(true);
   }
+  function handleAddAgent() {
+    if (active) guard(() => agentStore.setState({ createIn: active.id }));
+  }
   return (
     <section className={styles.home} aria-label="Home">
       <div className={styles.workspaceChrome}>
@@ -393,15 +397,7 @@ export default function Home() {
                 <h1>{active.name}</h1>
               </Appearance>
               <div className={styles.creationActions}>
-                <button
-                  className={`button ${styles.addAgent}`}
-                  onClick={() =>
-                    guard(() => agentStore.setState({ createIn: active.id }))
-                  }
-                >
-                  <Plus size={15} aria-hidden="true" />
-                  Add Agent
-                </button>
+                <AddAgentButton workspaceId={active.id} onClick={handleAddAgent} />
               </div>
             </div>
             {active.description && (
