@@ -464,6 +464,147 @@ test("MCP binary and oversized results use immutable artifacts and supported nat
   assert.ok(Buffer.byteLength(JSON.stringify(large)) < 65536);
 });
 
+test("MCP discovery caps oversized requests and paginates complete schemas across upstream pages", async (t) => {
+  for (const mode of ["count", "complex"]) {
+    await t.test(mode, async (t) => {
+      const f = await fixture(t);
+      const s = await f.mcp.create("a", {
+        ...local,
+        env: { MCP_CATALOG_MODE: mode },
+      });
+      const names: string[] = [], cursors = new Set<string>();
+      let cursor: string | undefined;
+      for (let page = 0; ; page++) {
+        assert.ok(page < 100, "pagination must terminate");
+        const result = await f.dispatch("mcp_tools_list", {
+          serverId: s.id,
+          limit: page === 0 ? 200 : page % 2 ? 3 : 50,
+          ...(cursor ? { cursor } : {}),
+        });
+        assert.equal(result.ok, true, JSON.stringify(result));
+        const mcp = result.mcp as any;
+        assert.equal(mcp.artifact, undefined);
+        assert.ok(Buffer.byteLength(JSON.stringify(mcp)) <= 48000);
+        assert.ok(mcp.items.length > 0);
+        if (page === 0)
+          if (mode === "count") assert.equal(mcp.items.length, 50);
+          else assert.ok(mcp.items.length < 20, "complexity must shorten the page before the byte limit");
+        for (const item of mcp.items) {
+          names.push(item.name);
+          if (mode === "complex")
+            assert.deepEqual(item.inputSchema.properties.value.enum, Array(800).fill(0));
+        }
+        cursor = mcp.nextCursor;
+        if (!cursor) break;
+        assert.ok(!cursors.has(cursor), "cursor must advance");
+        cursors.add(cursor);
+      }
+      assert.deepEqual(names, Array.from({ length: mode === "count" ? 62 : 38 }, (_, i) => `entry-${i}`));
+    });
+  }
+});
+
+test("MCP capability pages respect UTF-8 byte limits without skipping entries", async (t) => {
+  const f = await fixture(t),
+    s = await f.mcp.create("a", { ...local, env: { MCP_CATALOG_MODE: "wide" } });
+  for (const [name, extra] of [
+    ["mcp_tools_list", {}],
+    ["mcp_resources_list", {}],
+    ["mcp_resources_list", { templates: true }],
+    ["mcp_prompts_list", {}],
+  ] as const) {
+    const names: string[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; ; page++) {
+      assert.ok(page < 100, "pagination must terminate");
+      const result = await f.dispatch(name, {
+        serverId: s.id, limit: 100, ...extra, ...(cursor ? { cursor } : {}),
+      });
+      assert.equal(result.ok, true, JSON.stringify(result));
+      const mcp = result.mcp as any;
+      assert.equal(mcp.artifact, undefined);
+      assert.ok(Buffer.byteLength(JSON.stringify(mcp)) <= 48000);
+      assert.ok(mcp.items.length > 0 && mcp.items.length < 10);
+      for (const item of mcp.items) {
+        names.push(item.name);
+        assert.equal(item.description, "🌍".repeat(1800));
+      }
+      cursor = mcp.nextCursor;
+      if (!cursor) break;
+    }
+    assert.deepEqual(names, Array.from({ length: 38 }, (_, i) => `entry-${i}`));
+  }
+  const panel = await f.mcp.capabilities(s.id, "a", "tools", undefined, 100, callback);
+  assert.ok(panel.items.length > 0 && panel.items.length < 10);
+  assert.ok(panel.nextCursor);
+});
+
+test("a single oversized discovery entry preserves its full artifact and continuation cursor", async (t) => {
+  const f = await fixture(t),
+    s = await f.mcp.create("a", { ...local, env: { MCP_CATALOG_MODE: "artifact" } });
+  const names: string[] = [];
+  let cursor: string | undefined, artifacts = 0;
+  for (let page = 0; ; page++) {
+    assert.ok(page < 100, "pagination must terminate");
+    const result = await f.dispatch("mcp_tools_list", {
+      serverId: s.id, limit: 50, ...(cursor ? { cursor } : {}),
+    });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    let mcp = result.mcp as any;
+    cursor = mcp.nextCursor;
+    if (mcp.artifact) {
+      artifacts++;
+      assert.ok(cursor, "continuation remains available inline");
+      const full = await f.artifacts.bytes(mcp.artifact.versionId, f.owner.workspaceId);
+      mcp = JSON.parse(full.bytes.toString());
+      assert.equal(mcp.nextCursor, cursor);
+      assert.equal(mcp.items.length, 1);
+      assert.equal(mcp.items[0].name, "entry-1");
+      assert.equal(mcp.items[0].description, "x".repeat(60000));
+    }
+    names.push(...mcp.items.map((item: any) => item.name));
+    if (!cursor) break;
+  }
+  assert.equal(artifacts, 1);
+  assert.deepEqual(names, Array.from({ length: 38 }, (_, i) => `entry-${i}`));
+});
+
+test("single over-complex discovery entries fail without advancing past them", async (t) => {
+  for (const mode of ["nodes", "depth"]) {
+    await t.test(mode, async (t) => {
+      const f = await fixture(t),
+        s = await f.mcp.create("a", { ...local, env: { MCP_CATALOG_MODE: mode } });
+      const first = await f.dispatch("mcp_tools_list", { serverId: s.id, limit: 50 });
+      assert.equal(first.ok, true, JSON.stringify(first));
+      assert.deepEqual((first.mcp as any).items.map((item: any) => item.name), ["entry-0"]);
+      const cursor = (first.mcp as any).nextCursor;
+      assert.ok(cursor);
+      for (const limit of [50, 1]) {
+        const failed = await f.dispatch("mcp_tools_list", { serverId: s.id, cursor, limit });
+        assert.equal(failed.ok, false);
+        assert.match(failed.error as string, /catalog entry is too deeply nested or complex/);
+        assert.equal(failed.mcp, undefined);
+      }
+    });
+  }
+});
+
+test("empty upstream discovery pages retain their continuation", async (t) => {
+  const f = await fixture(t),
+    s = await f.mcp.create("a", { ...local, env: { MCP_CATALOG_MODE: "empty" } });
+  const first = await f.dispatch("mcp_tools_list", { serverId: s.id });
+  assert.equal(first.ok, true);
+  assert.deepEqual((first.mcp as any).items, []);
+  assert.ok((first.mcp as any).nextCursor);
+  const second = await f.dispatch("mcp_tools_list", {
+    serverId: s.id, cursor: (first.mcp as any).nextCursor,
+  });
+  assert.equal(second.ok, true);
+  assert.deepEqual((second.mcp as any).items.map((item: any) => item.name),
+    Array.from({ length: 7 }, (_, i) => `entry-${31 + i}`));
+  assert.equal((second.mcp as any).nextCursor, undefined);
+});
+
 test("stdio sessions isolate agents, default cwd, curated environment and idle cleanup", async (t) => {
   const f = await fixture(t, { idleMs: 40 });
   const prior = process.env.UFAI_MCP_UNRELATED_SECRET;

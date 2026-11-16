@@ -10,7 +10,32 @@ const serverId = text(
   100,
 );
 const cursor = text("nextCursor from the previous page", 16384);
-const limit = { type: "integer", minimum: 1, maximum: 50 };
+const discoveryLimit = 50;
+const discoveryTools = new Set([
+  "mcp_servers_list",
+  "mcp_tools_list",
+  "mcp_resources_list",
+  "mcp_prompts_list",
+]);
+export function normalizeMcpDiscoveryArguments(
+  name: string,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const requested = args.limit;
+  return discoveryTools.has(name) &&
+    typeof requested === "number" &&
+    Number.isSafeInteger(requested) &&
+    requested > discoveryLimit
+    ? { ...args, limit: discoveryLimit }
+    : args;
+}
+const limit = {
+  type: "integer",
+  minimum: 1,
+  maximum: discoveryLimit,
+  description:
+    "Maximum entries (default 10). Positive safe whole numbers above 50 are capped at 50. Capability pages may contain fewer entries to fit safety limits; follow nextCursor until absent.",
+};
 const make = (
   name: string,
   description: string,
@@ -131,7 +156,7 @@ export const mcpTools: ToolSpec[] = [
   ),
   make(
     "mcp_tools_list",
-    "Discover tools and their input schemas on an enabled MCP server. Use its exact tool name and schema when calling it.",
+    "Discover tools and their input schemas on an enabled MCP server. Use its exact tool name and schema when calling it. Pages may be smaller than limit; follow nextCursor until absent.",
     { serverId, cursor, limit },
     ["serverId"],
   ),

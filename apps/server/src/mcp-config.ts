@@ -40,6 +40,9 @@ export interface McpOAuthFlow {
 export const mcpLimits = {
   configBytes: 65536,
   responseBytes: 16 * 1024 * 1024,
+  resultNodes: 10000,
+  resultDepth: 32,
+  inlineResultBytes: 48000,
   pageSize: 100,
   setupMs: 15000,
   idleMs: 60000,

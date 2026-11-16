@@ -43,6 +43,23 @@ test("invalid command waits identify the argument and its correction", () => {
   }
 });
 
+test("MCP discovery caps only oversized safe integer limits without mutating arguments", () => {
+  for (const name of ["mcp_servers_list", "mcp_tools_list", "mcp_resources_list", "mcp_prompts_list"]) {
+    const required = name === "mcp_servers_list" ? {} : { serverId: "s" };
+    for (const limit of [1, 5, 50, 51, 100, 200, Number.MAX_SAFE_INTEGER]) {
+      const args = Object.freeze({ ...required, limit });
+      assert.equal(validateTool(name, args).limit, Math.min(limit, 50));
+      assert.equal(args.limit, limit);
+    }
+    assert.equal(Object.hasOwn(validateTool(name, required), "limit"), false);
+    for (const limit of [0, -1, 1.5, 100.5, Number.MAX_SAFE_INTEGER + 1, NaN, Infinity, "100", null, true, {}, [], undefined])
+      assert.throws(() => validateTool(name, { ...required, limit }), {
+        message: `${name}.limit: Expected a safe integer from 1 to 50 inclusive. Supply a whole number within these bounds.`,
+      });
+  }
+  assert.throws(() => validateTool("files_read", { path: "a", limit: 32769 }), /files_read.limit/);
+});
+
 test("shared validation identifies exact paths and corrective constraints without echoing values", () => {
   const secret = "secret-value-must-not-appear";
   const skill = { name: "example", description: "Example", instructions: "Do work" };

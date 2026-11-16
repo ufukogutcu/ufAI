@@ -1,4 +1,4 @@
-import { mcpTools } from "./mcp-tools.js";
+import { mcpTools, normalizeMcpDiscoveryArguments } from "./mcp-tools.js";
 import { McpAuthError } from "./mcp-auth-errors.js";
 import { browserTools } from "./browser-tools.js";
 import { browserAction } from "./browser-validation.js";
@@ -334,7 +334,7 @@ export function validateTool(name: string, args: unknown) {
   const definition = allTaskTools.find((t) => t.name === name);
   if (!definition)
     throw new ConnectionError(`${name}: Unknown tool. Use an exact name from the supplied tool definitions.`, 400);
-  const normalized = name === "process_start" && args !== null && typeof args === "object" && !Array.isArray(args)
+  let normalized = name === "process_start" && args !== null && typeof args === "object" && !Array.isArray(args)
     ? {
         ...args,
         ...(Object.hasOwn(args, "yieldMs")
@@ -342,6 +342,8 @@ export function validateTool(name: string, args: unknown) {
           : {}),
       }
     : args;
+  if (normalized !== null && typeof normalized === "object" && !Array.isArray(normalized))
+    normalized = normalizeMcpDiscoveryArguments(name, normalized as Record<string, unknown>);
   validate(normalized, definition.parameters, name);
   return normalized as Record<string, any>;
 }

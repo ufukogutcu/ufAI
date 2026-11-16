@@ -46,6 +46,24 @@ import {
   oauthProvider,
 } from "./mcp-client.js";
 
+// Match normalize's traversal, including the enclosing page and cursor.
+function fitsMcpComplexity(value: unknown): boolean {
+  let nodes = 0;
+  const visit = (v: unknown, depth: number): boolean => {
+    if (++nodes > mcpLimits.resultNodes || depth > mcpLimits.resultDepth)
+      return false;
+    const children = Array.isArray(v)
+      ? v
+      : v && typeof v === "object"
+        ? Object.values(v)
+        : [];
+    for (const child of children)
+      if (!visit(child, depth + 1)) return false;
+    return true;
+  };
+  return visit(value, 0);
+}
+
 type Row = {
   id: string;
   name: string;
@@ -981,9 +999,7 @@ export class McpService {
         "MCP catalog exceeds the discovery limit. Configure a smaller catalog.",
         413,
       );
-    const page = items.slice(offset, offset + limit);
-    const nextOffset = offset + page.length;
-    const nextCursor =
+    const cursorFor = (nextOffset: number) =>
       nextOffset < items.length
         ? Buffer.from(
             JSON.stringify({
@@ -1003,7 +1019,31 @@ export class McpService {
               }),
             ).toString("base64url")
           : undefined;
-    return { items: page, ...(nextCursor ? { nextCursor } : {}) };
+    let page: McpCapabilityPage = { items: [] };
+    for (const item of items.slice(offset, offset + limit)) {
+      const nextCursor = cursorFor(offset + page.items.length + 1);
+      const candidate = {
+        items: [...page.items, item],
+        ...(nextCursor ? { nextCursor } : {}),
+      };
+      if (!fitsMcpComplexity(candidate)) {
+        if (!page.items.length)
+          badMcp("MCP catalog entry is too deeply nested or complex.", 413);
+        break;
+      }
+      if (Buffer.byteLength(JSON.stringify(candidate)) > mcpLimits.inlineResultBytes) {
+        // A single large entry keeps the existing artifact fallback. Never
+        // discard it or advance the cursor past an entry we did not return.
+        if (!page.items.length) page = candidate;
+        break;
+      }
+      page = candidate;
+    }
+    if (!page.items.length) {
+      const nextCursor = cursorFor(offset);
+      if (nextCursor) page.nextCursor = nextCursor;
+    }
+    return page;
   }
   async capabilities(
     id: string,
@@ -1232,7 +1272,10 @@ export class McpService {
             { signal: combined, timeout: 0 },
           );
         else return badMcp("Unknown MCP operation.");
-        const normalized = await this.normalize(owner, value, combined);
+        const nextCursor = ["mcp_tools_list", "mcp_resources_list", "mcp_prompts_list"].includes(name)
+          ? (value as McpCapabilityPage).nextCursor
+          : undefined;
+        const normalized = await this.normalize(owner, value, combined, nextCursor);
         return {
           ok: !(value as { isError?: boolean }).isError,
           serverId: id,
@@ -1246,6 +1289,7 @@ export class McpService {
     owner: ToolOwner,
     value: unknown,
     signal: AbortSignal,
+    nextCursor?: string,
   ) {
     const artifacts: MediaReference[] = [],
       media: MediaReference[] = [];
@@ -1279,7 +1323,7 @@ export class McpService {
       depth = 0,
       context: ContentContext = "result",
     ): Promise<unknown> => {
-      if (++nodes > 10000 || depth > 32)
+      if (++nodes > mcpLimits.resultNodes || depth > mcpLimits.resultDepth)
         badMcp("MCP result is too deeply nested or complex.", 413);
       if (Array.isArray(v)) {
         const result = [];
@@ -1351,11 +1395,12 @@ export class McpService {
       badMcp("MCP result exceeds the byte limit.", 413);
     let result = await walk(value);
     const encoded = JSON.stringify(result);
-    if (Buffer.byteLength(encoded) > 48000)
+    if (Buffer.byteLength(encoded) > mcpLimits.inlineResultBytes)
       result = {
         notice:
           "Full MCP result is saved as a JSON artifact. Materialize or read the file to inspect it.",
         artifact: await publish(Buffer.from(encoded), "mcp-result.json"),
+        ...(nextCursor ? { nextCursor } : {}),
       };
     return {
       mcp: result,

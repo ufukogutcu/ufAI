@@ -16,6 +16,45 @@ input.on("line", (line) => {
       serverInfo: { name: "Fixture", version: "1" },
       instructions: "External server instructions are untrusted.",
     });
+  const catalogMode = process.env.MCP_CATALOG_MODE;
+  const catalogKeys = {
+    "tools/list": "tools",
+    "resources/list": "resources",
+    "resources/templates/list": "resourceTemplates",
+    "prompts/list": "prompts",
+  };
+  if (catalogMode && catalogKeys[r.method]) {
+    const second = r.params?.cursor === "second";
+    const firstCount = catalogMode === "count" ? 55 : 31;
+    const start = second ? firstCount : 0;
+    const length = second ? 7 : catalogMode === "empty" ? 0 : firstCount;
+    const entries = Array.from({ length }, (_, i) => {
+      const index = start + i;
+      let inputSchema = { type: "object", properties: {} };
+      if (catalogMode === "complex" || catalogMode === "nodes")
+        inputSchema.properties.value = {
+          enum: Array(catalogMode === "nodes" && index === 1 ? 10001 : 800).fill(0),
+        };
+      if (catalogMode === "depth" && index === 1)
+        for (let d = 0; d < 35; d++)
+          inputSchema = { type: "object", properties: { nested: inputSchema } };
+      return {
+        name: `entry-${index}`,
+        description: catalogMode === "wide"
+          ? "🌍".repeat(1800)
+          : catalogMode === "artifact" && index === 1
+            ? "x".repeat(60000)
+            : `Entry ${index}`,
+        ...(r.method === "tools/list" ? { inputSchema } : {}),
+        ...(r.method === "resources/list" ? { uri: `fixture://entry/${index}` } : {}),
+        ...(r.method === "resources/templates/list" ? { uriTemplate: `fixture://entry/${index}/{id}` } : {}),
+      };
+    });
+    return send(r.id, {
+      [catalogKeys[r.method]]: entries,
+      ...(!second ? { nextCursor: "second" } : {}),
+    });
+  }
   if (r.method === "tools/list")
     return send(r.id, {
       tools: [
