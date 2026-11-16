@@ -169,12 +169,12 @@
 }
 .node {
   position: relative;
-  width: 144px;
-  height: 192px;
+  width: 176px;
+  height: 224px;
   color: var(--text);
 }
 .canvasCharacter {
-  width: 128px; height: 128px; margin: 0 auto 8px; pointer-events: none;
+  width: 160px; height: 160px; margin: 0 auto 8px; pointer-events: none;
   filter: drop-shadow(0 2px 3px var(--agent-node-shadow));
 }
 .nodeCard {
@@ -253,10 +253,10 @@
   &:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 }
 .nodeCluster { color: var(--cluster-color); }
-.node :global(.react-flow__handle) { top: 96px; }
+.node :global(.react-flow__handle) { top: 112px; }
 @media (any-pointer: coarse) {
   .node[data-issues="true"] {
-    height: 232px;
+    height: 264px;
     .canvasCharacter { margin-bottom: 48px; }
     .nodeIssues { --issue-gap: 8px; }
   }

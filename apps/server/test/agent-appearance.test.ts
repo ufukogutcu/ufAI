@@ -111,13 +111,22 @@ test("agent appearance API isolates workspaces, permits manual duplicates and pr
   assert.deepEqual((await app.inject(`/api/agents/${modern.id}`)).json<Agent>().appearance, changed.appearance);
   assert.equal((await app.inject("/api/workspaces/missing/agents/appearance-suggestion")).statusCode, 404);
   const cluster = (await app.inject({ method: "POST", url: `/api/workspaces/${workspace}/clusters`, payload: { name: "Boundary", x: 0, y: 0, width: 320, height: 200 } })).json();
-  const boundary = await create(workspace, { name: "At content edge", x: -72, y: -48, clusterId: cluster.id });
+  const boundary = await create(workspace, { name: "At content edge", x: -88, y: -64, clusterId: cluster.id });
   assert.equal(boundary.statusCode, 201, boundary.body);
-  assert.equal((await create(workspace, { name: "Beyond right edge", x: 249, y: 0, clusterId: cluster.id })).statusCode, 400);
-  assert.equal((await app.inject({ method: "PATCH", url: `/api/agents/${boundary.json().id}`, payload: { y: 105 } })).statusCode, 400);
+  assert.equal((await create(workspace, { name: "Beyond right edge", x: 233, y: 0, clusterId: cluster.id })).statusCode, 400);
+  assert.equal((await app.inject({ method: "PATCH", url: `/api/agents/${boundary.json().id}`, payload: { y: 89 } })).statusCode, 400);
   assert.equal((await app.inject({ method: "PATCH", url: `/api/clusters/${cluster.id}`, payload: { x: 100, y: 100 } })).statusCode, 200);
   const moved = (await app.inject(`/api/agents/${boundary.json().id}`)).json<Agent>();
-  assert.deepEqual([moved.x, moved.y, moved.clusterId], [28, 52, cluster.id]);
+  assert.deepEqual([moved.x, moved.y, moved.clusterId], [12, 36, cluster.id]);
+  const edge = await create(workspace, { name: "At enlarged-node edge", x: 332, y: 188, clusterId: cluster.id });
+  assert.equal(edge.statusCode, 201, edge.body);
+  assert.equal((await app.inject({ method: "PATCH", url: `/api/agents/${edge.json().id}`, payload: { x: 333 } })).statusCode, 400);
+  assert.equal((await app.inject({ method: "PATCH", url: `/api/agents/${edge.json().id}`, payload: { y: 189 } })).statusCode, 400);
+  // A member fits the larger Cluster but prevents shrinking past its enlarged-node center.
+  assert.equal((await app.inject({ method: "PATCH", url: `/api/clusters/${cluster.id}`, payload: { width: 321, height: 201 } })).statusCode, 200);
+  assert.equal((await app.inject({ method: "PATCH", url: `/api/agents/${edge.json().id}`, payload: { x: 333, y: 189 } })).statusCode, 200);
+  assert.equal((await app.inject({ method: "PATCH", url: `/api/clusters/${cluster.id}`, payload: { width: 320 } })).statusCode, 400);
+  assert.equal((await app.inject({ method: "PATCH", url: `/api/clusters/${cluster.id}`, payload: { height: 200 } })).statusCode, 400);
   const initial = (await app.inject("/api/settings")).json();
   assert.equal(initial.settings.characterAnimationsPaused, false);
   assert.equal((await app.inject({ method: "PATCH", url: "/api/settings", payload: { characterAnimationsPaused: true } })).json().settings.characterAnimationsPaused, true);
@@ -140,11 +149,11 @@ test("migration backfills durable distinct appearances while preserving centers,
     INSERT INTO agent_turns(id,taskId,conversationId,agentId,inputMessageId,attempt,status,snapshot,createdAt,updatedAt) VALUES ('turn','task','conversation','agent-0','message',1,'queued','{"keep":true}','then','then');`);
   db.close(); db = openDatabase(path);
   const agents = db.prepare("SELECT * FROM agents ORDER BY id").all() as any[];
-  assert.equal(db.pragma("user_version", { simple: true }), 23);
+  assert.equal(db.pragma("user_version", { simple: true }), 24);
   assert.equal(new Set(agents.map(agent => appearanceKey(JSON.parse(agent.appearance)))).size, 4);
   for (const agent of agents) {
-    assert.equal(agent.x + 144 / 2, 100 + 224 / 2);
-    assert.equal(agent.y + 192 / 2, 100 + 104 / 2);
+    assert.equal(agent.x + 176 / 2, 100 + 224 / 2);
+    assert.equal(agent.y + 224 / 2, 100 + 104 / 2);
     assert.equal(agent.clusterId, "group"); assert.equal(agent.revision, 7);
     assert.equal(agent.instructions, "Keep instructions"); assert.equal(agent.updatedAt, "then");
   }
@@ -171,12 +180,46 @@ test("compact geometry upgrades version 16 once, preserving metadata and clampin
   db.pragma("user_version = 16");
   db.close(); db = openDatabase(path);
   const after = db.prepare("SELECT * FROM agents ORDER BY id").all() as any[];
-  assert.equal(db.pragma("user_version", { simple: true }), 23);
+  assert.equal(db.pragma("user_version", { simple: true }), 24);
   for (let i = 0; i < before.length; i++) {
-    const expectedX = Math.min(1e6, before[i].x + 32);
-    assert.deepEqual(after[i], { ...before[i], x: expectedX });
-    if (before[i].id !== "upper-limit") assert.equal(after[i].x + 72, before[i].x + 104);
+    const expectedX = Math.max(-1e6, Math.min(1e6, before[i].x + 32) - 16);
+    assert.deepEqual(after[i], { ...before[i], x: expectedX, y: -16 });
+    if (before[i].id !== "upper-limit") assert.equal(after[i].x + 88, before[i].x + 104);
   }
+  db.close(); db = openDatabase(path);
+  assert.deepEqual(db.prepare("SELECT * FROM agents ORDER BY id").all(), after);
+  db.close();
+});
+
+test("larger character geometry upgrades version 23 once, preserving centers and metadata with bounded coordinates", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "ufai-larger-characters-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, "upgrade.sqlite");
+  let db = openDatabase(path);
+  const workspace = (db.prepare("SELECT id FROM workspaces LIMIT 1").get() as { id: string }).id;
+  db.prepare("INSERT INTO clusters(id,workspaceId,name,x,y,width,height,colorSlot,createdAt,updatedAt) VALUES ('group',?,'Group',0,0,320,200,0,'then','then')").run(workspace);
+  const insert = db.prepare("INSERT INTO agents(id,workspaceId,name,instructions,clusterId,x,y,revision,createdAt,updatedAt) VALUES (?,?,'Agent','Keep instructions',?,?,?,7,'then','then')");
+  for (const [id, x, y, clusterId] of [
+    ["left-top", -72, -48, "group"],
+    ["right-bottom", 248, 104, "group"],
+    ["upper-limit", 1e6, 1e6, null],
+    ["lower-limit", -1e6, -1e6, null],
+    ["near-limit", -999990, -999985, null],
+  ] as const) insert.run(id, workspace, clusterId, x, y);
+  const before = db.prepare("SELECT * FROM agents ORDER BY id").all() as any[];
+  const cluster = db.prepare("SELECT * FROM clusters WHERE id='group'").get();
+  db.pragma("user_version = 23");
+  db.close(); db = openDatabase(path);
+  const after = db.prepare("SELECT * FROM agents ORDER BY id").all() as any[];
+  assert.equal(db.pragma("user_version", { simple: true }), 24);
+  for (let i = 0; i < before.length; i++) {
+    const x = Math.max(-1e6, before[i].x - 16);
+    const y = Math.max(-1e6, before[i].y - 16);
+    assert.deepEqual(after[i], { ...before[i], x, y });
+    if (before[i].x >= -999984) assert.equal(after[i].x + 176 / 2, before[i].x + 144 / 2);
+    if (before[i].y >= -999984) assert.equal(after[i].y + 224 / 2, before[i].y + 192 / 2);
+  }
+  assert.deepEqual(db.prepare("SELECT * FROM clusters WHERE id='group'").get(), cluster);
   db.close(); db = openDatabase(path);
   assert.deepEqual(db.prepare("SELECT * FROM agents ORDER BY id").all(), after);
   db.close();

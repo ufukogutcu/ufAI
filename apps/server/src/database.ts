@@ -27,7 +27,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 23)
+    if (version > 24)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -282,6 +282,14 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
       database.transaction(() => {
         migrateMessageTransits(database);
         database.pragma("user_version = 23");
+      })();
+    if (version < 24)
+      database.transaction(() => {
+        // Preserve centers when enlarging character nodes from 144×192 to 176×224.
+        database.exec(`UPDATE agents SET
+          x = min(1000000, max(-1000000, x - 16)),
+          y = min(1000000, max(-1000000, y - 16))`);
+        database.pragma("user_version = 24");
       })();
   } catch (error) {
     database.close();

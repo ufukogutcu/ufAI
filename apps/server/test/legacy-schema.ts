@@ -155,7 +155,7 @@ export function removeExecutionTables(database: Database.Database) {
   `);
 }
 
-// Migrations 16 and 17 add appearance and preserve centers through both node-size changes.
+// Migrations 16, 17 and 24 add appearance and preserve centers through node-size changes.
 export function assertCharacterUpgrade(actual: any, previous: any) {
   if (Object.hasOwn(actual, "appearance"))
     assert.deepEqual(
@@ -164,5 +164,5 @@ export function assertCharacterUpgrade(actual: any, previous: any) {
     );
   const { appearance: _actual, ...after } = actual;
   const { appearance: _previous, ...before } = previous;
-  assert.deepEqual(after, { ...before, x: before.x + 40, y: before.y - 44 });
+  assert.deepEqual(after, { ...before, x: before.x + 24, y: before.y - 60 });
 }

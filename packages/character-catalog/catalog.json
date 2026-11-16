@@ -152,9 +152,9 @@
     }
   },
   "node": {
-    "width": 144,
-    "height": 192,
-    "characterSize": 128,
+    "width": 176,
+    "height": 224,
+    "characterSize": 160,
     "gap": 8,
     "labelWidth": 128,
     "cardHeight": 28,

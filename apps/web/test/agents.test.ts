@@ -64,13 +64,15 @@ test("running and waiting agents work and Cluster membership uses the character 
   assert.equal(agentActivity("waiting"), "working");
   for (const state of ["idle", "queued", "awaiting_user", "completed", "blocked", "failed", "cancelled"] as const)
     assert.equal(agentActivity(state), "idle");
-  assert.equal(AGENT_WIDTH, 144); assert.equal(AGENT_HEIGHT, 192);
+  assert.equal(AGENT_WIDTH, 176); assert.equal(AGENT_HEIGHT, 224);
   const cluster = { id: "cluster", workspaceId: "workspace", name: "Group", description: "", x: 0, y: 0, width: 320, height: 200, colorSlot: 0, createdAt: "now", updatedAt: "now" };
-  assert.equal(dropCluster([cluster], -72, -48), "cluster");
-  assert.equal(dropCluster([cluster], -73, -48), null);
-  assert.equal(dropCluster([cluster], -72, -49), null);
-  assert.equal(dropCluster([cluster], 249, 0), null);
-  assert.equal(dropCluster([cluster], 248, 0), "cluster");
+  assert.equal(dropCluster([cluster], -88, -64), "cluster");
+  assert.equal(dropCluster([cluster], -89, -64), null);
+  assert.equal(dropCluster([cluster], -88, -65), null);
+  assert.equal(dropCluster([cluster], 233, 0), null);
+  assert.equal(dropCluster([cluster], 232, 0), "cluster");
+  assert.equal(dropCluster([cluster], 0, 88), "cluster");
+  assert.equal(dropCluster([cluster], 0, 89), null);
 });
 test("composer drafts and request identities survive selection changes without sharing between tasks", () => {
   const original = globalThis.crypto;
