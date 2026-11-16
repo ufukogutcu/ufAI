@@ -23,6 +23,7 @@ export function AgentFiles({ agentId }: { agentId: string }) {
   const [showPath, setShowPath] = useState(false);
   const acting = useRef<AbortController | null>(null);
   const content = useRef<HTMLDivElement | null>(null);
+  const breadcrumbs = useRef<HTMLElement | null>(null);
   const parts = path ? path.split("/") : [];
   const absolute = location?.path ? location.path + (path ? (location.path.includes("\\") ? "\\" + parts.join("\\") : "/" + path) : "") : "";
   const ready = location?.state === "ready";
@@ -32,6 +33,10 @@ export function AgentFiles({ agentId }: { agentId: string }) {
     if (content.current) content.current.scrollTop = 0;
     return () => acting.current?.abort();
   }, [agentId, path, offset]);
+
+  useEffect(() => {
+    if (breadcrumbs.current) breadcrumbs.current.scrollLeft = breadcrumbs.current.scrollWidth;
+  }, [path]);
 
   async function run(kind: "open" | "repair" | "copy") {
     if (acting.current && !acting.current.signal.aborted) return;
@@ -72,18 +77,17 @@ export function AgentFiles({ agentId }: { agentId: string }) {
           <Tooltip content="Up one folder"><button type="button" className="iconButton" aria-label="Up one folder" disabled={!path} onClick={() => go(parts.slice(0, -1).join("/"))}><ArrowUp size={16} aria-hidden="true" /></button></Tooltip>
           <Tooltip content="Refresh files"><button type="button" className="iconButton" aria-label="Refresh files" disabled={busy || action === "repair"} onClick={() => void refresh()}><RefreshCw size={16} aria-hidden="true" /></button></Tooltip>
           <Tooltip content="Copy folder path"><button type="button" className="iconButton" aria-label="Copy folder path" disabled={!absolute || !!action} onClick={() => void run("copy")}><Copy size={16} aria-hidden="true" /></button></Tooltip>
-          <button type="button" className={`button ${styles.open}`} disabled={!ready || !!action} onClick={() => void run("open")}><FolderOpen size={16} aria-hidden="true" />{action === "open" ? "Opening…" : "Open in file manager"}</button>
+          <Tooltip content="Open in file manager"><button type="button" className="iconButton" aria-label="Open in file manager" aria-busy={action === "open"} disabled={!ready || !!action} onClick={() => void run("open")}><FolderOpen size={16} aria-hidden="true" /></button></Tooltip>
         </div>
-        <nav className={styles.breadcrumbs} aria-label="File location">
-          <button type="button" aria-current={!path ? "location" : undefined} onClick={() => go("")}>Agent files</button>
+        {!!parts.length && <nav ref={breadcrumbs} className={styles.breadcrumbs} aria-label="File location">
           {parts.map((part, index) => <span key={parts.slice(0, index + 1).join("/")}>
-            <ChevronRight size={14} aria-hidden="true" />
+            {index > 0 && <ChevronRight size={14} aria-hidden="true" />}
             <button type="button" aria-current={index === parts.length - 1 ? "location" : undefined} onClick={() => go(parts.slice(0, index + 1).join("/"))}>{part}</button>
           </span>)}
-        </nav>
+        </nav>}
       </div>
       <div ref={content} className={styles.content} aria-busy={busy}>
-        <p className={styles.status} role="status">{busy ? "Loading files…" : location?.state === "pending" ? "Creating folder…" : status}</p>
+        <p className={styles.status} role="status">{busy ? "Loading files…" : location?.state === "pending" ? "Creating folder…" : action === "open" ? "Opening folder…" : status}</p>
         {actionError && <p className="error" role="alert">{actionError}</p>}
         {showPath && <code className={styles.path} tabIndex={0}>{absolute}</code>}
         {(error || location?.state === "error") && <div className={styles.feedback}>
@@ -95,22 +99,21 @@ export function AgentFiles({ agentId }: { agentId: string }) {
           {!listing.total ? <p className={styles.empty}>This folder is empty.</p> : <ul className={styles.entries} aria-label="Files and folders">
             {listing.items.map(entry => {
               const Icon = entry.kind === "directory" ? Folder : File;
+              const description = entry.kind === "unavailable"
+                ? "Unavailable · link, special file, or inaccessible entry"
+                : [entry.kind === "directory" ? "Folder" : fileSize(entry.size ?? 0),
+                  entry.modifiedAt ? `Modified ${modified.format(new Date(entry.modifiedAt))}` : ""].filter(Boolean).join("\n");
+              const tooltip = `${entry.name}\n${description}`;
               const details = <>
-                <Icon size={18} aria-hidden="true" />
-                <span className={styles.identity}><span className={styles.name}>{entry.name}</span>
-                  <span className={styles.metadata}>
-                    {entry.kind === "unavailable" ? "Unavailable · link, special file, or inaccessible entry" : <>
-                      {entry.kind === "directory" ? "Folder" : fileSize(entry.size ?? 0)}
-                      {entry.modifiedAt && <> · <time dateTime={entry.modifiedAt}>{modified.format(new Date(entry.modifiedAt))}</time></>}
-                    </>}
-                  </span>
-                </span>
-                {entry.kind === "file" && <Download className={styles.download} size={16} aria-hidden="true" />}
+                <Icon size={16} aria-hidden="true" />
+                <span className={styles.name}>{entry.name}</span>
+                {entry.kind !== "directory" && <span className={styles.metadata}>{entry.kind === "unavailable" ? "Unavailable" : fileSize(entry.size ?? 0)}</span>}
+                {entry.kind === "file" && <Download size={14} aria-hidden="true" />}
               </>;
               return <li key={entry.path}>
-                {entry.kind === "directory" ? <button type="button" className={styles.entry} onClick={() => go(entry.path)}>{details}</button>
+                <Tooltip content={tooltip} multiline>{entry.kind === "directory" ? <button type="button" className={styles.entry} onClick={() => go(entry.path)}>{details}</button>
                   : entry.kind === "file" ? <a className={styles.entry} href={`/api/agents/${agentId}/files/download?${new URLSearchParams({ path: entry.path })}`} download={entry.name} aria-label={`Download ${entry.name}`}>{details}</a>
-                  : <div className={`${styles.entry} ${styles.unavailable}`}>{details}</div>}
+                  : <div className={`${styles.entry} ${styles.unavailable}`} role="group" tabIndex={0} aria-label={`${entry.name}: ${description}`}>{details}</div>}</Tooltip>
               </li>;
             })}
           </ul>}
