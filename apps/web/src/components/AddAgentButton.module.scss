@@ -36,6 +36,7 @@
 .preview {
   position: relative;
   isolation: isolate;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -45,9 +46,16 @@
 }
 
 .character {
+  position: relative;
   width: 56px;
   height: 56px;
   transition: transform 160ms ease-out;
+
+  // Center the undecorated torso within the preview, independently of tilt.
+  &[data-kind="pebble"] { top: -2.06px; }
+  &[data-kind="sprout"] { top: -3.38px; }
+  &[data-kind="bot"] { top: -2.57px; }
+  &[data-kind="droplet"] { top: -0.71px; }
 }
 
 .badge {

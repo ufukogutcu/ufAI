@@ -62,6 +62,7 @@ test("button and form share a pending suggestion through Strict Mode and cancell
   assert.equal(p.reads(), 1);
   await act(async () => { response.resolve(Response.json({ appearance })); });
   const buttonCharacter = p.button.querySelector("svg[data-kind]")!;
+  assert.equal(p.button.querySelector("span.character")?.getAttribute("data-kind"), appearance.kind);
   assert.equal(p.button.querySelector(".badge"), badge);
   assert.equal(buttonCharacter.getAttribute("aria-hidden"), "true");
   const formCharacter = p.document.querySelector("#creation svg[data-kind]")!;

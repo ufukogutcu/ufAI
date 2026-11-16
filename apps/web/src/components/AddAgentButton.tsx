@@ -18,7 +18,7 @@ export function AddAgentButton({ workspaceId, onClick }: {
   return (
     <button type="button" className={styles.addAgent} onClick={onClick} data-paused={paused}>
       <span className={styles.preview} aria-hidden="true">
-        <span className={styles.character}>
+        <span className={styles.character} data-kind={suggestion?.appearance?.kind}>
           {suggestion?.appearance
             ? <AgentCharacter appearance={suggestion.appearance} paused={paused} decorative />
             : null}
