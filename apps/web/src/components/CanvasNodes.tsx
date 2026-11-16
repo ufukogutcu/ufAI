@@ -2,6 +2,7 @@ import { LiveAgentCharacter } from "./LiveAgentCharacter";
 import {
   memo,
   useContext,
+  useEffect,
   useState,
   useRef,
   type CSSProperties,
@@ -9,7 +10,7 @@ import {
 } from "react";
 import { CommunicationMenuAction } from "./Messaging";
 import messagingStyles from "./Messaging.module.scss";
-import { Handle, Position, NodeResizeControl, type NodeProps } from "@xyflow/react";
+import { Handle, Position, NodeResizeControl, useUpdateNodeInternals, type NodeProps } from "@xyflow/react";
 import { Ban, Check, CircleAlert, Clock, Hourglass, Layers, ListTodo, LoaderCircle, MessageCircle, MoreHorizontal, Pencil, TriangleAlert } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useAgents, useAgentStore } from "../agent-store";
@@ -206,6 +207,7 @@ function NodeActions({
   );
 }
 export const AgentNode = memo(function AgentNode({
+  id,
   data,
 }: NodeProps<AgentFlowNode>) {
   const agent = useAgents((s) => s.agents[data.agentId]),
@@ -217,6 +219,22 @@ export const AgentNode = memo(function AgentNode({
   const [menu, setMenu] = useState(false);
   const paused = useSettings(s => s.snapshot.settings.characterAnimationsPaused);
   const hidden = useContext(CharacterVisibilityContext);
+  const updateNodeInternals = useUpdateNodeInternals();
+  const hasIssues = !!agent && (agent.issueCounts.warning > 0 || agent.issueCounts.error > 0);
+  useEffect(() => {
+    const media = window.matchMedia("(any-pointer: coarse)");
+    let frame = 0;
+    function updateHandles() {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => updateNodeInternals(id));
+    }
+    updateHandles();
+    media.addEventListener("change", updateHandles);
+    return () => {
+      cancelAnimationFrame(frame);
+      media.removeEventListener("change", updateHandles);
+    };
+  }, [id, hasIssues, updateNodeInternals]);
   if (!agent) return null;
   const state = agentStates[agent.state];
   const StateIcon = state.icon;
@@ -258,7 +276,7 @@ export const AgentNode = memo(function AgentNode({
   return (
     <div
       className={agentStyles.node}
-      data-issues={agent.issueCounts.warning > 0 || agent.issueCounts.error > 0}
+      data-issues={hasIssues}
       onKeyDown={keyboard}
       style={cluster ? clusterColor(cluster.colorSlot) : undefined}
     >

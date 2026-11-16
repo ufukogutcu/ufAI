@@ -785,18 +785,20 @@
 }
 
 .agentSample {
-  position: relative; width: 144px; height: 192px; color: var(--text);
+  position: relative; width: 176px; height: 224px; color: var(--text);
   > span {
+    position: relative; z-index: 1;
     display: block; width: 128px; height: 28px; margin: 0 auto 8px; padding: 0 8px;
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-compact);
     text-align: center; line-height: 26px; font-size: 14px; font-weight: 500;
   }
   small {
+    position: relative; z-index: 1;
     display: flex; align-items: center; justify-content: center; gap: 4px; height: 20px;
     color: var(--muted); font-size: 12px; svg:first-child { margin-right: 8px; }
   }
 }
-.agentSample .agentSampleCharacter { width: 128px; height: 128px; margin: 0 auto 8px; filter: drop-shadow(0 2px 3px var(--agent-node-shadow)); }
+.agentSample .agentSampleCharacter { position: relative; z-index: 0; width: 160px; height: 160px; margin: 0 auto -36px; filter: drop-shadow(0 2px 3px var(--agent-node-shadow)); }
 .agentSampleMenu { position: absolute; top: 8px; right: 8px; color: var(--muted); }
 .agentPanelSample { background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius-panel); padding: 12px; box-shadow: 0 12px 36px var(--agent-panel-shadow); }
 

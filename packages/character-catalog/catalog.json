@@ -155,7 +155,7 @@
     "width": 176,
     "height": 224,
     "characterSize": 160,
-    "gap": 8,
+    "gap": -36,
     "labelWidth": 128,
     "cardHeight": 28,
     "indicatorGap": 8,

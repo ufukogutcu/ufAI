@@ -174,11 +174,15 @@
   color: var(--text);
 }
 .canvasCharacter {
-  width: 160px; height: 160px; margin: 0 auto 8px; pointer-events: none;
+  position: relative;
+  z-index: 0;
+  // The artwork ends above its SVG bounds; overlap the feet, not just the box.
+  width: 160px; height: 160px; margin: 0 auto -36px; pointer-events: none;
   filter: drop-shadow(0 2px 3px var(--agent-node-shadow));
 }
 .nodeCard {
   position: relative;
+  z-index: 1;
   width: 128px;
   height: 28px;
   margin: 0 auto 8px;
@@ -231,6 +235,7 @@
   align-items: center;
   justify-content: center;
   position: relative;
+  z-index: 1;
   left: 50%;
   transform: translateX(-50%);
   width: max-content;
@@ -256,9 +261,9 @@
 .node :global(.react-flow__handle) { top: 112px; }
 @media (any-pointer: coarse) {
   .node[data-issues="true"] {
-    height: 264px;
-    .canvasCharacter { margin-bottom: 48px; }
     .nodeIssues { --issue-gap: 8px; }
+    :global(.react-flow__handle-left) { left: -32px; }
+    :global(.react-flow__handle-right) { right: -32px; }
   }
 }
 .nodeSpinner {
