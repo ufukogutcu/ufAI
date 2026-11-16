@@ -1737,9 +1737,9 @@
     "communication-edge": {
       "cssVariable": "--communication-edge",
       "label": "Communication links",
-      "description": "Mutual agent communication lines and the connection rings surrounding agents.",
+      "description": "Mutual agent communication lines, idle endpoint arcs, and rings revealed by agent or ring hover.",
       "components": [
-        "Agent communication edges and rings",
+        "Agent communication edges, idle endpoint arcs and hover rings",
         "Canvas theme preview"
       ],
       "group": "Canvas",
@@ -1750,7 +1750,7 @@
     "communication-edge-selected": {
       "cssVariable": "--communication-edge-selected",
       "label": "Selected communication link",
-      "description": "Focused communication lines, valid connection rings, and movable endpoint grips.",
+      "description": "Focused communication lines, active drop-target rings, and fully visible movable endpoint grips.",
       "components": [
         "Agent communication edges, rings and endpoint grips",
         "Canvas theme preview"

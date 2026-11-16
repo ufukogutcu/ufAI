@@ -1,10 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Handle, Position, ViewportPortal, useInternalNode, useReactFlow, useStore as useFlowStore, useStoreApi } from "@xyflow/react";
 import { useStore } from "zustand";
-import { useAgentStore } from "../agent-store";
+import { useShallow } from "zustand/react/shallow";
+import { useAgents, useAgentStore } from "../agent-store";
 import { errorMessage } from "../api";
 import { createConnectionDragStore, type AnchorKey, type ConnectionDragStore } from "../connection-drag";
 import { angleAt, circlePoint, CONNECTION_RADIUS, radialPath, ringCenter } from "../connection-geometry";
+import { connectionRingPaths, effectiveAnchorAngle } from "../connection-appearance";
 import styles from "./ConnectionRings.module.scss";
 
 type PointerEvent = ReactPointerEvent<HTMLElement | SVGElement>;
@@ -88,18 +90,32 @@ export function ConnectionRingsProvider({ workspaceId, children }: { workspaceId
   return <RingContext.Provider value={value}>{children}</RingContext.Provider>;
 }
 
-export function AgentConnectionRing({ id, name }: { id: string; name: string }) {
+export function AgentConnectionRing({ id, name, workspaceId }: { id: string; name: string; workspaceId: string }) {
   const { store, start, move, finish, cancel } = useConnectionRings();
   const { screenToFlowPosition } = useReactFlow();
+  const links = useAgents(useShallow(s => (s.communication[workspaceId]?.links ?? [])
+    .filter(link => link.state === "active" && (link.sourceAgentId === id || link.targetAgentId === id))));
+  const edit = useStore(store, s => s.drag?.kind === "edit" && s.drag.agentId === id ? s.drag : undefined);
+  const angles = useAgents(useShallow(s => links.map(link => effectiveAnchorAngle(link,
+    link.sourceAgentId === id ? "sourceAnchorAngle" : "targetAnchorAngle", s.anchorDrafts[link.id], edit))));
+  const paths = connectionRingPaths(angles, { x: CONNECTION_RADIUS + 22, y: CONNECTION_RADIUS + 22 });
   const target = useStore(store, s => s.drag?.kind === "create" && s.drag.targetId === id);
+  const active = useStore(store, s => {
+    const drag = s.drag;
+    return drag?.kind === "create" ? drag.sourceId === id || drag.targetId === id
+      : drag?.kind === "edit" && links.some(link => link.id === drag.linkId);
+  });
   function pointerDown(event: PointerEvent) {
     start(event, () => store.getState().beginCreate(id, screenToFlowPosition({ x: event.clientX, y: event.clientY })));
   }
   return <>
     {/* A structural handle keeps React Flow's edge registry valid. The ring owns gestures. */}
     <Handle id="ring" type="source" position={Position.Left} isConnectable={false} className={styles.structuralHandle} aria-hidden="true" />
-    <svg className={`${styles.ring} nodrag nopan`} data-target={target || undefined} aria-label={`Connection ring for ${name}`}>
-      <circle className={styles.outline} cx={CONNECTION_RADIUS + 22} cy={CONNECTION_RADIUS + 22} r={CONNECTION_RADIUS} />
+    <svg className={`${styles.ring} ${styles.ringAppearance} nodrag nopan`} data-target={target || undefined} data-active={active || undefined} aria-label={`Connection ring for ${name}`}>
+      <g className={styles.outline}>
+        <path d={paths.arcs} />
+        <path className={styles.remainder} d={paths.remainder} />
+      </g>
       <circle className={styles.hitArea} cx={CONNECTION_RADIUS + 22} cy={CONNECTION_RADIUS + 22} r={CONNECTION_RADIUS}
         onPointerDown={pointerDown} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancel} onLostPointerCapture={cancel}
         onClick={event => event.stopPropagation()} />

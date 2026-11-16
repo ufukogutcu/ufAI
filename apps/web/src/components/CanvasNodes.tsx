@@ -10,6 +10,7 @@ import {
 } from "react";
 import { CommunicationMenuAction } from "./Messaging";
 import { AgentConnectionRing } from "./ConnectionRings";
+import ringStyles from "./ConnectionRings.module.scss";
 import { NodeResizeControl, type NodeProps } from "@xyflow/react";
 import { Ban, Check, CircleAlert, Clock, Hourglass, Layers, ListTodo, LoaderCircle, MessageCircle, MoreHorizontal, Pencil, TriangleAlert } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
@@ -260,13 +261,13 @@ export const AgentNode = memo(function AgentNode({
   }
   return (
     <div
-      className={agentStyles.node}
+      className={`${agentStyles.node} ${ringStyles.agent}`}
       data-issues={hasIssues}
       onKeyDown={keyboard}
       style={cluster ? clusterColor(cluster.colorSlot) : undefined}
     >
       <div className={agentStyles.canvasCharacter}><LiveAgentCharacter agent={agent} /></div>
-      <AgentConnectionRing id={id} name={agent.name} />
+      <AgentConnectionRing id={id} name={agent.name} workspaceId={agent.workspaceId} />
       <div className={agentStyles.nodeCard}>
         <Tooltip content={agent.name}>
           <button

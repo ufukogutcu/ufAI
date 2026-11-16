@@ -2,9 +2,49 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { angleAt, circlePoint, CONNECTION_RADIUS, nearestRingTarget, normalizeAngle, radialPath, ringCenter, type RingNode } from "../src/connection-geometry";
 import { createConnectionDragStore } from "../src/connection-drag";
+import { connectionArcRanges, connectionRingPaths, effectiveAnchorAngle } from "../src/connection-appearance";
 import type { CommunicationLink } from "../../server/src/contracts";
 
 const link: CommunicationLink = { id: "link", workspaceId: "workspace", sourceAgentId: "a", targetAgentId: "b", sourceAnchorAngle: 0, targetAnchorAngle: 180, state: "active", createdAt: "now" };
+test("idle arcs span 24 degrees, wrap at zero, and merge duplicate or overlapping connection points", () => {
+  assert.deepEqual(connectionArcRanges([]), []);
+  assert.deepEqual(connectionArcRanges([90]), [[78, 102]]);
+  assert.deepEqual(connectionArcRanges([0]), [[0, 12], [348, 360]]);
+  assert.deepEqual(connectionArcRanges([359, 1, 1]), [[0, 13], [347, 360]]);
+  assert.deepEqual(connectionArcRanges([90, 100, 114, 180]), [[78, 126], [168, 192]]);
+  assert.deepEqual(connectionArcRanges([-1, 361]), connectionArcRanges([359, 1]));
+  assert.deepEqual(connectionArcRanges(Array.from({ length: 30 }, (_, i) => i * 12)), [[0, 360]]);
+});
+test("idle and reveal paths partition the circumference, including unconnected and fully covered rings", () => {
+  const center = { x: 117, y: 117 };
+  const empty = connectionRingPaths([], center);
+  assert.equal(empty.arcs, "");
+  assert.equal((empty.remainder.match(/A95,95/g) ?? []).length, 2);
+  const connected = connectionRingPaths([90], center);
+  const from = circlePoint(center, 78), to = circlePoint(center, 102);
+  assert.ok(connected.arcs.startsWith(`M${from.x},${from.y}`));
+  assert.ok(connected.arcs.endsWith(`${to.x},${to.y}`));
+  const full = connectionRingPaths(Array.from({ length: 30 }, (_, i) => i * 12), center);
+  assert.equal(full.remainder, "");
+  assert.doesNotMatch(JSON.stringify([empty, connected, full]), /NaN|Infinity/);
+});
+test("arcs and lines resolve saved, draft and live angles together and restore drafts after cancellation", () => {
+  const { store, nodes, calls } = fixture();
+  const draft = { sourceAnchorAngle: 25, targetAnchorAngle: 190 };
+  assert.equal(effectiveAnchorAngle(link, "sourceAnchorAngle"), 0);
+  assert.equal(effectiveAnchorAngle(link, "sourceAnchorAngle", draft), 25);
+  store.getState().beginEdit("link", "sourceAnchorAngle", 25);
+  store.getState().move(circlePoint(ringCenter(nodes[0]!.position), 90));
+  const drag = store.getState().drag;
+  if (drag?.kind !== "edit") assert.fail();
+  assert.equal(effectiveAnchorAngle(link, "sourceAnchorAngle", draft, drag), 90);
+  assert.deepEqual(connectionArcRanges([effectiveAnchorAngle(link, "sourceAnchorAngle", draft, drag)]), [[78, 102]]);
+  assert.equal(effectiveAnchorAngle(link, "targetAnchorAngle", draft, drag), 190);
+  assert.equal(effectiveAnchorAngle({ ...link, id: "other" }, "sourceAnchorAngle", draft, drag), 25);
+  store.getState().cancel();
+  assert.equal(effectiveAnchorAngle(link, "sourceAnchorAngle", draft), 25);
+  assert.deepEqual(calls, []);
+});
 function fixture() {
   const nodes: RingNode[] = [{ id: "a", position: { x: 0, y: 0 }, zIndex: 1, order: 0 }, { id: "b", position: { x: 400, y: 100 }, zIndex: 1, order: 1 }];
   const calls: unknown[] = [];

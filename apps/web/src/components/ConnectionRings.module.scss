@@ -5,12 +5,17 @@
   width: 234px;
   height: 234px;
   overflow: visible;
-  pointer-events: none;
-  fill: none;
-  .outline { stroke: var(--communication-edge); stroke-width: 5; opacity: 0.1; transition: opacity 160ms ease-out; }
-  &:hover .outline { opacity: 0.2; }
-  &[data-target] .outline { stroke: var(--communication-edge-selected); }
 }
+.ringAppearance { pointer-events: none; fill: none; }
+.outline { stroke: var(--communication-edge); stroke-width: 5; opacity: 0.1; transition: opacity 160ms ease-out; }
+.remainder { opacity: 0; transition: opacity 160ms ease-out; }
+.agent:hover .ringAppearance .remainder,
+.agent:focus-within .ringAppearance .remainder,
+.ringAppearance:has(> .hitArea:hover) .remainder,
+.ringAppearance[data-active] .remainder { opacity: 1; }
+.ringAppearance:has(> .hitArea:hover) .outline,
+.ringAppearance[data-active] .outline { opacity: 0.2; }
+.ringAppearance[data-target] .outline { stroke: var(--communication-edge-selected); }
 .hitArea {
   stroke: transparent;
   stroke-width: 24;
@@ -71,5 +76,5 @@
   .grip { width: 44px; height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ring .outline, .grip > span { transition: none; }
+  .outline, .remainder, .grip > span { transition: none; }
 }

@@ -35,8 +35,11 @@ import { GlassMaterial } from "../components/GlassMaterial";
 import { CodexUsageBar } from "../components/CodexUsageBar";
 import { AgentCharacter } from "../components/AgentCharacter";
 import { defaultAppearance } from "../agent-appearance";
+import { connectionRingPaths } from "../connection-appearance";
+import ringStyles from "../components/ConnectionRings.module.scss";
 import { RichText } from "../components/RichText";
 
+const sampleRingPaths = connectionRingPaths([0, 180], { x: 97, y: 112 });
 const characterPreviewColors = [
   "var(--character-sage)", "var(--character-honey)", "var(--character-sky)",
   "var(--character-coral)", "var(--character-lilac)", "var(--character-teal)",
@@ -239,9 +242,15 @@ function ThemePreview({
                     <GlassMaterial />
                     − &nbsp; 100% &nbsp; +
                   </span>
-                  <svg className={styles.agentSampleScene} viewBox="0 0 218 224" role="img" aria-label="Agent connection ring and endpoint grips">
-                    <g transform="translate(12 0)">
-                      <circle className={styles.agentSampleRing} cx="97" cy="112" r="95" fill="none" stroke="var(--communication-edge)" strokeWidth="5" />
+                  <svg className={`${styles.agentSampleScene} ${ringStyles.agent}`} viewBox="0 0 218 224" role="img" aria-label="Agent connection arcs, hover ring and endpoint grips">
+                    <g transform="translate(12 0)" className={ringStyles.ringAppearance}>
+                      <g className={ringStyles.outline}>
+                        <path d={sampleRingPaths.arcs} />
+                        <path className={ringStyles.remainder} d={sampleRingPaths.remainder} />
+                      </g>
+                      <circle className={ringStyles.hitArea} cx="97" cy="112" r="95" />
+                    </g>
+                    <g transform="translate(12 0)" pointerEvents="none">
                       <path d="M2 112H-10M192 112H204" stroke="var(--communication-edge)" strokeWidth="1.5" />
                       <circle cx="2" cy="112" r="5" fill="var(--communication-edge-selected)" stroke="var(--panel)" strokeWidth="2" />
                       <circle cx="192" cy="112" r="5" fill="var(--communication-edge-selected)" stroke="var(--panel)" strokeWidth="2" />
