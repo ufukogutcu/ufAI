@@ -333,30 +333,6 @@ export default function Home() {
               <Plus size={17} />
             </button>
           </Tooltip>
-          {active && (
-            <div className={styles.workspaceActions}>
-              <WorkspaceInboxButton key={active.id} workspaceId={active.id}/>
-              <Tooltip content="Published Files"><button className="iconButton" aria-label="Published Files" onClick={()=>setPublishedIn(active.id)}><FolderOpen size={14}/></button></Tooltip>
-              <Tooltip content="Edit workspace">
-                <button
-                  className="iconButton"
-                  aria-label="Edit workspace"
-                  onClick={handleEdit}
-                >
-                  <Pencil size={14} />
-                </button>
-              </Tooltip>
-              <Tooltip content="Delete workspace">
-                <button
-                  className="iconButton"
-                  aria-label="Delete workspace"
-                  onClick={handleDelete}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </Tooltip>
-            </div>
-          )}
         </div>
         {active && <DeletionProgress workspaceId={active.id} />}
         {agentError && (
@@ -383,19 +359,44 @@ export default function Home() {
             </div>
           </Appearance>
         )}
-        {publishedIn === active?.id && publishedIn && (
-          <PublishedFiles
-            key={publishedIn}
-            workspaceId={publishedIn}
-            onClose={() => setPublishedIn(null)}
-          />
-        )}
         {active && (
           <header className={`pageHeader ${styles.workspaceHeader}`}>
             <div className={styles.workspaceHeadingRow}>
-              <Appearance trigger={active.id}>
-                <h1>{active.name}</h1>
-              </Appearance>
+              <div className={styles.workspaceIdentity}>
+                <Appearance trigger={active.id}>
+                  <h1>{active.name}</h1>
+                </Appearance>
+                <div className={styles.workspaceActions}>
+                  <WorkspaceInboxButton key={active.id} workspaceId={active.id} />
+                  <Tooltip content="Published Files">
+                    <button
+                      className="iconButton"
+                      aria-label="Published Files"
+                      onClick={() => setPublishedIn(active.id)}
+                    >
+                      <FolderOpen size={14} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip content="Edit workspace">
+                    <button
+                      className="iconButton"
+                      aria-label="Edit workspace"
+                      onClick={handleEdit}
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip content="Delete workspace">
+                    <button
+                      className="iconButton"
+                      aria-label="Delete workspace"
+                      onClick={handleDelete}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </Tooltip>
+                </div>
+              </div>
               <div className={styles.creationActions}>
                 <AddAgentButton workspaceId={active.id} onClick={handleAddAgent} />
               </div>
@@ -442,6 +443,13 @@ export default function Home() {
           )}
         </div>
       </div>
+      {publishedIn === active?.id && publishedIn && (
+        <PublishedFiles
+          key={publishedIn}
+          workspaceId={publishedIn}
+          onClose={() => setPublishedIn(null)}
+        />
+      )}
       {action && <WorkspaceDialog action={action} onClose={handleClose} />}
     </section>
   );

@@ -87,9 +87,10 @@
 }
 .workspaceActions {
   display: flex;
+  align-items: center;
+  flex-shrink: 0;
   gap: 2px;
-  border-left: 1px solid var(--border);
-  padding-left: 8px;
+  pointer-events: auto;
 }
 .workspacePanel {
   height: 100%;
@@ -106,7 +107,7 @@
   overflow-wrap: anywhere;
   h1 {
     display: block;
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
     max-height: 25vh;
     overflow-y: auto;
@@ -127,9 +128,18 @@
 }
 .workspaceHeadingRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px 16px;
+}
+.workspaceIdentity {
+  display: flex;
+  flex: 1 1 240px;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+  gap: 8px 12px;
 }
 .canvas {
   height: 100%;
@@ -171,10 +181,6 @@
   .workspaceBar {
     gap: 2px;
   }
-  .workspaceActions {
-    gap: 0;
-    padding-left: 2px;
-  }
   .tab {
     max-width: min(160px, 100%);
   }
@@ -186,6 +192,7 @@
 }
 
 .creationActions {
+  margin-left: auto;
   pointer-events: auto;
   display: flex;
   flex-wrap: wrap;
