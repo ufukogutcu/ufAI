@@ -90,12 +90,12 @@ async function click(f: Awaited<ReturnType<typeof runtime>>["current"], label: s
 
 test("Browser defaults are consistent across filters, details, catalog and saved disable overrides", async t => {
   const rt = await runtime(t); let f = rt.current;
-  assert.equal(f.skills.list("a", { status: "enabled" }).total, 1);
-  assert.deepEqual(f.skills.catalog("a").map(s => s.id), ["builtin-browser"]);
+  assert.equal(f.skills.list("a", { status: "enabled" }).total, 2);
+  assert.deepEqual(f.skills.catalog("a").map(s => s.id), ["builtin-browser", "builtin-duckduckgo-instant-answer"]);
   assert.deepEqual((await f.skills.detail("builtin-browser", "a")).enabledAgents.map(a => a.id), ["a", "b"]);
   assert.equal((await f.dispatch("skill_activate", { skillId: "builtin-browser" })).ok, true);
   f.skills.setEnabled("a", "builtin-browser", false);
-  assert.deepEqual(f.skills.catalog("a"), []);
+  assert.deepEqual(f.skills.catalog("a").map(s => s.id), ["builtin-duckduckgo-instant-answer"]);
   assert.deepEqual(f.skills.activeContext("a", f.owner.taskId), []);
   assert.equal(f.skills.list("a", { status: "disabled" }).total, 3);
   assert.equal((await f.dispatch("browser_snapshot")).ok, false);

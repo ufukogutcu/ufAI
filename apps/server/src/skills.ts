@@ -1,4 +1,5 @@
-import { browserSkillId, defaultSkillEnabled, effectiveSkillEnabledSql } from "./skill-defaults.js";
+import { browserSkillId, duckDuckGoSkillId, defaultSkillEnabled, effectiveSkillEnabledSql } from "./skill-defaults.js";
+import { duckDuckGoSkill } from "./duckduckgo-skill.js";
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
@@ -184,6 +185,11 @@ export class Skills {
       },
       help,
     );
+    const previousDuckDuckGo = this.db.prepare("SELECT name FROM skills WHERE id=?").get(duckDuckGoSkillId) as { name: string } | undefined;
+    let duckDuckGoName = previousDuckDuckGo?.name ?? duckDuckGoSkill.name;
+    for (let suffix = 1; !previousDuckDuckGo && this.db.prepare("SELECT 1 FROM skills WHERE name=?").get(duckDuckGoName); suffix++)
+      duckDuckGoName = suffix === 1 ? `${duckDuckGoSkill.name}-builtin` : `${duckDuckGoSkill.name}-builtin-${suffix}`;
+    await this.seed(duckDuckGoSkillId, { ...duckDuckGoSkill, name: duckDuckGoName });
     // Preserve an existing custom skill named browser; reserve only the built-in identity.
     const previousBrowser = this.db.prepare("SELECT name FROM skills WHERE id=?").get(browserSkillId) as {name:string} | undefined;
     let browserName = previousBrowser?.name ?? "browser";

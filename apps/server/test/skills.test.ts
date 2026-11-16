@@ -22,6 +22,7 @@ import { ConnectionService } from "../src/connection-service.js";
 import { ProcessService, type ToolOwner } from "../src/process-service.js";
 import { ArtifactService } from "../src/artifact-service.js";
 import { parseSkill, skillDocument } from "../src/skill-packages.js";
+import { duckDuckGoSkillId } from "../src/skill-defaults.js";
 import type {
   SkillDetail,
   SkillInstallation,
@@ -167,7 +168,7 @@ function zip(entries: { path: string; contents: string; mode?: number }[]) {
 test("skills are shared across workspaces, per-agent defaults persist, and built-ins are protected", async (t) => {
   const f = await fixture(t);
   const defaults = await f.list();
-  assert.equal(defaults.total, 3);
+  assert.equal(defaults.total, 4);
   assert.equal(
     defaults.items.find((s) => s.name === "skill-creation")!.enabled,
     false,
@@ -334,7 +335,7 @@ test("ZIP previews select one skill; identical imports and explicit replacement 
   assert.equal(response.statusCode, 201, response.body);
   const preview = response.json<SkillInstallation>();
   assert.equal(preview.candidates.length, 2);
-  assert.equal((await f.list()).total, 3);
+  assert.equal((await f.list()).total, 4);
   const commit = async (id: string, key: string, extra = {}) =>
     f.app.inject({
       method: "POST",
@@ -349,7 +350,7 @@ test("ZIP previews select one skill; identical imports and explicit replacement 
     (await commit(preview.id, preview.candidates[0]!.key)).json().id,
     installed.id,
   );
-  assert.equal((await f.list()).total, 4);
+  assert.equal((await f.list()).total, 5);
   const replacement = (
     await f.upload(
       zip([
@@ -421,7 +422,7 @@ test("unsafe ZIPs, malformed input, links and private-network imports are reject
     });
     assert.equal(response.statusCode, 400, response.body);
   }
-  assert.equal((await f.list()).total, 3);
+  assert.equal((await f.list()).total, 4);
   assert.throws(
     () => parseSkill("---\nname: Mixed\ndescription: Test\n---\nHello"),
     /lowercase/,
@@ -545,12 +546,77 @@ async function runtimeFixture(t: TestContext, provider = "openai-compatible") {
   };
 }
 
+test("DuckDuckGo defaults, activation and saved switches remain consistent", async (t) => {
+  const f = await runtimeFixture(t);
+  const detail = await f.skills.detail(duckDuckGoSkillId, "a");
+  assert.equal(detail.enabled, true);
+  assert.equal(detail.builtIn, true);
+  assert.deepEqual(detail.enabledAgents.map(agent => agent.id), ["a", "b"]);
+  const document = await readFile(join(detail.path, "SKILL.md"), "utf8");
+  assert.deepEqual(parseSkill(document), {
+    name: detail.name, description: detail.description, instructions: detail.instructions,
+  });
+  assert.equal((await f.dispatch("skill_activate", { skillId: duckDuckGoSkillId })).ok, true);
+  assert.equal(f.skills.activeContext("a", f.owner.taskId).length, 1);
+  f.skills.setEnabled("a", duckDuckGoSkillId, false);
+  assert.deepEqual(f.skills.activeContext("a", f.owner.taskId), []);
+  assert.equal((await f.dispatch("skill_activate", { skillId: duckDuckGoSkillId })).ok, false);
+  assert.equal(f.skills.isEnabled("b", duckDuckGoSkillId), true);
+  await f.skills.start();
+  assert.equal(f.skills.isEnabled("a", duckDuckGoSkillId), false);
+  assert.equal((await f.skills.detail(duckDuckGoSkillId, "a")).revision, detail.revision);
+  f.skills.setEnabled("a", duckDuckGoSkillId, true);
+  assert.equal((await f.dispatch("skill_activate", { skillId: duckDuckGoSkillId })).ok, true);
+  assert.equal(f.skills.activeContext("a", f.owner.taskId).length, 1);
+  await assert.rejects(f.skills.update(duckDuckGoSkillId, detail.revision, { ...input, name: detail.name }), /Built-in/);
+  await assert.rejects(f.skills.remove(duckDuckGoSkillId, detail.revision, true), /Built-in/);
+  const preview = await f.skills.prepare("a", { input: { ...input, name: detail.name } });
+  await assert.rejects(f.skills.commit("a", preview.id, preview.candidates[0]!.key, detail.id, detail.revision), /reserved for a built-in/);
+});
+
+test("DuckDuckGo API defaults apply to new agents and preserve disabled switches across restart", async (t) => {
+  const f = await fixture(t);
+  const enabled = await f.list(f.a.id, "?query=duckduckgo&status=enabled&origin=builtin");
+  assert.equal(enabled.total, 1);
+  assert.equal(enabled.items[0]!.id, duckDuckGoSkillId);
+  const response = await f.app.inject({
+    method: "PUT", url: `/api/agents/${f.a.id}/skills/${duckDuckGoSkillId}`, payload: { enabled: false },
+  });
+  assert.equal(response.statusCode, 200, response.body);
+  await f.restart();
+  assert.equal((await f.list(f.a.id, "?query=duckduckgo&status=disabled")).total, 1);
+  assert.equal((await f.list(f.b.id, "?query=duckduckgo&status=enabled")).total, 1);
+  const future = await f.agent("Future");
+  assert.equal((await f.list(future.id, "?query=duckduckgo&status=enabled")).total, 1);
+  const shared = (await f.app.inject("/api/skills?query=duckduckgo")).json<SkillPage>();
+  assert.equal(shared.items[0]!.enabled, false, "shared library has no per-agent enablement");
+});
+
+test("DuckDuckGo seeding preserves colliding custom packages and its stable fallback name", async (t) => {
+  const f = await runtimeFixture(t);
+  f.db.prepare("DELETE FROM skills WHERE id=?").run(duckDuckGoSkillId);
+  const custom = await f.skills.create("a", { ...input, name: "duckduckgo-instant-answer" });
+  await f.skills.create("a", { ...input, name: "duckduckgo-instant-answer-builtin" });
+  await f.skills.start();
+  const builtin = await f.skills.detail(duckDuckGoSkillId, "b");
+  assert.equal(builtin.name, "duckduckgo-instant-answer-builtin-2");
+  assert.equal(builtin.enabled, true);
+  assert.equal((await f.skills.detail(custom.id, "a")).instructions, input.instructions);
+  assert.equal((await f.skills.detail(custom.id, "b")).enabled, false);
+  f.skills.setEnabled("a", duckDuckGoSkillId, false);
+  await f.skills.start();
+  const reseeded = await f.skills.detail(duckDuckGoSkillId, "a");
+  assert.equal(reseeded.name, builtin.name);
+  assert.equal(reseeded.revision, builtin.revision);
+  assert.equal(reseeded.enabled, false);
+});
+
 test("other built-ins require explicit enablement in filters, details, catalogs and activation", async (t) => {
   const f = await runtimeFixture(t);
   const creator = "builtin-skill-creation";
-  assert.equal(f.skills.list("a", { status: "enabled" }).total, 1);
+  assert.equal(f.skills.list("a", { status: "enabled" }).total, 2);
   assert.equal(f.skills.list("a", { status: "disabled" }).total, 2);
-  assert.deepEqual(f.skills.catalog("a").map(skill => skill.id), ["builtin-browser"]);
+  assert.deepEqual(f.skills.catalog("a").map(skill => skill.id), ["builtin-browser", "builtin-duckduckgo-instant-answer"]);
   for (const skillId of [creator, "builtin-ufai-help"]) {
     const detail = await f.skills.detail(skillId, "a");
     assert.equal(detail.enabled, false);
@@ -558,13 +624,13 @@ test("other built-ins require explicit enablement in filters, details, catalogs 
     assert.equal((await f.dispatch("skill_activate", { skillId })).ok, false);
   }
   f.skills.setEnabled("a", creator, true);
-  assert.equal(f.skills.list("a", { status: "enabled" }).total, 2);
-  assert.deepEqual(f.skills.catalog("a").map(skill => skill.id), ["builtin-browser", creator]);
+  assert.equal(f.skills.list("a", { status: "enabled" }).total, 3);
+  assert.deepEqual(f.skills.catalog("a").map(skill => skill.id), ["builtin-browser", "builtin-duckduckgo-instant-answer", creator]);
   assert.deepEqual((await f.skills.detail(creator, "a")).enabledAgents.map(agent => agent.id), ["a"]);
   assert.equal((await f.dispatch("skill_activate", { skillId: creator })).ok, true);
   assert.equal(f.skills.activeContext("a", f.owner.taskId).length, 1);
   f.skills.setEnabled("a", creator, false);
-  assert.deepEqual(f.skills.catalog("a").map(skill => skill.id), ["builtin-browser"]);
+  assert.deepEqual(f.skills.catalog("a").map(skill => skill.id), ["builtin-browser", "builtin-duckduckgo-instant-answer"]);
   assert.deepEqual(f.skills.activeContext("a", f.owner.taskId), []);
   assert.deepEqual((await f.skills.detail(creator, "a")).enabledAgents, []);
 });
@@ -577,7 +643,7 @@ test("agent management is journaled, disabled activation fails, and global remov
     (await f.dispatch("skill_create", { skill: input }, "create")).id,
     created.id,
   );
-  assert.equal(f.skills.list("a").total, 4);
+  assert.equal(f.skills.list("a").total, 5);
   const activated = await f.dispatch("skill_activate", { skillId: created.id });
   assert.equal(activated.ok, true);
   assert.equal(activated.instructions, input.instructions);
@@ -873,6 +939,7 @@ test("v26 agents receive built-in defaults without changing existing records", a
   const response = await app.inject("/api/agents/old/skills");
   assert.equal(response.statusCode, 200, response.body);
   const items = response.json<SkillPage>().items;
+  assert.equal(items.find(skill => skill.id === "builtin-duckduckgo-instant-answer")!.enabled, true);
   assert.equal(
     items.find((skill) => skill.name === "skill-creation")!.enabled,
     false,
@@ -905,7 +972,7 @@ test("cancelled imports clean staging, changed previews cannot commit, and expir
     f.skills.prepare("a", { path: source }, controller.signal),
     /cancelled/,
   );
-  assert.equal(f.skills.list("a").total, 3);
+  assert.equal(f.skills.list("a").total, 4);
   const preview = await f.skills.prepare("a", { path: source });
   const staging = f.db
     .prepare("SELECT candidates FROM skill_installations WHERE id=?")
