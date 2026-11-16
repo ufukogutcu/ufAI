@@ -1,0 +1,112 @@
+@use "../motion";
+
+.control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 44px;
+  min-height: 36px;
+  font-size: 12px;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+
+  &:has(input:disabled) {
+    cursor: not-allowed;
+  }
+}
+.switch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  width: 44px;
+  min-height: inherit;
+}
+.input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: inherit;
+
+  &:disabled {
+    opacity: 0;
+  }
+  &:focus-visible {
+    outline: none;
+  }
+}
+.track {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--switch-track-off);
+  pointer-events: none;
+
+  &::before {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--switch-thumb-off);
+    transition: transform 160ms motion.$ease-out;
+  }
+}
+.input:checked + .track {
+  background: var(--accent);
+
+  &::before {
+    background: var(--switch-thumb-on);
+    transform: translateX(12px);
+  }
+}
+.input:where(:enabled:hover) + .track {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+.input:focus-visible + .track {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.input:disabled + .track {
+  opacity: 0.55;
+}
+@media (any-pointer: coarse) {
+  .control {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .track::before {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .input,
+  .input:disabled {
+    position: static;
+    width: 18px;
+    height: 18px;
+    appearance: auto;
+    opacity: 1;
+    accent-color: auto;
+  }
+  .input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+  .track {
+    display: none;
+  }
+}

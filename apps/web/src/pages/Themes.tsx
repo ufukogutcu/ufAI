@@ -37,6 +37,7 @@ import { defaultAppearance } from "../agent-appearance";
 import { connectionRingPaths } from "../connection-appearance";
 import ringStyles from "../components/ConnectionRings.module.scss";
 import { RichText } from "../components/RichText";
+import { SkillSwitch } from "../components/SkillSwitch";
 
 const sampleRingPaths = connectionRingPaths([0, 180], { x: 97, y: 112 });
 const characterPreviewColors = [
@@ -58,7 +59,7 @@ const regions = [
   {
     id: "buttons",
     label: "Buttons",
-    text: "Primary, secondary and segmented actions",
+    text: "Primary, secondary and segmented actions, and skill switches",
   },
   {
     id: "form",
@@ -191,6 +192,8 @@ function ThemePreview({
                     Cancel
                   </button>
                   <span className={styles.segmentSample}>Selected option</span>
+                  <SkillSwitch label="Skill enabled" checked readOnly />
+                  <SkillSwitch label="Skill disabled" checked={false} readOnly />
                 </div>
               )}
               {region.id === "form" && (

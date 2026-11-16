@@ -35,6 +35,7 @@ import {
 import { Dialog } from "./Dialog";
 import { Field } from "./FormField";
 import { Tooltip } from "./Tooltip";
+import { SkillSwitch } from "./SkillSwitch";
 import styles from "./AgentSkills.module.scss";
 
 const emptySkill: SkillInput = { name: "", description: "", instructions: "" };
@@ -86,16 +87,12 @@ const SkillRow = memo(function SkillRow({
       <span className={styles.kind}>
         {skill.builtIn ? "Built-in" : "Custom"}
       </span>
-      <label className={styles.switchControl}>
-        <input
-          type="checkbox"
-          role="switch"
-          aria-label={`Enable ${skill.id === "builtin-browser" ? "Browser" : skill.name} for this agent`}
-          checked={enabled}
-          disabled={busy}
-          onChange={(event) => onToggle(id, event.target.checked)}
-        />
-      </label>
+      <SkillSwitch
+        aria-label={`Enable ${skill.id === "builtin-browser" ? "Browser" : skill.name} for this agent`}
+        checked={enabled}
+        disabled={busy}
+        onChange={(event) => onToggle(id, event.target.checked)}
+      />
     </li>
   );
 });
@@ -705,18 +702,14 @@ export function AgentSkills({ agentId }: { agentId: string }) {
                 <h3 ref={detailHeading} tabIndex={-1}>
                   {detail.id === "builtin-browser" ? "Browser" : detail.name}
                 </h3>
-                <label className={styles.enable}>
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    checked={detail.enabled}
-                    disabled={toggling !== null}
-                    onChange={(event) =>
-                      void toggle(detail.id, event.target.checked)
-                    }
-                  />
-                  Enabled for this agent
-                </label>
+                <SkillSwitch
+                  label="Enabled for this agent"
+                  checked={detail.enabled}
+                  disabled={toggling !== null}
+                  onChange={(event) =>
+                    void toggle(detail.id, event.target.checked)
+                  }
+                />
               </div>
               <p>{detail.description}</p>
               <p className={styles.muted}>

@@ -515,8 +515,8 @@
     "accent": {
       "cssVariable": "--accent",
       "label": "Accent and focus",
-      "description": "Focus outlines, active markers and canvas labels.",
-      "components": ["Focus outlines", "active markers and canvas labels"],
+      "description": "Focus outlines, active markers, enabled skill switches and canvas labels.",
+      "components": ["Focus outlines", "active markers and canvas labels", "Enabled skill switches"],
       "group": "Navigation",
       "region": "navigation",
       "light": "#55555e",
@@ -581,6 +581,36 @@
       "region": "feedback",
       "light": "#39794b",
       "dark": "#99af9d"
+    },
+    "switch-track-off": {
+      "cssVariable": "--switch-track-off",
+      "label": "Disabled skill switch track",
+      "description": "Track behind the thumb when a skill is turned off.",
+      "components": ["Skill switches", "Buttons theme preview"],
+      "group": "Buttons and inputs",
+      "region": "buttons",
+      "light": "#85858f",
+      "dark": "#62626c"
+    },
+    "switch-thumb-off": {
+      "cssVariable": "--switch-thumb-off",
+      "label": "Disabled skill switch thumb",
+      "description": "Circular thumb when a skill is turned off.",
+      "components": ["Skill switches", "Buttons theme preview"],
+      "group": "Buttons and inputs",
+      "region": "buttons",
+      "light": "#ffffff",
+      "dark": "#f4f4f6"
+    },
+    "switch-thumb-on": {
+      "cssVariable": "--switch-thumb-on",
+      "label": "Enabled skill switch thumb",
+      "description": "Circular thumb against the theme accent when a skill is turned on.",
+      "components": ["Skill switches", "Buttons theme preview"],
+      "group": "Buttons and inputs",
+      "region": "buttons",
+      "light": "#ffffff",
+      "dark": "#242428"
     },
     "primary-background": {
       "cssVariable": "--primary-background",
