@@ -57,7 +57,7 @@ export class BrowserService {
     const agent = this.db.prepare("SELECT id,workspaceId FROM agents WHERE id=?").get(id) as { id: string; workspaceId: string } | undefined;
     if (!agent) fail("Agent not found.", 404);
     this.files.assertAvailable(agent.workspaceId, id);
-    if (requireEnabled && !this.skills.isEnabled(id, browserSkillId)) fail("Browser skill is disabled for this agent.", 403);
+    if (requireEnabled && !this.skills.isEnabled(id, browserSkillId)) fail("The browser skill is disabled for this agent.", 403);
     return agent;
   }
   assertEnabled(id: string) { this.agent(id); }
@@ -414,7 +414,7 @@ export class BrowserService {
     if (skillId !== browserSkillId || enabled) return;
     const s = this.sessions.get(id); if (!s) return;
     s.controller = null;
-    for (const v of s.viewers.values()) v.socket.close(4003, "Browser skill disabled");
+    for (const v of s.viewers.values()) v.socket.close(4003, "browser skill disabled");
     s.viewers.clear(); void this.capture(s);
   }
   async settleAgents(ids: string[]) {

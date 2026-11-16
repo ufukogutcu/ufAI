@@ -78,7 +78,7 @@ const SkillRow = memo(function SkillRow({
         type="button"
         onClick={() => onOpen(id)}
       >
-        <span className={styles.name}>{skill.id === "builtin-browser" ? "Browser" : skill.name}</span>
+        <span className={styles.name}>{skill.id === "builtin-browser" ? "browser" : skill.name}</span>
         <span className={styles.description}>{skill.description}</span>
         {skill.error && (
           <span className={styles.invalid}>Unavailable — open for details</span>
@@ -88,7 +88,7 @@ const SkillRow = memo(function SkillRow({
         {skill.builtIn ? "Built-in" : "Custom"}
       </span>
       <SkillSwitch
-        aria-label={`Enable ${skill.id === "builtin-browser" ? "Browser" : skill.name} for this agent`}
+        aria-label={`Enable ${skill.id === "builtin-browser" ? "browser" : skill.name} for this agent`}
         checked={enabled}
         disabled={busy}
         onChange={(event) => onToggle(id, event.target.checked)}
@@ -700,7 +700,7 @@ export function AgentSkills({ agentId }: { agentId: string }) {
             <>
               <div className={styles.detailHeading}>
                 <h3 ref={detailHeading} tabIndex={-1}>
-                  {detail.id === "builtin-browser" ? "Browser" : detail.name}
+                  {detail.id === "builtin-browser" ? "browser" : detail.name}
                 </h3>
                 <SkillSwitch
                   label="Enabled for this agent"

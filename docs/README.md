@@ -24,7 +24,7 @@ Some terms describe planned capabilities. Check the platform guide before presen
 | Session | A conversation or isolated task context belonging to an agent |
 | Attachment | A file sent with a Chat or task message; sending waits for every file to be saved, and visual inspection requires model support |
 | Run | An execution attempt with persisted state, tool activity, outputs, and errors |
-| Skill | Reusable instructions and supporting resources; installed metadata grants no permissions. The protected Browser built-in also controls access to the agent’s browser |
+| Skill | Reusable instructions and supporting resources; installed metadata grants no permissions. The protected browser built-in also controls access to the agent’s browser |
 | Check-in | An agent-selected one-time reminder to revisit its current task; relevant replies can replace a request-linked reminder |
 | Trigger | A planned general source of work such as a recurring schedule or external event; manual task submission and one-time task check-ins already exist |
 
