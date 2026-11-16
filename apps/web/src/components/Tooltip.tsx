@@ -8,6 +8,7 @@ import {
   useState,
   type HTMLAttributes,
   type ReactElement,
+  type ReactNode,
   type Ref,
 } from "react";
 import { createPortal } from "react-dom";
@@ -35,6 +36,9 @@ export function Tooltip({
   hoverDelayMs = 400,
   live = false,
   multiline = false,
+  visualContent,
+  bubbleClassName = "",
+  toggleOnClick = false,
   children,
 }: {
   content: string;
@@ -42,6 +46,9 @@ export function Tooltip({
   hoverDelayMs?: number;
   live?: boolean;
   multiline?: boolean;
+  visualContent?: ReactNode;
+  bubbleClassName?: string;
+  toggleOnClick?: boolean;
   children: ReactElement<TriggerProps, string>;
 }) {
   const id = useId();
@@ -54,6 +61,7 @@ export function Tooltip({
   const tooltipHovered = useRef(false);
   const focused = useRef(false);
   const dismissed = useRef(false);
+  const pinned = useRef(false);
   const [phase, setPhase] = useState<"closed" | "waiting" | "open">("closed");
   const [host, setHost] = useState<Element | null>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
@@ -85,6 +93,7 @@ export function Tooltip({
   const hide = useCallback(() => {
     clearTimers();
     tooltipHovered.current = false;
+    pinned.current = false;
     setPhase("closed");
     setPosition(null);
   }, [clearTimers]);
@@ -99,7 +108,7 @@ export function Tooltip({
   function scheduleClose() {
     clearTimeout(openingTimer.current);
     clearTimeout(closingTimer.current);
-    if (!focused.current && !hovered.current && !tooltipHovered.current) {
+    if (!pinned.current && !focused.current && !hovered.current && !tooltipHovered.current) {
       closingTimer.current = setTimeout(hide, 120);
     }
   }
@@ -128,15 +137,27 @@ export function Tooltip({
         event.stopPropagation();
       }
     }
-    window.addEventListener("scroll", hide, true);
+    function handleScroll(event: Event) {
+      // A bounded rich tooltip can scroll without dismissing itself.
+      if (event.target instanceof Node && tooltip.current?.contains(event.target)) return;
+      hide();
+    }
+    function handleOutsidePointer(event: PointerEvent) {
+      if (event.target instanceof Node && (trigger.current?.contains(event.target) || tooltip.current?.contains(event.target))) return;
+      dismissed.current = true;
+      hide();
+    }
+    window.addEventListener("scroll", handleScroll, true);
     window.addEventListener("resize", hide);
     document.addEventListener("keydown", handleEscape, true);
+    if (toggleOnClick) document.addEventListener("pointerdown", handleOutsidePointer, true);
     return () => {
-      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("scroll", handleScroll, true);
       window.removeEventListener("resize", hide);
       document.removeEventListener("keydown", handleEscape, true);
+      document.removeEventListener("pointerdown", handleOutsidePointer, true);
     };
-  }, [active, open, hide]);
+  }, [active, open, hide, toggleOnClick]);
 
   useLayoutEffect(() => {
     if (!open || !trigger.current || !tooltip.current) return;
@@ -224,11 +245,15 @@ export function Tooltip({
           hide();
         },
         onPointerDown(event) {
-          dismiss();
+          if (!toggleOnClick) dismiss();
           children.props.onPointerDown?.(event);
         },
         onClick(event) {
-          dismiss();
+          if (toggleOnClick && !pinned.current) {
+            dismissed.current = false;
+            pinned.current = true;
+            show();
+          } else dismiss();
           children.props.onClick?.(event);
         },
       })}
@@ -238,7 +263,7 @@ export function Tooltip({
           ref={tooltip}
           id={id}
           role="tooltip"
-          className={`${styles.tooltip} ${multiline ? styles.multiline : ""} ${position ? "" : styles.measuring}`}
+          className={`${styles.tooltip} ${multiline ? styles.multiline : ""} ${bubbleClassName} ${position ? "" : styles.measuring}`}
           style={position ?? undefined}
           onPointerEnter={(event) => {
             if (event.pointerType !== "mouse") return;
@@ -251,7 +276,7 @@ export function Tooltip({
             scheduleClose();
           }}
         >
-          {content}
+          {visualContent ?? content}
         </div>
         </Appearance>,
         host,

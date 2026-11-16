@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode, type RefObject } from "react";
 import { X } from "lucide-react";
 import { Tooltip } from "./Tooltip";
 import { GlassMaterial } from "./GlassMaterial";
@@ -12,6 +12,7 @@ export function Dialog({
   busy = false,
   contentClassName = "",
   initialFocusSelector = "input",
+  returnFocusFallbackRef,
 }: {
   title: string;
   children: ReactNode;
@@ -19,6 +20,7 @@ export function Dialog({
   busy?: boolean;
   contentClassName?: string;
   initialFocusSelector?: string;
+  returnFocusFallbackRef?: RefObject<HTMLElement | null>;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -31,8 +33,10 @@ export function Dialog({
       dialog.close();
       if (previous instanceof HTMLElement && previous.isConnected)
         previous.focus();
+      if (returnFocusFallbackRef && document.activeElement !== previous)
+        returnFocusFallbackRef.current?.focus();
     };
-  }, [initialFocusSelector]);
+  }, [initialFocusSelector, returnFocusFallbackRef]);
   return (
     <Appearance kind="dialog">
       <dialog

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createCodexUsageStore } from "../src/codex-usage-store.js";
 import { createConnectionStore } from "../src/connection-store.js";
 import { startUsagePolling } from "../src/codex-usage-polling.js";
-import { durationLabel, remainingPercent, resetCountdown, usageLevel, usageTooltip } from "../src/codex-usage-format.js";
+import { durationLabel, expiryCountdown, remainingPercent, resetCountdown, usageLevel, usageTooltip, usageWindowLabel } from "../src/codex-usage-format.js";
 import type { CodexUsageSnapshot } from "../src/api.js";
 const snapshot: CodexUsageSnapshot = { planType: "pro", defaultLimit: null, limits: [], resetCredits: { availableCount: 1, credits: null }, ordinaryUsageAllowed: null, fetchedAt: "2026-11-12T12:00:00Z" };
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -103,6 +103,27 @@ test("duration and countdown formatting retain arbitrary quota lengths and never
   assert.equal(durationLabel(null), "Window"); assert.equal(durationLabel(90), "90m");
   assert.match(resetCountdown(100, 100000), /refresh to check/);
   assert.equal(resetCountdown(null, 0), "Reset time unknown");
+});
+
+test("readable usage window labels preserve arbitrary durations and unknown windows", () => {
+  assert.equal(usageWindowLabel(300), "5-hour limit");
+  assert.equal(usageWindowLabel(10080), "7-day limit");
+  assert.equal(usageWindowLabel(90), "90-minute limit");
+  assert.equal(usageWindowLabel(1), "1-minute limit");
+  assert.equal(usageWindowLabel(null), "Usage window");
+});
+
+test("reset expiry countdowns distinguish unknown, expired and sub-minute values and use at most two units", () => {
+  const now = 100000;
+  assert.equal(expiryCountdown(null, now), "Expiry unknown");
+  assert.equal(expiryCountdown(99, now), "Expired");
+  assert.equal(expiryCountdown(100, now), "Expired");
+  assert.equal(expiryCountdown(159, now), "Expires in <1m");
+  assert.equal(expiryCountdown(160, now), "Expires in 1m");
+  assert.equal(expiryCountdown(161, now), "Expires in 2m");
+  assert.equal(expiryCountdown(100 + 65 * 60, now), "Expires in 1h 5m");
+  assert.equal(expiryCountdown(100 + (2 * 1440 + 4 * 60 + 12) * 60, now), "Expires in 2d 4h");
+  assert.equal(expiryCountdown(100 + 1440 * 60, now), "Expires in 1d");
 });
 
 test("usage tooltips show remaining allowance, including exhausted and over-limit windows", () => {

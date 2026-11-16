@@ -52,27 +52,147 @@
   > span:first-child { color: var(--muted); }
 }
 .staleMark { position: absolute; right: 0; top: 0; color: var(--warning); }
-.modalBody { display: grid; gap: 16px; min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+.usageTooltip.usageTooltip {
+  width: 288px;
+  max-width: calc(100vw - 16px);
+  padding: 12px;
+  border-radius: var(--radius-control);
+  font-size: 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.tooltipBody { display: grid; gap: 16px; min-width: 0; }
+.tooltipHeading {
+  display: grid;
+  gap: 4px;
+  strong { font-weight: 600; }
+  > span { color: var(--muted); font-size: 12px; }
+}
+.tooltipFooter {
+  display: grid;
+  gap: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+}
+.dialogContent h2 { min-width: 0; overflow-wrap: anywhere; }
+.dialogContent h2 + button { flex-shrink: 0; }
+.modalBody {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.5;
+  p { margin: 0; }
+}
 .summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.updated { font-size: 12px; }
+.accountDetails { display: grid; gap: 4px; min-width: 0; }
+.updated, .supporting { font-size: 12px; color: var(--muted); }
 .section {
   border-top: 1px solid var(--border);
   padding-top: 16px;
   display: grid;
-  gap: 12px;
+  gap: 16px;
   h3 { margin: 0; font-size: 16px; font-weight: 600; }
-  p { margin: 0; }
 }
 .window {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
   font-variant-numeric: tabular-nums;
-  > div { display: flex; flex-direction: column; gap: 4px; }
-  p { font-size: 12px; margin-top: 4px; }
 }
-.credit { display: grid; gap: 8px; padding: 12px 0; border-top: 1px solid var(--border); }
-.confirmation { border: 1px solid var(--border-strong); border-radius: var(--radius-control); padding: 12px; }
-.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-.modalBody .error { color: var(--error-text); }
-@media (any-pointer: coarse) { .usageButton { min-height: 44px; } }
+.windowHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  strong { margin-left: auto; font-weight: 600; }
+}
+.resetTime { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.sectionHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  > span { font-size: 12px; color: var(--muted); }
+}
+.resetsList { display: grid; }
+.credit {
+  display: grid;
+  grid-template-columns: minmax(18px, 1fr) minmax(0, max-content) max-content;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.creditTitle {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 36px;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  border-radius: var(--radius-control);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  svg { flex-shrink: 0; color: var(--muted); }
+  &:hover { color: var(--accent-light); }
+}
+.expiry, .creditStatus {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.expiry {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+.expiryPrefix { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.expiryValue { flex-shrink: 0; }
+.creditStatus { text-transform: capitalize; }
+.resetFallback.resetFallback { min-width: 0; white-space: normal; }
+.useReset.useReset { padding-inline: 6px; }
+.resetTooltip.resetTooltip {
+  width: 288px;
+  max-width: calc(100vw - 16px);
+  padding: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.confirmation {
+  display: grid;
+  gap: 16px;
+  font-size: 14px;
+  p { margin: 0; }
+  strong { font-weight: 600; }
+  .actions { justify-content: flex-end; }
+}
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.emptyState, .notice { margin: 0; color: var(--muted); font-size: 12px; }
+.warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  svg { flex-shrink: 0; margin-top: 2px; color: var(--warning); }
+}
+.error { color: var(--error-text); }
+@media (any-pointer: coarse) {
+  .usageButton, .creditTitle { min-height: 44px; }
+  .credit { grid-template-columns: minmax(44px, 1fr) minmax(0, max-content) max-content; }
+}
 @media (max-height: 520px) {
   .dock { max-height: none; }
   .buttons { max-height: none; }

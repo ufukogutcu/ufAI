@@ -11,6 +11,12 @@ export function durationLabel(minutes: number | null): string {
   if (minutes % 60 === 0) return `${minutes / 60}h`;
   return `${minutes}m`;
 }
+export function usageWindowLabel(minutes: number | null): string {
+  if (!minutes) return "Usage window";
+  if (minutes % 1440 === 0) return `${minutes / 1440}-day limit`;
+  if (minutes % 60 === 0) return `${minutes / 60}-hour limit`;
+  return `${minutes}-minute limit`;
+}
 export function resetCountdown(timestamp: number | null, now: number): string {
   if (timestamp === null) return "Reset time unknown";
   const minutes = Math.ceil((timestamp * 1000 - now) / 60000);
@@ -22,6 +28,17 @@ export function resetCountdown(timestamp: number | null, now: number): string {
 }
 export function dateTime(timestamp: number | null): string {
   return timestamp === null ? "Unknown" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(timestamp * 1000);
+}
+export function expiryCountdown(timestamp: number | null, now: number): string {
+  if (timestamp === null) return "Expiry unknown";
+  const remaining = timestamp * 1000 - now;
+  if (remaining <= 0) return "Expired";
+  if (remaining < 60000) return "Expires in <1m";
+  const minutes = Math.ceil(remaining / 60000);
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor(minutes % 1440 / 60);
+  const rest = minutes % 60;
+  return `Expires in ${[days ? `${days}d` : "", hours ? `${hours}h` : "", rest ? `${rest}m` : ""].filter(Boolean).slice(0, 2).join(" ")}`;
 }
 export function creditsLabel(credits: CodexCredits | null): string {
   if (!credits) return "Credits unavailable";
