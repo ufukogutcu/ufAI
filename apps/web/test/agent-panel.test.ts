@@ -60,7 +60,7 @@ async function setup(t: TestContext) {
 test("panels default to Chat, use the requested order, and retain independent agent tabs after remount and reload", async t => {
   const p = await setup(t);
   assert.deepEqual([...p.document.querySelectorAll("nav button")].map(b => b.textContent),
-    ["Details", "Chat", "Skills", "Browser", "Tasks", "Memory", "Files"]);
+    ["Details", "Chat", "Skills", "Tasks", "Memory", "Files", "Browser"]);
   assert.equal(p.active(), "Chat");
   await p.click(p.tab("Memory"));
   await p.click(p.document.querySelector("button[aria-label='Close agent panel']")!);
