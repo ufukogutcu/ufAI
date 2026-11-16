@@ -24,7 +24,8 @@
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "start": "node apps/server/dist/index.js",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "browser:install": "npm exec --workspace @ufai/server -- playwright install chromium"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

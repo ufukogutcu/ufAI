@@ -1,0 +1,102 @@
+.browser {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  color: var(--text);
+  background: var(--surface);
+}
+.websiteTabs {
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  flex-shrink: 0;
+  padding: 8px;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.websiteTab {
+  display: flex;
+  align-items: center;
+  max-width: 200px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-compact);
+  > button:first-child {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-height: 32px;
+    padding: 4px 8px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    &[aria-current] { box-shadow: inset 0 -2px 0 var(--accent); color: var(--text); }
+    &:hover { background: var(--hover); }
+  }
+}
+.navigation {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  input { flex: 1; min-width: 60px; font-size: 13px; }
+  button { flex-shrink: 0; }
+}
+.controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 8px 8px;
+  > span { margin-right: auto; font-size: 12px; color: var(--muted); }
+  > button { display: inline-flex; align-items: center; gap: 6px; }
+}
+.page {
+  flex: 1 0 auto;
+  min-width: 0;
+  position: relative;
+  max-height: 70dvh;
+  overflow: auto;
+  background: var(--root-background);
+  > p { padding: 12px; color: var(--muted); font-size: 13px; }
+  canvas { width: var(--browser-view-width); max-width: none; height: auto; display: block; aspect-ratio: 8 / 5; }
+  .interactive { touch-action: none; cursor: auto; }
+  &[data-zoomed] .interactive { touch-action: pan-x pan-y; }
+}
+.zoom {
+  display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted);
+  select { min-height: 32px; width: 90px; font-size: 12px; }
+}
+.websiteDialog, .fileChooser, .textEntry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  p { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
+  input { min-width: 0; max-width: 100%; }
+  label { display: flex; flex: 1; min-width: 120px; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  textarea { min-height: 36px; resize: vertical; }
+}
+.downloads { padding: 12px; font-size: 13px; overflow-wrap: anywhere; }
+.help { padding: 0 12px; font-size: 12px; color: var(--muted); }
+.expandedDialog { width: min(1360px, calc(100vw - 40px)); }
+.expanded {
+  width: 100%;
+  max-width: none;
+  .browser { max-height: calc(100dvh - 140px); }
+}
+@media (max-width: 640px) {
+  .navigation { flex-wrap: wrap; input { order: 1; flex-basis: calc(100% - 60px); } button[type="submit"] { order: 2; } }
+  .expandedDialog { width: calc(100vw - 24px); }
+}
+@media (any-pointer: coarse) {
+  .browser input, .browser textarea, .browser select { min-height: 44px; }
+  .websiteTab > button:first-child, .browser button { min-height: 44px; min-width: 44px; }
+}

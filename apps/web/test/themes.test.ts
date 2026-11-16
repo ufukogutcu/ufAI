@@ -305,7 +305,7 @@ test("application color literals and CSS variables must come from the theme cata
           "--nav-gap", "--nav-index", "--dock-padding", "--dock-padding-block", "--dock-left",
           "--dock-width", "--shell-gutter", "--toolbar-top",
           "--toolbar-control-size", "--toolbar-height", "--zoom-control-size",
-          "--workspace-chrome-bottom",
+          "--workspace-chrome-bottom", "--browser-view-width",
         ].includes(match[1]!)) continue;
         assert.ok(
           variables.has(match[1]!),

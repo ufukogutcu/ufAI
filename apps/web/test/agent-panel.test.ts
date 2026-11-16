@@ -1,3 +1,4 @@
+import { SkillsContext, createSkillsStore } from "../src/skills-store";
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { act, createElement as h, StrictMode } from "react";
@@ -27,6 +28,8 @@ async function setup(t: TestContext) {
   });
   const store = createAgentStore(), settings = createSettingsStore(initialSettings());
   const dashboard = createDashboardStore(settings);
+  const skills = createSkillsStore();
+  skills.setState({ enabled: { one: {"builtin-browser": true}, two: {"builtin-browser": true} }, load: async () => {} });
   store.setState({
     agents: { one: agent, two: { ...agent, id: "two", name: "Ben", workspaceId: "other" } },
     selected: { workspace: "one" }, refreshAgent: async () => {},
@@ -45,8 +48,8 @@ async function setup(t: TestContext) {
           h(UnsavedContext.Provider, { value: { setDirty() {}, attempt(action) {
             if (allowed) action();
             return allowed;
-          } } }, h(Probe)))))));
-  return { ...p, store,
+          } } }, h(SkillsContext.Provider, { value: skills }, h(Probe))))))));
+  return { ...p, store, skills,
     tab: (name: string) => [...p.document.querySelectorAll<HTMLButtonElement>("nav[aria-label='Agent sections'] button")].find(b => b.textContent === name)!,
     active: () => p.document.querySelector("nav [aria-current]")?.textContent,
     allow: (value: boolean) => { allowed = value; },
@@ -57,7 +60,7 @@ async function setup(t: TestContext) {
 test("panels default to Chat, use the requested order, and retain independent agent tabs after remount and reload", async t => {
   const p = await setup(t);
   assert.deepEqual([...p.document.querySelectorAll("nav button")].map(b => b.textContent),
-    ["Details", "Chat", "Skills", "Tasks", "Memory", "Files"]);
+    ["Details", "Chat", "Skills", "Browser", "Tasks", "Memory", "Files"]);
   assert.equal(p.active(), "Chat");
   await p.click(p.tab("Memory"));
   await p.click(p.document.querySelector("button[aria-label='Close agent panel']")!);
@@ -149,4 +152,16 @@ test("workspace refresh clears tabs only after confirming that an agent is gone"
   store.getState().endCanvasInteraction(generation);
   await store.getState().loadWorkspace("workspace");
   assert.deepEqual(createAgentStore().getState().panelTabs, { two: "Details" });
+});
+
+
+test("Browser tab follows confirmed skill enablement and disabling a selected browser returns to Chat", async t => {
+  const p = await setup(t);
+  assert.ok(p.tab("Browser"));
+  await act(async () => p.skills.setState({ enabled: { one: {"builtin-browser": false} } }));
+  assert.equal(p.tab("Browser"), undefined);
+  await act(async () => p.store.getState().setPanelTab("one", "Browser"));
+  assert.equal(p.active(), "Chat");
+  await act(async () => p.skills.setState({ enabled: { one: {"builtin-browser": true} } }));
+  assert.ok(p.tab("Browser"));
 });

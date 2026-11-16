@@ -41,6 +41,8 @@
   overflow-x: auto;
   flex-shrink: 0;
   button {
+    flex-shrink: 0;
+    white-space: nowrap;
     padding: 10px 8px;
     min-height: 36px;
     background: transparent;

@@ -14,6 +14,7 @@
   "dependencies": {
     "@fastify/multipart": "^10.1.8",
     "@fastify/static": "^10.1.10",
+    "@fastify/websocket": "11.3.7",
     "@openai/codex": "0.167.1",
     "@ufai/character-catalog": "0.1.0",
     "@ufai/theme-catalog": "0.1.0",
@@ -21,11 +22,13 @@
     "fastify": "^5.12.8",
     "image-size": "^2.1.0",
     "node-pty": "^1.1.0",
+    "playwright": "1.65.1",
     "yaml": "^2.9.1",
     "yauzl": "^3.4.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
+    "@types/ws": "^8.18.2",
     "@types/yauzl": "^3.4.0"
   }
 }

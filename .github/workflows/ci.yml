@@ -17,6 +17,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: npm exec --workspace @ufai/server -- playwright install --with-deps chromium
       - run: npm run typecheck
       - run: npm test
       - run: npm run build

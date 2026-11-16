@@ -167,7 +167,7 @@ function zip(entries: { path: string; contents: string; mode?: number }[]) {
 test("skills are shared across workspaces, per-agent defaults persist, and built-ins are protected", async (t) => {
   const f = await fixture(t);
   const defaults = await f.list();
-  assert.equal(defaults.total, 2);
+  assert.equal(defaults.total, 3);
   assert.equal(
     defaults.items.find((s) => s.name === "skill-creation")!.enabled,
     false,
@@ -334,7 +334,7 @@ test("ZIP previews select one skill; identical imports and explicit replacement 
   assert.equal(response.statusCode, 201, response.body);
   const preview = response.json<SkillInstallation>();
   assert.equal(preview.candidates.length, 2);
-  assert.equal((await f.list()).total, 2);
+  assert.equal((await f.list()).total, 3);
   const commit = async (id: string, key: string, extra = {}) =>
     f.app.inject({
       method: "POST",
@@ -349,7 +349,7 @@ test("ZIP previews select one skill; identical imports and explicit replacement 
     (await commit(preview.id, preview.candidates[0]!.key)).json().id,
     installed.id,
   );
-  assert.equal((await f.list()).total, 3);
+  assert.equal((await f.list()).total, 4);
   const replacement = (
     await f.upload(
       zip([
@@ -421,7 +421,7 @@ test("unsafe ZIPs, malformed input, links and private-network imports are reject
     });
     assert.equal(response.statusCode, 400, response.body);
   }
-  assert.equal((await f.list()).total, 2);
+  assert.equal((await f.list()).total, 3);
   assert.throws(
     () => parseSkill("---\nname: Mixed\ndescription: Test\n---\nHello"),
     /lowercase/,
@@ -545,12 +545,12 @@ async function runtimeFixture(t: TestContext, provider = "openai-compatible") {
   };
 }
 
-test("built-ins require explicit enablement in filters, details, catalogs and activation", async (t) => {
+test("other built-ins require explicit enablement in filters, details, catalogs and activation", async (t) => {
   const f = await runtimeFixture(t);
   const creator = "builtin-skill-creation";
-  assert.equal(f.skills.list("a", { status: "enabled" }).total, 0);
+  assert.equal(f.skills.list("a", { status: "enabled" }).total, 1);
   assert.equal(f.skills.list("a", { status: "disabled" }).total, 2);
-  assert.deepEqual(f.skills.catalog("a"), []);
+  assert.deepEqual(f.skills.catalog("a").map(skill => skill.id), ["builtin-browser"]);
   for (const skillId of [creator, "builtin-ufai-help"]) {
     const detail = await f.skills.detail(skillId, "a");
     assert.equal(detail.enabled, false);
@@ -558,13 +558,13 @@ test("built-ins require explicit enablement in filters, details, catalogs and ac
     assert.equal((await f.dispatch("skill_activate", { skillId })).ok, false);
   }
   f.skills.setEnabled("a", creator, true);
-  assert.equal(f.skills.list("a", { status: "enabled" }).total, 1);
-  assert.deepEqual(f.skills.catalog("a").map(skill => skill.id), [creator]);
+  assert.equal(f.skills.list("a", { status: "enabled" }).total, 2);
+  assert.deepEqual(f.skills.catalog("a").map(skill => skill.id), ["builtin-browser", creator]);
   assert.deepEqual((await f.skills.detail(creator, "a")).enabledAgents.map(agent => agent.id), ["a"]);
   assert.equal((await f.dispatch("skill_activate", { skillId: creator })).ok, true);
   assert.equal(f.skills.activeContext("a", f.owner.taskId).length, 1);
   f.skills.setEnabled("a", creator, false);
-  assert.deepEqual(f.skills.catalog("a"), []);
+  assert.deepEqual(f.skills.catalog("a").map(skill => skill.id), ["builtin-browser"]);
   assert.deepEqual(f.skills.activeContext("a", f.owner.taskId), []);
   assert.deepEqual((await f.skills.detail(creator, "a")).enabledAgents, []);
 });
@@ -577,7 +577,7 @@ test("agent management is journaled, disabled activation fails, and global remov
     (await f.dispatch("skill_create", { skill: input }, "create")).id,
     created.id,
   );
-  assert.equal(f.skills.list("a").total, 3);
+  assert.equal(f.skills.list("a").total, 4);
   const activated = await f.dispatch("skill_activate", { skillId: created.id });
   assert.equal(activated.ok, true);
   assert.equal(activated.instructions, input.instructions);
@@ -905,7 +905,7 @@ test("cancelled imports clean staging, changed previews cannot commit, and expir
     f.skills.prepare("a", { path: source }, controller.signal),
     /cancelled/,
   );
-  assert.equal(f.skills.list("a").total, 2);
+  assert.equal(f.skills.list("a").total, 3);
   const preview = await f.skills.prepare("a", { path: source });
   const staging = f.db
     .prepare("SELECT candidates FROM skill_installations WHERE id=?")

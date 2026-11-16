@@ -1,3 +1,5 @@
+import { browserTools } from "./browser-tools.js";
+import { browserAction } from "./browser-validation.js";
 import { randomUUID, createHash } from "node:crypto";
 import { readdir, open, lstat, rename, rm, realpath } from "node:fs/promises";
 import { resolve, dirname, join } from "node:path";
@@ -48,6 +50,7 @@ const skillInputSchema = {
 const skillId = {type:"string",maxLength:100,minLength:1};
 const skillRevision = number(1,Number.MAX_SAFE_INTEGER);
 const allTaskTools: ToolSpec[] = [
+  ...browserTools,
   spec("skills_list", "List shared skills and your enabled state.", {query:{type:"string",maxLength:1024},offset:number(0,1000000),limit:number(1,10)}),
   spec("skill_inspect", "Read metadata, instructions, revision, folder and affected agents.", {skillId},["skillId"]),
   spec("skill_activate", "Activate an enabled skill for this task; resources use relative paths.", {skillId},["skillId"]),
@@ -376,6 +379,7 @@ function validate(value: any, schema: any) {
   }
 }
 export class AgentTools {
+  browser?: import("./browser-service.js").BrowserService;
   skills?: import("./skills.js").Skills;
   messaging?: import("./messaging.js").MessagingService;
   media?: import("./media-service.js").MediaService;
@@ -619,6 +623,26 @@ export class AgentTools {
     callId?: string,
   ): Promise<Record<string, unknown>> {
     this.messaging?.assertOwner(owner);
+    if (name.startsWith("browser_")) {
+      const browser = this.browser;
+      if (!browser) throw new ConnectionError("Browser is unavailable.", 503);
+      browser.assertEnabled(owner.agentId);
+      if (name === "browser_state" || name === "browser_downloads" || (name === "browser_tabs" && a.action === "list")) {
+        const state = await browser.inspect(owner.agentId);
+        if (name === "browser_downloads") return { downloads: state.downloads.map(d => ({ ...d, ...(d.path ? { path: join(this.files.location("agent", owner.agentId).path, d.path) } : {}) })) };
+        return { state };
+      }
+      if (name === "browser_upload") {
+        if (!!a.paths === !!a.versionIds) throw new ConnectionError("Provide exactly one paths or versionIds array.", 400);
+        const paths: string[] = a.paths?.map((path: string) => resolve(this.files.location("task", owner.taskId).path, path)) ?? await Promise.all(a.versionIds.map(async (id: string) => {
+          this.messaging?.assertVersion(owner, id);
+          return (await this.artifacts.materialize(owner, id, `Browser-upload-${randomUUID()}`)).path;
+        }));
+        return browser.upload(owner.agentId, paths, a.ref, signal);
+      }
+      const action = name === "browser_snapshot" ? {action:"snapshot"} : name === "browser_screenshot" ? {action:"screenshot"} : a;
+      return browser.action(owner.agentId, browserAction(action), signal);
+    }
     if (name.startsWith("skill_") || name === "skills_list") {
       const skills = this.skills;
       if (!skills) throw new ConnectionError("Skills are unavailable.",503);

@@ -215,7 +215,7 @@ test("v10 upgrade backfills folders without altering Phase 1 history and memory,
     path,
   );
   db = openDatabase(databasePath);
-  assert.equal(db.pragma("user_version", { simple: true }), 27);
+  assert.equal(db.pragma("user_version", { simple: true }), 28);
   db.close();
 });
 
@@ -320,7 +320,7 @@ test(
         db.prepare("SELECT id FROM workspaces LIMIT 1").get() as { id: string }
       ).id;
     db.exec(`INSERT INTO connections(id,provider,name,endpoint,createdAt,updatedAt) VALUES ('connection','ollama','Local','http://127.0.0.1:11434','old','old');
-    INSERT INTO provider_models(connectionId,id,name,contextWindowOverride) VALUES ('connection','model','Model',32000);
+    INSERT INTO provider_models(connectionId,id,name,contextWindowOverride) VALUES ('connection','model','Model',64000);
     INSERT INTO model_presets(id,name,connectionId,modelId,createdAt,updatedAt) VALUES ('preset','Preset','connection','model','old','old');`);
     db.close();
     let started!: () => void,

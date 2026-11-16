@@ -1,3 +1,6 @@
+import websocket from "@fastify/websocket";
+import { BrowserService, type BrowserOptions } from "./browser-service.js";
+import { registerBrowser } from "./browser-routes.js";
 import { Skills } from "./skills.js";
 import { registerSkills } from "./skill-routes.js";
 import { MessagingService, registerMessaging } from "./messaging.js";
@@ -83,6 +86,7 @@ export function createApp(
     artifacts?: ArtifactOptions;
     uploads?: UploadOptions;
     agentFiles?: AgentFilesOptions;
+    browser?: BrowserOptions;
   } = {},
 ) {
   const app = Fastify({
@@ -154,6 +158,13 @@ export function createApp(
   );
   const skills = new Skills(database, files, changed, options.agentFiles);
   registerSkills(app, skills);
+  const browsers = new BrowserService(database, files, skills, changed, options.browser);
+  files.agentBrowser = browsers;
+  skills.onEnabledChanged = (id, skillId, enabled) => browsers.enabledChanged(id, skillId, enabled);
+  app.register(async instance => {
+    await instance.register(websocket, { options: { maxPayload: 65536 } });
+    registerBrowser(instance, browsers, files);
+  });
   const tools = new AgentTools(
     database,
     files,
@@ -162,6 +173,7 @@ export function createApp(
     changed,
   );
   tools.skills = skills;
+  tools.browser = browsers;
   execution = new AgentExecution(
     database,
     connections,
@@ -220,6 +232,7 @@ export function createApp(
   registerTools(app, database, execution, processes, artifacts);
   registerTimeline(app, database, execution);
   app.addHook("preClose", async () => {
+    await browsers.close();
     await agentFiles.close();
     await incoming.close();
     await artifacts.quiesce();

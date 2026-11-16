@@ -1,3 +1,6 @@
+import { AgentBrowser } from "./AgentBrowser";
+import { useStore } from "zustand";
+import { useSkillsStore } from "../skills-store";
 import { AgentSkills } from "./AgentSkills";
 import { detailsValues, refreshDetails, type DetailsValues } from "../agent-details";
 import type { AgentAppearance } from "../../../server/src/contracts";
@@ -465,10 +468,26 @@ export function AgentPanel({
   const store = useAgentStore(),
     guard = useNavigationGuard();
   const [editingCharacter, setEditingCharacter] = useState(false);
+  const skillsStore = useSkillsStore();
+  const eventVersion = useAgents(s => s.eventVersion);
+  const browserEnabled = useStore(skillsStore, s => s.enabled[agent.id]?.["builtin-browser"]);
+  const refreshBrowserSkill = useCallback(() => {
+    void skillsStore.getState().load(agent.id, { query: "browser", status: "all", origin: "builtin" }).catch(() => {});
+  }, [agent.id, skillsStore]);
+  useEffect(() => { refreshBrowserSkill(); }, [refreshBrowserSkill, eventVersion]);
+  useEffect(() => {
+    const focus = () => { if (document.visibilityState !== "hidden") refreshBrowserSkill(); };
+    window.addEventListener("focus", focus);
+    document.addEventListener("visibilitychange", focus);
+    return () => { window.removeEventListener("focus", focus); document.removeEventListener("visibilitychange", focus); };
+  }, [refreshBrowserSkill]);
   const tab = useAgents(s => s.panelTabs[agent.id] ?? "Chat");
   const setTab = useCallback((value: AgentPanelTab) => {
     store.getState().setPanelTab(agent.id, value);
   }, [agent.id, store]);
+  useEffect(() => {
+    if (tab === "Browser" && browserEnabled === false) store.getState().setPanelTab(agent.id, "Chat");
+  }, [tab, browserEnabled, agent.id, store]);
   const [taskId, setTaskId] = useState<string | null>(null),
     [newTask, setNewTask] = useState(false),
     [error, setError] = useState(""),
@@ -597,7 +616,7 @@ export function AgentPanel({
         </button>
       </header>
       <nav className={styles.tabs} aria-label="Agent sections">
-        {agentPanelTabs.map((v) => (
+        {agentPanelTabs.filter(v => v !== "Browser" || browserEnabled).map((v) => (
           <button
             key={v}
             aria-current={tab === v ? "page" : undefined}
@@ -747,6 +766,7 @@ export function AgentPanel({
             )}
           </div>
         ))}
+      {tab === "Browser" && browserEnabled && <AgentBrowser key={agent.id} agentId={agent.id} onDisabled={refreshBrowserSkill} />}
       {tab === "Skills" && <AgentSkills key={agent.id} agentId={agent.id} />}
       {tab === "Files" && <AgentFiles key={agent.id} agentId={agent.id} />}
       {tab === "Memory" && (

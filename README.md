@@ -2,7 +2,7 @@
 
 An open-source, local-first application for one user to organize AI agents in multiple workspaces through a browser interface. One local backend and SQLite database hold the shared setup across browser sessions.
 
-**Status: agent execution, asynchronous collaboration, host tools, terminals, attachments, and native media inputs.** Workspaces contain managed shared/agent/task folders, canvas agents with live Agent Preset links, a persistent agent Chat with full tools alongside separate task chats, automatic shared memory, and context compaction. Saved Providers cover all existing API types, Ollama, and bundled Codex. Navigation, themes, model catalogs, prompt tests, and Codex subscription usage remain available. Agent Chat and ordinary tasks can use host file tools, commands, interactive terminals, and immutable downloadable file outputs. Agents send messages, continue independent work, and can save progress and end their turn until a reply or one-time task check-in resumes them. Pending tasks release execution capacity and model sessions. Users can attach files to Chat or task messages, send images to supported vision models, and let agents open images/PDFs through native provider inputs. Agents can discover permitted collaborators through mutual canvas connections, exchange requests and immutable files, and resume after replies. A workspace Inbox holds deliberate notifications and user replies. Task details show check-ins and let users cancel pending reminders. Shared skills support creation, package/URL installation, and per-agent switches, with protected Skill Creation and ufAI Help built-ins. Interfaces, general Triggers and recurring schedules, audio/video perception, and dedicated image generation remain planned.
+**Status: agent execution, asynchronous collaboration, host tools, terminals, attachments, and native media inputs.** Workspaces contain managed shared/agent/task folders, canvas agents with live Agent Preset links, a persistent agent Chat with full tools alongside separate task chats, automatic shared memory, and context compaction. Saved Providers cover all existing API types, Ollama, and bundled Codex. Navigation, themes, model catalogs, prompt tests, and Codex subscription usage remain available. Agent Chat and ordinary tasks can use host file tools, commands, interactive terminals, and immutable downloadable file outputs. Agents send messages, continue independent work, and can save progress and end their turn until a reply or one-time task check-in resumes them. Pending tasks release execution capacity and model sessions. Users can attach files to Chat or task messages, send images to supported vision models, and let agents open images/PDFs through native provider inputs. Agents can discover permitted collaborators through mutual canvas connections, exchange requests and immutable files, and resume after replies. A workspace Inbox holds deliberate notifications and user replies. Task details show check-ins and let users cancel pending reminders. Shared skills support creation, package/URL installation, and per-agent switches, with protected Browser, Skill Creation and ufAI Help built-ins. Browser starts enabled and supplies each agent with a persistent Chromium browser, a live Browser tab, user control handoff, and website uploads/downloads. Interfaces, general Triggers and recurring schedules, audio/video perception, and dedicated image generation remain planned.
 
 Agents run with the backend’s OS permissions. Their folders organize work and are not sandboxes. Published versions survive agent deletion and are permanently removed with their workspace. Background processes stop on task cancellation, owner deletion, or server shutdown; deliberately detached host daemons are outside guaranteed supervision.
 
@@ -33,6 +33,7 @@ From the repository root:
 
 ```sh
 npm ci
+npm run browser:install
 npm run dev
 ```
 
@@ -40,6 +41,12 @@ npm run dev
 - Server health: <http://127.0.0.1:3000/api/health>
 - The UI development server proxies `/api` requests to Fastify.
 - Both development servers restart or reload as source files change.
+
+## Agent browser setup
+
+Run `npm run browser:install` after installing dependencies to download the Chromium version pinned to Playwright. Run it again after updating Playwright. On Linux, install Chromium’s system prerequisites when needed with `npm exec --workspace @ufai/server -- playwright install-deps chromium`; OS package installation may require administrator access. Chromium needs working OS sandbox support. Browser startup reports missing runtime/dependency problems without preventing the rest of ufAI from running.
+
+The Browser skill starts enabled for existing and new agents. Each agent uses a dedicated profile inside its managed directory, separate from Files and your personal browser. Disable/re-enable preserves running pages; backend restarts restore persistent website data and saved tab URLs, but cannot retain unsaved page memory. Website downloads appear under Files/Downloads. Keep the managed root with installation backups, including browser profiles and session data.
 
 ## Build and run
 
@@ -76,7 +83,7 @@ SQLite is created at `data/ufai.sqlite` on server startup, with WAL mode and for
 
 ## Dashboard
 
-- **Home:** create, rename, and delete workspaces; create agents with only a name and position them on flowboards, then open their Chat, Tasks, Files, Memory, and Details tabs. Preset selection is optional; agents can update their own lasting instructions when requested in an ordinary task. Pan, zoom, and reset controls remain available. Board viewports are saved per workspace in SQLite after pan/zoom interactions. Folder paths can be copied from workspace editing and task details; agent files are available in the Files tab. Deletion warns about permanent file removal and continues on the server, with retryable cleanup failures. Folders do not enable model file access or act as sandboxes.
+- **Home:** create, rename, and delete workspaces; create agents with only a name and position them on flowboards, then open their Chat, Skills, Browser, Tasks, Files, Memory, and Details tabs. Preset selection is optional; agents can update their own lasting instructions when requested in an ordinary task. Pan, zoom, and reset controls remain available. Board viewports are saved per workspace in SQLite after pan/zoom interactions. Folder paths can be copied from workspace editing and task details; agent files are available in the Files tab. Deletion warns about permanent file removal and continues on the server, with retryable cleanup failures. Folders do not enable model file access or act as sandboxes.
 - **Providers:** configure named API, Codex subscription, custom OpenAI-compatible, and local Ollama connections. Discover or manually add models, refresh the saved catalog, edit shared context windows, and send a short test prompt. Saving requires at least one model, while discovery and testing remain optional. Codex is bundled and needs no separate CLI install.
 - **Agent Presets:** create, edit, and delete reusable agent configurations. Only a name is required; choose a saved Provider/model and optional percentage or absolute-token compaction threshold when ready. Model context windows are shared through Providers. Choose an optional default to preselect it for new agents; users can still leave the selection empty. Changing the default preserves existing agent bindings. Agents link to presets; edits apply to later turns. Incomplete presets cannot run. Compaction is automatic during long tasks.
 - **Theme:** permanent Light Mode and Dark Mode, a shared Light Mode default, and custom theme creation/duplication/editing with a contained visual preview. Custom themes and the active selection persist in SQLite for the whole local setup.
@@ -84,7 +91,7 @@ SQLite is created at `data/ufai.sqlite` on server startup, with WAL mode and for
 
 Pages use hash URLs, including `#/home`, `#/providers`, and `#/agent-presets` (`#/model-presets` remains an alias). Workspace, preset, and custom theme records survive server restarts. Selected-workspace, active-theme, and canvas viewport preferences also survive restarts in SQLite. Settings load on open and refresh when returning to a tab. Old browser preferences are ignored; new settings start with Light Mode and the first existing workspace. Unsaved drafts and URL history remain temporary. Application accounts and multi-user tenancy are outside the product scope.
 
-`npm test` runs API/database integration, client-state, theme/settings/catalog, provider catalogs, model tests, discovery/Codex lifecycle, and preset calculation/validation, durable execution, memory/compaction, streaming adapters, Codex turn isolation, SSE reconnect, managed-folder migration/recovery, confirmed file deletion, and canvas-layout checks using temporary databases and protocol fixtures.
+`npm test` runs API/database integration, client-state, theme/settings/catalog, provider catalogs, model tests, discovery/Codex lifecycle, and preset calculation/validation, durable execution, memory/compaction, streaming adapters, Codex turn isolation, SSE reconnect, managed-folder migration/recovery, confirmed file deletion, and canvas-layout checks using temporary databases and protocol fixtures. Browser integration checks use the installed Chromium runtime against local fixture websites; run `npm run browser:install` before the test suite.
 
 ## Knowledge for ufAI app agents
 

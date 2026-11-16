@@ -30,7 +30,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 27)
+    if (version > 28)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -309,6 +309,15 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
         migrateSkills(database);
         database.pragma("user_version = 27");
       })();
+    if (version < 28)
+      database.transaction(() => {
+        database.exec(`CREATE TABLE IF NOT EXISTS browser_sessions (
+          agentId TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+          tabs TEXT NOT NULL DEFAULT '[]', activeTabId TEXT, updatedAt TEXT NOT NULL
+        )`);
+        database.pragma("user_version = 28");
+      })();
+
   } catch (error) {
     database.close();
     throw error;

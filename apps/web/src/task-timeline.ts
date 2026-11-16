@@ -177,6 +177,14 @@ export function createTimelineStore(
 
 type ActionCopy = readonly [string, string];
 export const toolLabels: Record<string, ActionCopy> = {
+  browser_state: ["Checking browser", "Checked browser"],
+  browser_tabs: ["Managing browser tabs", "Managed browser tabs"],
+  browser_navigate: ["Navigating browser", "Navigated browser"],
+  browser_snapshot: ["Reading web page", "Read web page"],
+  browser_action: ["Using browser", "Used browser"],
+  browser_screenshot: ["Capturing browser", "Captured browser"],
+  browser_upload: ["Uploading website files", "Uploaded website files"],
+  browser_downloads: ["Checking website downloads", "Checked website downloads"],
   skills_list: ["Checking skills", "Checked skills"],
   skill_inspect: ["Reading skill details", "Read skill details"],
   skill_activate: ["Loading skill", "Loaded skill"],

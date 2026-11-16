@@ -35,6 +35,7 @@ export class ManagedFiles {
   private operations = new Map<string, Promise<void>>();
   private execution?: AgentExecution;
   browser?: AgentFiles;
+  agentBrowser?: import("./browser-service.js").BrowserService;
   constructor(
     readonly db: Database.Database,
     private configuredRoot?: string,
@@ -417,6 +418,7 @@ export class ManagedFiles {
           : [op.ownerId];
       await this.execution?.messaging?.deletingAgents(ids);
       await this.execution?.settleAgents(ids);
+      await this.agentBrowser?.settleAgents(ids);
       if (op.kind === "workspace")
         await this.execution?.settleWorkspaceFiles(op.ownerId);
       await this.browser?.settle(op);

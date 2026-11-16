@@ -22,6 +22,7 @@ export function Dialog({
   onClose,
   busy = false,
   contentClassName = "",
+  className = "",
   initialFocusSelector = "input",
   returnFocusFallbackRef,
 }: {
@@ -30,6 +31,7 @@ export function Dialog({
   onClose: () => void;
   busy?: boolean;
   contentClassName?: string;
+  className?: string;
   initialFocusSelector?: string;
   returnFocusFallbackRef?: RefObject<HTMLElement | null>;
 }) {
@@ -79,7 +81,7 @@ export function Dialog({
     <Appearance kind="dialog">
       <dialog
         ref={ref}
-        className={`${styles.dialog} glassSurface nodrag nopan`}
+        className={`${styles.dialog} ${className} glassSurface nodrag nopan`}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}

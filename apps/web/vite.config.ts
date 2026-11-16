@@ -77,6 +77,7 @@ export default defineConfig({
         target: `http://${process.env.HOST ?? "127.0.0.1"}:${process.env.PORT ?? 3000}`,
         // Keep Host aligned with the browser Origin for connection-route checks.
         changeOrigin: false,
+        ws: true,
       },
     },
   },
