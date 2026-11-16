@@ -1,3 +1,4 @@
+import { migrateMcp } from "./mcp-schema.js";
 import { migrateSkills } from "./skills-schema.js";
 import { retireClusters } from "./retire-clusters-schema.js";
 import { migrateMessageTransits } from "./message-transits.js";
@@ -30,7 +31,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 28)
+    if (version > 29)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -316,6 +317,12 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
           tabs TEXT NOT NULL DEFAULT '[]', activeTabId TEXT, updatedAt TEXT NOT NULL
         )`);
         database.pragma("user_version = 28");
+      })();
+
+    if (version < 29)
+      database.transaction(() => {
+        migrateMcp(database);
+        database.pragma("user_version = 29");
       })();
 
   } catch (error) {

@@ -35,6 +35,7 @@ export class ManagedFiles {
   private operations = new Map<string, Promise<void>>();
   private execution?: AgentExecution;
   browser?: AgentFiles;
+  mcp?: import("./mcp-service.js").McpService;
   agentBrowser?: import("./browser-service.js").BrowserService;
   constructor(
     readonly db: Database.Database,
@@ -419,6 +420,7 @@ export class ManagedFiles {
       await this.execution?.messaging?.deletingAgents(ids);
       await this.execution?.settleAgents(ids);
       await this.agentBrowser?.settleAgents(ids);
+      await this.mcp?.settleAgents(ids);
       if (op.kind === "workspace")
         await this.execution?.settleWorkspaceFiles(op.ownerId);
       await this.browser?.settle(op);

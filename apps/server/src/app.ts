@@ -1,3 +1,5 @@
+import { McpService, type McpOptions } from "./mcp-service.js";
+import { registerMcp, mcpRedirectUrl } from "./mcp-routes.js";
 import websocket from "@fastify/websocket";
 import { BrowserService, type BrowserOptions } from "./browser-service.js";
 import { registerBrowser } from "./browser-routes.js";
@@ -87,6 +89,7 @@ export function createApp(
     uploads?: UploadOptions;
     agentFiles?: AgentFilesOptions;
     browser?: BrowserOptions;
+    mcp?: McpOptions;
   } = {},
 ) {
   const app = Fastify({
@@ -156,6 +159,10 @@ export function createApp(
     changed,
     options.artifacts,
   );
+  const mcp = new McpService(database, files, connections.secrets, changed, artifacts, options.mcp);
+  mcp.redirectUrl = () => mcpRedirectUrl(app);
+  registerMcp(app, mcp);
+  files.mcp = mcp;
   const skills = new Skills(database, files, changed, options.agentFiles);
   registerSkills(app, skills);
   const browsers = new BrowserService(database, files, skills, changed, options.browser);
@@ -172,6 +179,8 @@ export function createApp(
     artifacts,
     changed,
   );
+  tools.mcp = mcp;
+  tools.mcpRedirectUrl = () => mcpRedirectUrl(app);
   tools.skills = skills;
   tools.browser = browsers;
   execution = new AgentExecution(
@@ -216,6 +225,7 @@ export function createApp(
       };
     },
   );
+  mcp.mediaCapabilities = tools.mediaCapabilities;
   const incoming = new SubmissionMedia(
     database,
     media,
@@ -250,6 +260,7 @@ export function createApp(
   app.addHook("onClose", async () => processes.close());
   app.addHook("onClose", async () => messaging.close());
   app.addHook("onClose", async () => skills.close());
+  app.addHook("onClose", async () => mcp.close());
   app.addHook("onClose", async () => execution.close());
 
   const workspaceList = database.prepare(

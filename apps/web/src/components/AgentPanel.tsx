@@ -1,6 +1,7 @@
 import { AgentBrowser } from "./AgentBrowser";
 import { useStore } from "zustand";
 import { useSkillsStore } from "../skills-store";
+import { AgentMcp } from "./AgentMcp";
 import { AgentSkills } from "./AgentSkills";
 import { detailsValues, refreshDetails, type DetailsValues } from "../agent-details";
 import type { AgentAppearance } from "../../../server/src/contracts";
@@ -768,6 +769,7 @@ export function AgentPanel({
         ))}
       {tab === "Browser" && browserEnabled && <AgentBrowser key={agent.id} agentId={agent.id} onDisabled={refreshBrowserSkill} />}
       {tab === "Skills" && <AgentSkills key={agent.id} agentId={agent.id} />}
+      {tab === "MCP" && <AgentMcp key={agent.id} agentId={agent.id} />}
       {tab === "Files" && <AgentFiles key={agent.id} agentId={agent.id} />}
       {tab === "Memory" && (
         <div className={styles.scroll}>

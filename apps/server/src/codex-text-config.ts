@@ -1,5 +1,6 @@
 // Verified against the pinned binary's `features list`. These are harness switches,
-// not a filesystem sandbox. No external tools are part of ufAI text execution.
+// not a filesystem sandbox. Native discovery stays disabled; ufAI supplies task
+// tools, including MCP access, through the journaled dynamic-tool bridge.
 export const codexTextConfig = {
   web_search: "disabled",
   features: {

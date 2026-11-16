@@ -15,6 +15,7 @@
     "@fastify/multipart": "^10.1.8",
     "@fastify/static": "^10.1.10",
     "@fastify/websocket": "11.3.7",
+    "@modelcontextprotocol/client": "2.4.0",
     "@openai/codex": "0.167.1",
     "@ufai/character-catalog": "0.1.0",
     "@ufai/theme-catalog": "0.1.0",

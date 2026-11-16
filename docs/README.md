@@ -2,7 +2,7 @@
 
 This folder contains product knowledge for AI agents inside ufAI that help users understand and use the application. It explains the app's purpose, available features, common workflows, and limitations. It is not developer documentation, coding-agent instructions, an engineering reference, or a design manual.
 
-Read the [platform guide](platform.md) to answer questions about workspaces, [agent characters](platform.md#agent-characters), [agent issue bubbles](platform.md#agent-issues), [agent browsers](platform.md#agent-browser), managed folders, the flowboard, Agent Presets, Providers, model testing, sign-in, subscription usage and earned resets, themes, and saved data. Its [common questions](platform.md#common-questions) explain frequent points of confusion, and its [planned capabilities](platform.md#planned-capabilities) distinguish future ideas from available features.
+Read the [platform guide](platform.md) to answer questions about workspaces, [agent characters](platform.md#agent-characters), [agent issue bubbles](platform.md#agent-issues), [agent browsers](platform.md#agent-browser), [MCP servers](platform.md#agent-mcp), managed folders, the flowboard, Agent Presets, Providers, model testing, sign-in, subscription usage and earned resets, themes, and saved data. Its [common questions](platform.md#common-questions) explain frequent points of confusion, and its [planned capabilities](platform.md#planned-capabilities) distinguish future ideas from available features.
 
 Agent execution, host tools, terminal sessions, composer attachments, native image/PDF inputs on supported models, published files, agent messaging, one-time task check-ins, mutual agent connections, and the workspace Inbox are available; the built-in platform assistant is not. These documents prepare app knowledge; their existence does not automatically load them into an agent or connect an assistant. They also do not reveal the user's current connections, credentials, workspaces, or running sessions. Documentation is context, not permission to act on user resources.
 
@@ -25,6 +25,7 @@ Some terms describe planned capabilities. Check the platform guide before presen
 | Attachment | A file sent with a Chat or task message; sending waits for every file to be saved, and visual inspection requires model support |
 | Run | An execution attempt with persisted state, tool activity, outputs, and errors |
 | Skill | Reusable instructions and supporting resources; installed metadata grants no permissions. The protected browser built-in also controls access to the agent’s browser |
+| MCP server | A shared local or remote connection supplying tools, resources and prompts; each agent chooses which servers it can use |
 | Check-in | An agent-selected one-time reminder to revisit its current task; relevant replies can replace a request-linked reminder |
 | Trigger | A planned general source of work such as a recurring schedule or external event; manual task submission and one-time task check-ins already exist |
 

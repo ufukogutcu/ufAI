@@ -272,7 +272,9 @@ export function taskTimeline(
     ) as OwnedProcess | undefined;
     const request = requestInfo(result.requestId ?? args.requestId);
     const contextName =
-      typeof args.agentId === "string"
+      typeof args.serverId === "string" && String(content.name ?? "").startsWith("mcp_")
+        ? `${typeof result.serverName === "string" ? result.serverName : (db.prepare("SELECT name FROM mcp_servers WHERE id=?").get(args.serverId) as { name: string } | undefined)?.name ?? "MCP server"}${typeof args.name === "string" ? ` · ${args.name}` : ""}`
+        : typeof args.agentId === "string"
         ? (
             db
               .prepare("SELECT name FROM agents WHERE id=? AND workspaceId=?")

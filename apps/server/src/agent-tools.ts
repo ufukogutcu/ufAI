@@ -1,3 +1,4 @@
+import { mcpTools } from "./mcp-tools.js";
 import { browserTools } from "./browser-tools.js";
 import { browserAction } from "./browser-validation.js";
 import { randomUUID, createHash } from "node:crypto";
@@ -315,6 +316,7 @@ const allTaskTools: ToolSpec[] = [
   ),
 ];
 // Legacy definitions remain available only to checkpoint recovery, never model discovery.
+allTaskTools.push(...mcpTools);
 export const taskTools = allTaskTools.filter(t => t.name !== "agent_wait");
 export function validateTool(name: string, args: unknown) {
   const definition = allTaskTools.find((t) => t.name === name);
@@ -379,6 +381,8 @@ function validate(value: any, schema: any) {
   }
 }
 export class AgentTools {
+  mcp?: import("./mcp-service.js").McpService;
+  mcpRedirectUrl?: () => string;
   browser?: import("./browser-service.js").BrowserService;
   skills?: import("./skills.js").Skills;
   messaging?: import("./messaging.js").MessagingService;
@@ -642,6 +646,10 @@ export class AgentTools {
       }
       const action = name === "browser_snapshot" ? {action:"snapshot"} : name === "browser_screenshot" ? {action:"screenshot"} : a;
       return browser.action(owner.agentId, browserAction(action), signal);
+    }
+    if (name.startsWith("mcp_")) {
+      if (!this.mcp) throw new ConnectionError("MCP is unavailable.", 503);
+      return this.mcp.execute(owner, name, a, signal, this.mcpRedirectUrl?.() ?? "http://127.0.0.1:3000/api/mcp/oauth/callback");
     }
     if (name.startsWith("skill_") || name === "skills_list") {
       const skills = this.skills;

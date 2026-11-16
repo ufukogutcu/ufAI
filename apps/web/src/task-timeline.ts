@@ -177,6 +177,13 @@ export function createTimelineStore(
 
 type ActionCopy = readonly [string, string];
 export const toolLabels: Record<string, ActionCopy> = {
+  mcp_servers_list: ["Checking MCP servers", "Checked MCP servers"],
+  mcp_tools_list: ["Discovering MCP tools", "Discovered MCP tools"],
+  mcp_tool_call: ["Calling MCP tool", "Called MCP tool"],
+  mcp_resources_list: ["Listing MCP resources", "Listed MCP resources"],
+  mcp_resource_read: ["Reading MCP resource", "Read MCP resource"],
+  mcp_prompts_list: ["Listing MCP prompts", "Listed MCP prompts"],
+  mcp_prompt_get: ["Loading MCP prompt", "Loaded MCP prompt"],
   browser_state: ["Checking browser", "Checked browser"],
   browser_tabs: ["Managing browser tabs", "Managed browser tabs"],
   browser_navigate: ["Navigating browser", "Navigated browser"],
