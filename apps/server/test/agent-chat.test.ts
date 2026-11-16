@@ -110,7 +110,7 @@ test("Chat is created once, persists across restarts, paginates and stays separa
   assert.equal((await app.inject(`${base}/tasks`)).json().total, 1);
 });
 
-test("configuration instruction writes reject stale revisions and preserve saved guidance", async (t) => {
+test("Details instruction writes reject stale revisions and preserve saved guidance", async (t) => {
   const app = createApp({
     databasePath: ":memory:",
     serveStatic: false,
@@ -132,15 +132,12 @@ test("configuration instruction writes reject stale revisions and preserve saved
     expectedRevision: agent.revision,
   });
   assert.equal(updated.statusCode, 200, updated.body);
-  assert.equal(
-    (
-      await patch({
-        instructions: "Stale role",
-        expectedRevision: agent.revision,
-      })
-    ).statusCode,
-    409,
-  );
+  const stale = await patch({
+    instructions: "Stale role",
+    expectedRevision: agent.revision,
+  });
+  assert.equal(stale.statusCode, 409);
+  assert.equal(stale.json().error, "Agent details changed. Reload the saved details before saving again.");
   assert.equal(
     (await app.inject(`/api/agents/${agent.id}`)).json().instructions,
     "New role",

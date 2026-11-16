@@ -39,7 +39,7 @@ test("optional preset default is unique, validated, transactional, and independe
   assert.deepEqual((await app.inject("/api/model-presets/default")).json(), { preset: null });
 });
 
-test("name-only creation uses the default only when presetId is omitted and configuration preserves instructions", async (t) => {
+test("name-only creation uses the default only when presetId is omitted and saving Details preserves instructions", async (t) => {
   const app = createApp({ databasePath: ":memory:", serveStatic: false, execution: { autoStart: true } });
   t.after(() => app.close());
   const workspace = (await app.inject("/api/workspaces")).json().items[0].id;

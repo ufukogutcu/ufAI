@@ -28,6 +28,7 @@ test("configuration diagnostics follow prerequisites, use effective saved contex
   assert.deepEqual(codes(), []);
   db.exec("UPDATE agents SET presetId=NULL WHERE id='agent'");
   assert.deepEqual(codes(), ["missing-preset"]);
+  assert.equal(issues.warnings("agent")[0]!.message, "No Agent Preset selected. Choose one in Details.");
   db.exec("UPDATE agents SET presetId='preset'; UPDATE model_presets SET connectionId=NULL");
   assert.deepEqual(codes(), ["missing-provider"]);
   db.exec("UPDATE model_presets SET connectionId='connection'; UPDATE connections SET draft=1");

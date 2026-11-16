@@ -372,7 +372,7 @@ test("attachment drafts stay scoped and retain File identities through refreshes
  store.getState().setFileDraft("new:agent",[]);assert.equal(store.getState().fileDrafts["task-other"],second);
 });
 
-test("name-only client creation and ordinary configuration updates omit instructions", async (t) => {
+test("name-only client creation and ordinary details updates omit instructions", async (t) => {
   const { connectedSetup } = await import("./helpers.js");
   const { app, initial } = await connectedSetup(t);
   const store = createAgentStore();
@@ -403,14 +403,14 @@ test("Chat submissions and transcripts stay separate from task and draft state",
   assert.equal(store.getState().drafts[`new:${agent.id}`], "Unsent task draft");
 });
 
-test("configuration refresh updates clean fields and preserves dirty instructions with the original revision", async () => {
-  const { configurationValues, refreshConfiguration } = await import("../src/agent-configuration.js");
-  const saved = configurationValues(a);
+test("details refresh updates clean fields and preserves dirty instructions with the original revision", async () => {
+  const { detailsValues, refreshDetails } = await import("../src/agent-details.js");
+  const saved = detailsValues(a);
   const next = { ...a, name: "Renamed", instructions: "Saved by agent", revision: 2 };
-  const clean = refreshConfiguration({ draft: saved, baseline: saved, revision: 1 }, next);
+  const clean = refreshDetails({ draft: saved, baseline: saved, revision: 1 }, next);
   assert.equal(clean.draft.instructions, "Saved by agent");
   assert.equal(clean.revision, 2);
-  const dirty = refreshConfiguration({ draft: { ...saved, instructions: "My unsaved role" }, baseline: saved, revision: 1 }, next);
+  const dirty = refreshDetails({ draft: { ...saved, instructions: "My unsaved role" }, baseline: saved, revision: 1 }, next);
   assert.equal(dirty.draft.instructions, "My unsaved role");
   assert.equal(dirty.baseline.instructions, saved.instructions);
   assert.equal(dirty.draft.name, "Renamed");

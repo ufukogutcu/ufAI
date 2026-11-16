@@ -27,7 +27,7 @@ test("name keys preserve accents and internal spaces; suggestions exhaust unused
   assert.equal(generateAgentName(used, () => 0), "Alex 3");
 });
 
-test("agent creation and configuration enforce workspace name uniqueness atomically", async t => {
+test("agent creation and Details saves enforce workspace name uniqueness atomically", async t => {
   const app = createApp({ databasePath: ":memory:", serveStatic: false, execution: { autoStart: false } });
   t.after(() => app.close());
   const workspace = (await app.inject("/api/workspaces")).json().items[0].id;
@@ -60,7 +60,7 @@ test("agent creation and configuration enforce workspace name uniqueness atomica
   assert.equal((await app.inject({ method: "POST", url: `/api/workspaces/${workspace}/agents`, payload: {} })).statusCode, 400);
 });
 
-test("existing duplicates survive reopening; configuration requires manual resolution without blocking other updates", async t => {
+test("existing duplicates survive reopening; saving Details requires manual resolution without blocking other updates", async t => {
   const directory = await mkdtemp(join(tmpdir(), "ufai-agent-names-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "app.sqlite");

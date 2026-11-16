@@ -1,31 +1,31 @@
 import type { Agent } from "../../server/src/contracts";
 
-export interface ConfigurationValues {
+export interface DetailsValues {
   name: string;
   presetId: string | null;
   instructions: string;
 }
-export interface ConfigurationDraft {
-  draft: ConfigurationValues;
-  baseline: ConfigurationValues;
+export interface DetailsDraft {
+  draft: DetailsValues;
+  baseline: DetailsValues;
   revision: number;
 }
-export function configurationValues(agent?: Agent): ConfigurationValues {
+export function detailsValues(agent?: Agent): DetailsValues {
   return {
     name: agent?.name ?? "",
     presetId: agent?.presetId ?? null,
     instructions: agent?.instructions ?? "",
   };
 }
-export function refreshConfiguration(
-  current: ConfigurationDraft,
+export function refreshDetails(
+  current: DetailsDraft,
   agent: Agent,
-): ConfigurationDraft {
-  const saved = configurationValues(agent);
-  const dirty = (Object.keys(saved) as (keyof ConfigurationValues)[]).some(
+): DetailsDraft {
+  const saved = detailsValues(agent);
+  const dirty = (Object.keys(saved) as (keyof DetailsValues)[]).some(
     (key) => current.draft[key] !== current.baseline[key],
   );
-  const merge = <T extends ConfigurationValues>(values: T): T => ({
+  const merge = <T extends DetailsValues>(values: T): T => ({
     ...values,
     name:
       current.draft.name === current.baseline.name ? saved.name : values.name,

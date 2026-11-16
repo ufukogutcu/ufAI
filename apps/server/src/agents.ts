@@ -80,7 +80,7 @@ export function registerAgents(
     if (p.expectedRevision !== undefined && (!Number.isSafeInteger(p.expectedRevision) || (p.expectedRevision as number) < 1))
       invalid("expectedRevision", "Use a positive saved revision.");
     if (existing && p.expectedRevision !== undefined && p.expectedRevision !== existing.revision)
-      throw new ConnectionError("Agent configuration changed. Reload the saved configuration before saving again.", 409);
+      throw new ConnectionError("Agent details changed. Reload the saved details before saving again.", 409);
     v.name = content(v.name, "name", 120);
     if (typeof v.instructions !== "string" || v.instructions.length > 8000)
       invalid("instructions", "Use at most 8,000 characters.");

@@ -159,7 +159,7 @@ test("failed position saves retain local layout through activity refreshes and r
   assert.equal(store.getState().nodes.workspace, nodes);
 });
 
-test("an older configuration response keeps newer activity while applying its saved revision", async t => {
+test("an older Details save response keeps newer activity while applying its saved revision", async t => {
   const source = snapshots(t), store = createAgentStore();
   await store.getState().loadWorkspace(agent.workspaceId);
   const gate = deferred<Response>();

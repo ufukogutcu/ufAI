@@ -944,14 +944,14 @@ test("inspection is fresh, paginated and agent-owned; stale instruction tools ca
   assert.equal(first.total, 1);
   const revision = (first.agent as any).revision;
   s.db.prepare("UPDATE agent_tasks SET status='completed',summary='Finished externally' WHERE id=?").run(s.owner.taskId);
-  s.db.prepare("UPDATE agents SET instructions='Saved in Configuration',revision=revision+1 WHERE id='a'").run();
+  s.db.prepare("UPDATE agents SET instructions='Saved in Details',revision=revision+1 WHERE id='a'").run();
   const stale = await dispatch("stale", "agent_update_instructions", { instructions: "Old change", expectedRevision: revision });
   assert.equal(stale.ok, false);
   assert.match(String(stale.error), /changed/);
-  assert.equal(s.engine.requiredAgent("a").instructions, "Saved in Configuration");
+  assert.equal(s.engine.requiredAgent("a").instructions, "Saved in Details");
   const fresh = await dispatch("fresh", "agent_inspect", { limit: 1 });
   assert.equal((fresh.tasks as any[])[0].status, "completed");
-  assert.equal((fresh.agent as any).instructions, "Saved in Configuration");
+  assert.equal((fresh.agent as any).instructions, "Saved in Details");
   const own = await dispatch("read-own", "agent_task_read", { taskId: s.owner.taskId, limit: 1 });
   assert.equal(own.ok, true);
   assert.equal((own.messages as any[])[0].content, "Make a file");

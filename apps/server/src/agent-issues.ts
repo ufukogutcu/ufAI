@@ -42,7 +42,7 @@ export class AgentIssues {
       id, severity: "warning", message, taskId: null, taskTitle: null,
     });
     if (!c.preset) {
-      add("missing-preset", "No Agent Preset selected. Choose one in Configuration.");
+      add("missing-preset", "No Agent Preset selected. Choose one in Details.");
       return items;
     }
     if (!c.connection || c.draft) {

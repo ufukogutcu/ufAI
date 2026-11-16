@@ -1,4 +1,4 @@
-import { configurationValues, refreshConfiguration, type ConfigurationValues } from "../agent-configuration";
+import { detailsValues, refreshDetails, type DetailsValues } from "../agent-details";
 import type { AgentAppearance } from "../../../server/src/contracts";
 import { defaultAppearance } from "../agent-appearance";
 import { AgentCharacter } from "./AgentCharacter";
@@ -85,8 +85,8 @@ export function AgentForm({
   const [defaultError, setDefaultError] = useState("");
   const [defaultAttempt, setDefaultAttempt] = useState(0);
   const [initialPreset, setInitialPreset] = useState<ModelPreset | null>(null);
-  const initial = configurationValues(agent);
-  const [configuration, setConfiguration] = useState({ draft: initial, baseline: initial, revision: agent?.revision ?? 1 });
+  const initial = detailsValues(agent);
+  const [details, setDetails] = useState({ draft: initial, baseline: initial, revision: agent?.revision ?? 1 });
   const nameTouched = useRef(false);
   const nameInput = useRef<HTMLInputElement>(null);
   const nameRequest = useRef<{ workspaceId: string; attempt: number; promise: Promise<{ name: string }> } | null>(null);
@@ -104,7 +104,7 @@ export function AgentForm({
     }
     void nameRequest.current.promise.then(result => {
       if (!alive || nameTouched.current) return;
-      setConfiguration(current => ({ ...current,
+      setDetails(current => ({ ...current,
         draft: { ...current.draft, name: result.name },
         baseline: { ...current.baseline, name: result.name },
       }));
@@ -113,12 +113,12 @@ export function AgentForm({
     });
     return () => { alive = false; };
   }, [agent, workspaceId, nameAttempt]);
-  const { draft, baseline } = configuration;
-  const setDraft = useCallback((next: ConfigurationValues | ((value: ConfigurationValues) => ConfigurationValues)) => {
-    setConfiguration(current => ({ ...current, draft: typeof next === "function" ? next(current.draft) : next }));
+  const { draft, baseline } = details;
+  const setDraft = useCallback((next: DetailsValues | ((value: DetailsValues) => DetailsValues)) => {
+    setDetails(current => ({ ...current, draft: typeof next === "function" ? next(current.draft) : next }));
   }, []);
-  const setBaseline = useCallback((next: ConfigurationValues | ((value: ConfigurationValues) => ConfigurationValues)) => {
-    setConfiguration(current => ({ ...current, baseline: typeof next === "function" ? next(current.baseline) : next }));
+  const setBaseline = useCallback((next: DetailsValues | ((value: DetailsValues) => DetailsValues)) => {
+    setDetails(current => ({ ...current, baseline: typeof next === "function" ? next(current.baseline) : next }));
   }, []);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -153,13 +153,13 @@ export function AgentForm({
     };
   }, [agent, loadDefault, defaultAttempt, setDraft, setBaseline]);
   useEffect(() => {
-    if (agent) setConfiguration(current => refreshConfiguration(current, agent));
+    if (agent) setDetails(current => refreshDetails(current, agent));
   }, [agent, dirty]);
-  const stale = !!agent && dirty && configuration.revision !== agent.revision;
-  function reloadConfiguration() {
+  const stale = !!agent && dirty && details.revision !== agent.revision;
+  function reloadDetails() {
     if (!agent) return;
-    const saved = configurationValues(agent);
-    setConfiguration({ draft: saved, baseline: saved, revision: agent.revision });
+    const saved = detailsValues(agent);
+    setDetails({ draft: saved, baseline: saved, revision: agent.revision });
     setError("");
     setNameError("");
   }
@@ -175,10 +175,10 @@ export function AgentForm({
     setNameError("");
     try {
       const saved = await onSave({ name: draft.name, presetId: draft.presetId,
-        ...(agent ? { instructions: draft.instructions, expectedRevision: configuration.revision } : {}),
+        ...(agent ? { instructions: draft.instructions, expectedRevision: details.revision } : {}),
         ...(!agent && appearance ? { appearance } : {}) });
-      const next = saved ? configurationValues(saved) : draft;
-      setConfiguration({ draft: next, baseline: next, revision: saved?.revision ?? configuration.revision });
+      const next = saved ? detailsValues(saved) : draft;
+      setDetails({ draft: next, baseline: next, revision: saved?.revision ?? details.revision });
     } catch (err) {
       if (err instanceof RequestError && err.fields.name) setNameError(err.fields.name);
       else setError(errorMessage(err));
@@ -255,8 +255,8 @@ export function AgentForm({
       {agent && <Field label="Instructions" hint="Define this agent’s role and lasting guidance. You can also ask it to update these in Chat. Saved changes apply to subsequent turns; running turns keep their starting instructions.">
         {p => <textarea {...p} name="instructions" autoComplete="off" rows={6} maxLength={8000} disabled={busy} value={draft.instructions} onChange={e => setDraft({ ...draft, instructions: e.target.value })} />}
       </Field>}
-      {stale && <p className="errorBanner" role="alert">Saved configuration changed while you were editing. Your draft has been kept. Copy any changes you want to keep, then reload before saving.
-        <button type="button" className="textButton" disabled={busy} onClick={reloadConfiguration}>Reload saved configuration</button>
+      {stale && <p className="errorBanner" role="alert">Saved details changed while you were editing. Your draft has been kept. Copy any changes you want to keep, then reload before saving.
+        <button type="button" className="textButton" disabled={busy} onClick={reloadDetails}>Reload saved details</button>
       </p>}
       {!defaultReady && !defaultError && (
         <p role="status">Loading default preset…</p>
@@ -590,7 +590,7 @@ export function AgentPanel({
         </button>
       </header>
       <nav className={styles.tabs} aria-label="Agent sections">
-        {["Chat", "Tasks", "Files", "Memory", "Configuration"].map((v) => (
+        {["Chat", "Tasks", "Files", "Memory", "Details"].map((v) => (
           <button
             key={v}
             aria-current={tab === v ? "page" : undefined}
@@ -766,7 +766,7 @@ export function AgentPanel({
           )}
         </div>
       )}
-      {tab === "Configuration" && (
+      {tab === "Details" && (
         <div className={styles.scroll}>
           <AgentForm agent={agent} onSave={save} />
           <hr />

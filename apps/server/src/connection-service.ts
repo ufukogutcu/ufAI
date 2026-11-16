@@ -96,7 +96,7 @@ export class ConnectionService {
       : undefined;
     if (!p?.connectionId || !p.modelId)
       throw new ConnectionError(
-        "Choose a complete Agent Preset in Configuration, then retry.",
+        "Choose a complete Agent Preset in Details, then retry.",
         409,
       );
     const c = this.connection(p.connectionId);

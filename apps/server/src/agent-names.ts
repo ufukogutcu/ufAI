@@ -24,7 +24,7 @@ export function workspaceAgentNameKeys(db: Database.Database, workspaceId: strin
   return keys;
 }
 
-// Call inside the same transaction as the write, including for unchanged configuration names.
+// Call inside the same transaction as the write, including when a Details save leaves the name unchanged.
 export function assertAgentNameAvailable(db: Database.Database, workspaceId: string, name: string, excludeId?: string): void {
   if (workspaceAgentNameKeys(db, workspaceId, excludeId).has(agentNameKey(name))) {
     throw new InputError({ name: "Another agent in this workspace already uses this name. Choose a different name." });
