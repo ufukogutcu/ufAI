@@ -69,6 +69,11 @@ test("agent appearance API isolates workspaces, permits manual duplicates and pr
   const manual = { kind: "droplet", color: "sage", accessories: ["glasses"] };
   const first = (await create(workspace, { name: "First", instructions: "Keep role", ...{ appearance: manual } })).json<Agent>();
   assert.equal(first.runningTaskCount, 0);
+  assert.equal(first.unfinishedTaskCount, 0);
+  assert.equal((await app.inject(`/api/agents/${first.id}`)).json().unfinishedTaskCount, 0);
+  assert.equal((await app.inject(`/api/workspaces/${workspace}/agents`)).json().items[0].unfinishedTaskCount, 0);
+  assert.equal((await app.inject({ method: "PATCH", url: `/api/agents/${first.id}`, payload: { unfinishedTaskCount: 9 } })).statusCode, 400);
+  assert.equal((await create(workspace, { name: "Read-only count", unfinishedTaskCount: 9 })).statusCode, 400);
   assert.equal((await app.inject(`/api/agents/${first.id}`)).json().runningTaskCount, 0);
   assert.equal((await app.inject(`/api/workspaces/${workspace}/agents`)).json().items[0].runningTaskCount, 0);
   assert.equal((await app.inject({ method: "PATCH", url: `/api/agents/${first.id}`, payload: { runningTaskCount: 9 } })).statusCode, 400);

@@ -10,7 +10,7 @@ import {
   type FormEvent,
   type CSSProperties,
 } from "react";
-import { ArrowLeft, Check, ChevronDown, Copy, Home, ListTodo, LockKeyhole, Palette, Plus, Settings, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Copy, Home, LockKeyhole, Palette, Plus, Settings, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Dialog } from "../components/Dialog";
 import { Appearance, AppearanceGroup } from "../components/Appearance";
 import { Disclosure } from "../components/Disclosure";
@@ -38,6 +38,7 @@ import { AgentCharacter } from "../components/AgentCharacter";
 import { defaultAppearance } from "../agent-appearance";
 import { connectionRingPaths } from "../connection-appearance";
 import ringStyles from "../components/ConnectionRings.module.scss";
+import taskBubbleStyles from "../components/AgentTaskBubble.module.scss";
 import { RichText } from "../components/RichText";
 import { SkillSwitch } from "../components/SkillSwitch";
 
@@ -264,8 +265,10 @@ function ThemePreview({
                     <foreignObject x="21" y="0" width="176" height="224">
                       <div className={styles.agentSample}>
                         <AgentCharacter appearance={defaultAppearance} paused decorative className={styles.agentSampleCharacter} />
-                        <span>Researcher</span>
-                        <small><Check size={14} aria-label="Ready" /><ListTodo size={14} aria-hidden="true" /> 0</small>
+                        <div className={styles.agentSampleCard}>
+                          <span className={styles.agentSampleName}>Research assistant</span>
+                          <span className={`${styles.agentSampleTask} ${taskBubbleStyles.bubble}`} aria-label="0 ongoing tasks">0</span>
+                        </div>
                       </div>
                     </foreignObject>
                   </svg>

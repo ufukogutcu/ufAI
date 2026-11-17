@@ -1627,6 +1627,32 @@
       "region": "feedback",
       "light": "#18375e",
       "dark": "#e4efff"
+    },
+    "agent-task-background": {
+      "cssVariable": "--agent-task-background",
+      "label": "Agent task bubble background",
+      "description": "Neutral background for the ongoing-task count and Tasks shortcut.",
+      "components": [
+        "Agent task bubble",
+        "Canvas theme preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#525258",
+      "dark": "#b5b5bc"
+    },
+    "agent-task-text": {
+      "cssVariable": "--agent-task-text",
+      "label": "Agent task bubble text",
+      "description": "Count text on the ongoing-task bubble.",
+      "components": [
+        "Agent task bubble",
+        "Canvas theme preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#ffffff",
+      "dark": "#1b1c1f"
     }
   }
 }

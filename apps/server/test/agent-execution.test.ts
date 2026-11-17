@@ -75,6 +75,41 @@ async function until(check: () => boolean) {
   assert.fail("Timed out waiting for execution.");
 }
 
+test("unfinished-task counts use ordinary task states once per task and remain agent-scoped", async t => {
+  const f = setup(async () => result("Unused"), false);
+  t.after(() => f.close());
+  const addConversation = f.db.prepare("INSERT INTO conversations(id,agentId,kind,createdAt) VALUES (?,?,?,'now')");
+  const addTask = f.db.prepare("INSERT INTO agent_tasks(id,agentId,conversationId,kind,title,status,createdAt,updatedAt) VALUES (?,?,?,?,?,?,'now','now')");
+  const addTurn = f.db.prepare("INSERT INTO agent_turns(id,taskId,conversationId,agentId,inputMessageId,attempt,status,createdAt,updatedAt) VALUES (?,?,?,?,?,1,?,'now','now')");
+  assert.equal(f.engine.requiredAgent("a").unfinishedTaskCount, 0);
+  for (const status of ["queued", "running", "waiting", "awaiting_user", "completed", "cancelled", "failed", "blocked"]) {
+    addConversation.run(status, "a", "task");
+    addTask.run(status, "a", status, "task", status, status);
+  }
+  addConversation.run("chat", "a", "task");
+  addTask.run("chat", "a", "chat", "chat", "Chat", "running");
+  addConversation.run("status", "a", "status");
+  addTurn.run("status-turn", null, "status", "a", "status-input", "running");
+  addConversation.run("other", "b", "task");
+  addTask.run("other", "b", "other", "task", "Other agent", "queued");
+  for (const id of ["one", "two"])
+    addTurn.run(id, "running", "running", "a", `input-${id}`, "running");
+  assert.equal(f.engine.requiredAgent("a").unfinishedTaskCount, 4);
+  assert.equal(f.engine.requiredAgent("b").unfinishedTaskCount, 1);
+  const setStatus = f.db.prepare("UPDATE agent_tasks SET status=? WHERE id=?");
+  for (const status of ["running", "waiting", "awaiting_user", "queued"]) {
+    setStatus.run(status, "queued");
+    setStatus.run(status, "chat");
+    assert.equal(f.engine.requiredAgent("a").unfinishedTaskCount, 4);
+  }
+  for (const status of ["completed", "failed", "blocked", "cancelled"]) {
+    setStatus.run(status, "queued");
+    assert.equal(f.engine.requiredAgent("a").unfinishedTaskCount, 3);
+  }
+  setStatus.run("queued", "failed");
+  assert.equal(f.engine.requiredAgent("a").unfinishedTaskCount, 4, "retry returns a task to the count");
+});
+
 test("running-task counts are distinct, agent-scoped and exclude queued, waiting and status turns", async t => {
   const f = setup(async () => result("Unused"), false);
   t.after(() => f.close());

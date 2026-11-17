@@ -1,31 +1,16 @@
 import { AgentInputBubble } from "./AgentInputBubble";
 import { LiveAgentCharacter } from "./LiveAgentCharacter";
-import { memo, useContext, useRef } from "react";
+import { memo, useRef } from "react";
 import { AgentConnectionRing } from "./ConnectionRings";
 import ringStyles from "./ConnectionRings.module.scss";
 import type { NodeProps } from "@xyflow/react";
-import { Ban, Check, CircleAlert, Clock, Hourglass, ListTodo, LoaderCircle, MessageCircle, TriangleAlert } from "lucide-react";
 import { useAgents, useAgentStore } from "../agent-store";
 import type { AgentFlowNode } from "../canvas-layout";
 import { useNavigationGuard } from "../navigation-guard";
 import agentStyles from "./AgentPanel.module.scss";
-import type { Agent } from "../../../server/src/contracts";
-import { useSettings } from "../settings-store";
-import { CharacterVisibilityContext } from "./CharacterMotion";
 import { Tooltip } from "./Tooltip";
 import { AgentIssueBubble } from "./AgentIssues";
-
-const agentStates = {
-  idle: { label: "Ready", icon: Check },
-  running: { label: "Working", icon: LoaderCircle },
-  queued: { label: "Queued", icon: Clock },
-  waiting: { label: "Waiting", icon: Hourglass },
-  awaiting_user: { label: "Awaiting input", icon: MessageCircle },
-  completed: { label: "Completed", icon: Check },
-  blocked: { label: "Blocked", icon: CircleAlert },
-  failed: { label: "Failed", icon: TriangleAlert },
-  cancelled: { label: "Cancelled", icon: Ban },
-} satisfies Record<Agent["state"], { label: string; icon: typeof Check }>;
+import { AgentTaskBubble } from "./AgentTaskBubble";
 
 export const AgentNode = memo(function AgentNode({
   id,
@@ -34,14 +19,9 @@ export const AgentNode = memo(function AgentNode({
   const agent = useAgents((s) => s.agents[data.agentId]),
     store = useAgentStore(),
     guard = useNavigationGuard();
-  const paused = useSettings(s => s.snapshot.settings.characterAnimationsPaused);
-  const hidden = useContext(CharacterVisibilityContext);
   const nameButton = useRef<HTMLButtonElement>(null);
   const hasIssues = !!agent && (agent.issueCounts.warning > 0 || agent.issueCounts.error > 0 || agent.pendingUserInputCount > 0);
   if (!agent) return null;
-  const state = agentStates[agent.state];
-  const StateIcon = state.icon;
-  const taskLabel = `${agent.runningTaskCount} running tasks · ${agent.queuedCount} queued`;
   function selectAgent(event: React.MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
     guard(() => store.getState().select(agent!.workspaceId, agent!.id));
@@ -85,7 +65,7 @@ export const AgentNode = memo(function AgentNode({
             data-move="true"
             onClick={selectAgent}
           >
-            {agent.name}
+            <span className={agentStyles.nodeNameText}>{agent.name}</span>
           </button>
         </Tooltip>
         <div className={agentStyles.nodeIssues}>
@@ -94,19 +74,7 @@ export const AgentNode = memo(function AgentNode({
             <AgentIssueBubble key={severity} agentId={agent.id} agentName={agent.name} severity={severity} count={agent.issueCounts[severity]} />
           ))}
         </div>
-      </div>
-      <div className={agentStyles.nodeIndicators}>
-        <Tooltip content={state.label} live>
-          <span className={`nodrag ${agentStyles.nodeIndicator}`} tabIndex={0} role="img" aria-label={state.label}>
-            <StateIcon size={14} aria-hidden="true" className={agent.state === "running" ? agentStyles.nodeSpinner : undefined} data-paused={paused || hidden} />
-          </span>
-        </Tooltip>
-        <Tooltip content={taskLabel} live>
-          <span className={`nodrag ${agentStyles.nodeIndicator}`} tabIndex={0} role="img" aria-label={taskLabel}>
-            <ListTodo size={14} aria-hidden="true" />
-            <span aria-hidden="true">{agent.runningTaskCount}</span>
-          </span>
-        </Tooltip>
+        <AgentTaskBubble agentId={agent.id} workspaceId={agent.workspaceId} agentName={agent.name} count={agent.unfinishedTaskCount} />
       </div>
     </div>
   );

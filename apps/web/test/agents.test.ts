@@ -20,6 +20,7 @@ const a: Agent = {
   state: "idle",
   queuedCount: 0,
   runningTaskCount: 0,
+  unfinishedTaskCount: 0,
 };
 
 test("unchanged workspace snapshots retain node and agent references; status updates do not rebuild canvas nodes", async (t) => {
@@ -51,6 +52,12 @@ test("unchanged workspace snapshots retain node and agent references; status upd
   assert.equal(s.getState().nodes.workspace, nodes);
   assert.notEqual(s.getState().agents.agent, running);
   assert.equal(s.getState().agents.agent!.runningTaskCount, 2);
+  const previousCount = s.getState().agents.agent;
+  agent = { ...agent, unfinishedTaskCount: 4 };
+  await s.getState().loadWorkspace("workspace");
+  assert.equal(s.getState().nodes.workspace, nodes);
+  assert.notEqual(s.getState().agents.agent, previousCount);
+  assert.equal(s.getState().agents.agent!.unfinishedTaskCount, 4);
   agent = { ...agent, appearance: { kind: "droplet", color: "coral", accessories: ["glasses"] } };
   await s.getState().loadWorkspace("workspace");
   assert.equal(s.getState().nodes.workspace, nodes);
@@ -425,8 +432,9 @@ test("stale workspace snapshots cannot replace a newer saved instruction revisio
   globalThis.fetch = async url => Response.json(String(url).includes("/agents") ? { items: [agent], total: 1 } : { items: [], total: 0 });
   const store = createAgentStore();
   await store.getState().loadWorkspace("workspace");
-  agent = { ...a, instructions: "Stale role", revision: 1 };
+  agent = { ...a, instructions: "Stale role", revision: 1, unfinishedTaskCount: 2 };
   await store.getState().loadWorkspace("workspace");
   assert.equal(store.getState().agents.agent!.instructions, "Newest role");
   assert.equal(store.getState().agents.agent!.revision, 2);
+  assert.equal(store.getState().agents.agent!.unfinishedTaskCount, 2);
 });

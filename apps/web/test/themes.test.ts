@@ -50,6 +50,8 @@ function legacyTheme(theme: Theme): Theme {
     "agent-warning-text",
     "agent-error-background",
     "agent-error-text",
+    "agent-task-background",
+    "agent-task-text",
   ] as const) {
     delete (colors as Partial<Theme["colors"]>)[key];
   }
@@ -269,6 +271,20 @@ test("older themes inherit readable agent issue bubbles and retain custom overri
       assert.equal(catalog.tokens[key].region, "feedback");
     }
     assert.ok(!contrastWarnings(resolved).some(message => message.startsWith("Agent ")));
+  }
+});
+
+test("older themes inherit task bubble scopes and retain independent overrides", () => {
+  for (const mode of ["light", "dark"] as const) {
+    const older = legacyTheme({ ...custom, mode });
+    const resolved = resolveTheme(older);
+    for (const key of ["agent-task-background", "agent-task-text"] as const) {
+      assert.equal(older.colors[key], undefined);
+      assert.equal(resolved.colors[key], catalog.tokens[key][mode]);
+      assert.equal(resolveColors(mode, { [key]: "#123456" })[key], "#123456");
+      assert.equal(catalog.tokens[key].region, "canvas");
+    }
+    assert.ok(!contrastWarnings(resolved).some(message => message.startsWith("Agent task")));
   }
 });
 

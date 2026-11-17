@@ -128,7 +128,7 @@ export class AgentExecution {
   }
   requiredAgent(id: string, allowDeleting = false): Agent {
     const row = this.db.prepare("SELECT * FROM agents WHERE id = ?").get(id) as
-      | (Omit<Agent, "appearance" | "state" | "queuedCount" | "runningTaskCount" | "issueCounts" | "pendingUserInputCount"> & { appearance: string })
+      | (Omit<Agent, "appearance" | "state" | "queuedCount" | "runningTaskCount" | "unfinishedTaskCount" | "issueCounts" | "pendingUserInputCount"> & { appearance: string })
       | undefined;
     if (!row) throw new ConnectionError("Agent not found.", 404);
     if (!allowDeleting)
@@ -151,6 +151,9 @@ export class AgentExecution {
           AND (status='waiting' OR (status='queued' AND phase IN ('waiting','agent_wait','agent_resume'))) LIMIT 1`,
       )
       .get(id);
+    const unfinished = this.db.prepare(
+      "SELECT count(*) AS count FROM agent_tasks WHERE agentId=? AND kind='task' AND status IN ('queued','running','waiting','awaiting_user')",
+    ).get(id) as { count: number };
     const issue = this.db
       .prepare(
         "SELECT status FROM agent_tasks WHERE agentId=? AND status IN ('blocked','failed') ORDER BY updatedAt DESC LIMIT 1",
@@ -163,6 +166,7 @@ export class AgentExecution {
       pendingUserInputCount: (this.db.prepare("SELECT count(*) n FROM user_input_requests WHERE agentId=? AND state='pending'").get(id) as { n: number }).n,
       queuedCount: counts.queued,
       runningTaskCount: running.count,
+      unfinishedTaskCount: unfinished.count,
       state: this.db.prepare("SELECT 1 FROM agent_turns WHERE agentId=? AND taskId IS NOT NULL AND status='running' LIMIT 1").get(id)
         ? "running"
         : waiting

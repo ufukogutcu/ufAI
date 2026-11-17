@@ -157,9 +157,7 @@
     "characterSize": 160,
     "gap": -36,
     "labelWidth": 128,
-    "cardHeight": 28,
-    "indicatorGap": 8,
-    "indicatorHeight": 20,
+    "cardHeight": 44,
     "legacyWidth": 224,
     "legacyHeight": 104
   },

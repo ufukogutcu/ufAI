@@ -223,6 +223,7 @@ export function createAgentStore() {
             state: agent.state,
             queuedCount: agent.queuedCount,
             runningTaskCount: agent.runningTaskCount,
+            unfinishedTaskCount: agent.unfinishedTaskCount,
             issueCounts: agent.issueCounts,
             pendingUserInputCount: agent.pendingUserInputCount,
           }
@@ -234,6 +235,7 @@ export function createAgentStore() {
             state: existing.state,
             queuedCount: existing.queuedCount,
             runningTaskCount: existing.runningTaskCount,
+            unfinishedTaskCount: existing.unfinishedTaskCount,
             issueCounts: existing.issueCounts,
             pendingUserInputCount: existing.pendingUserInputCount,
           };

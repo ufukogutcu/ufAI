@@ -281,6 +281,7 @@ export interface Agent {
   state: TaskStatus | "idle";
   queuedCount: number;
   runningTaskCount: number;
+  unfinishedTaskCount: number;
 }
 export interface AgentTask {
   trigger?: { id: string; occurrenceId: string; name: string; scheduledAt: string; dispatchedAt: string | null };
