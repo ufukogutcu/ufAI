@@ -77,6 +77,31 @@ test("panels default to Chat, use the requested order, and retain independent ag
   assert.deepEqual(createAgentStore().getState().panelTabs, {});
 });
 
+test("Tasks shows the full reactive total per agent without changing tab identity", async t => {
+  const p = await setup(t);
+  assert.ok(p.tab("Tasks"));
+  await act(async () => p.store.setState({ taskTotals: { one: 0 } }));
+  assert.ok(p.tab("Tasks"));
+
+  // The server total includes tasks beyond the loaded page, across all statuses.
+  await act(async () => p.store.setState({ taskTotals: { one: 125, two: 3 } }));
+  assert.equal(p.store.getState().tasks.one?.length ?? 0, 0);
+  await p.click(p.tab("Tasks (125)"));
+  assert.equal(p.active(), "Tasks (125)");
+  assert.equal(p.store.getState().panelTabs.one, "Tasks");
+  assert.equal(createAgentStore().getState().panelTabs.one, "Tasks");
+
+  await act(async () => p.store.setState({ taskTotals: { one: 126, two: 3 } }));
+  assert.equal(p.active(), "Tasks (126)");
+  await act(async () => p.store.getState().select("workspace", "two"));
+  assert.ok(p.tab("Tasks (3)"));
+  assert.equal(p.active(), "Chat");
+  await act(async () => p.store.getState().select("workspace", "one"));
+  assert.equal(p.active(), "Tasks (126)");
+  await act(async () => p.store.setState({ taskTotals: { one: 0, two: 3 } }));
+  assert.equal(p.active(), "Tasks");
+});
+
 test("rejected navigation preserves the active tab and panel; Escape remains available", async t => {
   const p = await setup(t);
   await p.click(p.tab("Details"));

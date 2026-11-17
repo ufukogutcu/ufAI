@@ -628,7 +628,7 @@ export function AgentPanel({
             aria-current={tab === v ? "page" : undefined}
             onClick={() => guard(() => setTab(v))}
           >
-            {v}
+            {v === "Tasks" && taskTotal > 0 ? `Tasks (${taskTotal})` : v}
           </button>
         ))}
       </nav>
