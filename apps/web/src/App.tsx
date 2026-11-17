@@ -44,8 +44,8 @@ import { RichTextProvider } from "./components/RichText";
 const pages = [
   { id: "home", label: "Home", icon: HomeIcon },
   { id: "vault", label: "Vault", icon: LockKeyhole },
-  { id: "providers", label: "Providers", icon: Server },
   { id: "agent-presets", label: "Agent Presets", icon: SlidersHorizontal },
+  { id: "providers", label: "Providers", icon: Server },
   { id: "theme", label: "Theme", icon: Palette },
   { id: "settings", label: "Settings", icon: Settings },
 ] as const;
