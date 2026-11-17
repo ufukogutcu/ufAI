@@ -7,7 +7,7 @@ const { WorkspaceTab } = await import("../src/components/WorkspaceTab");
 const { ContextMenu } = await import("../src/components/ContextMenu");
 const { WorkspaceDuplicate } = await import("../src/components/WorkspaceDuplicate");
 import type { ContextMenuAnchor } from "../src/components/ContextMenu";
-const workspaces: Workspace[] = ["one", "two"].map(id => ({ id, name: id, description: "Description", createdAt: "2026-01-01", updatedAt: "2026-01-01" }));
+const workspaces: Workspace[] = ["one", "two"].map(id => ({ id, sortOrder: 0, name: id, description: "Description", createdAt: "2026-01-01", updatedAt: "2026-01-01" }));
 
 test("workspace menus target inactive tabs without selecting and preserve ordinary keyboard navigation", async t => {
   const selected: string[] = [], actions: string[] = [];

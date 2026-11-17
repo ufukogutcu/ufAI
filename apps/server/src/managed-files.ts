@@ -439,14 +439,14 @@ export class ManagedFiles {
         if (op.kind === "workspace") {
           const next = this.db
             .prepare(
-              `SELECT id FROM workspaces WHERE (createdAt,id) > (SELECT createdAt,id FROM workspaces WHERE id=?) ORDER BY createdAt,id LIMIT 1`,
+              `SELECT id FROM workspaces WHERE (sortOrder,id) > (SELECT sortOrder,id FROM workspaces WHERE id=?) ORDER BY sortOrder,id LIMIT 1`,
             )
             .get(op.ownerId) as { id: string } | undefined;
           const previous =
             next ??
             (this.db
               .prepare(
-                `SELECT id FROM workspaces WHERE (createdAt,id) < (SELECT createdAt,id FROM workspaces WHERE id=?) ORDER BY createdAt DESC,id DESC LIMIT 1`,
+                `SELECT id FROM workspaces WHERE (sortOrder,id) < (SELECT sortOrder,id FROM workspaces WHERE id=?) ORDER BY sortOrder DESC,id DESC LIMIT 1`,
               )
               .get(op.ownerId) as { id: string } | undefined);
           this.db

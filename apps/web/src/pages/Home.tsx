@@ -5,11 +5,12 @@ import { FolderLocation } from "../components/FolderLocation";
 import { DeletionProgress } from "../components/DeletionProgress";
 import { useNavigationGuard } from "../navigation-guard";
 import { useSettings } from "../settings-store";
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   Copy,
   Ellipsis,
   ArrowRight,
+  ArrowLeft,
   ChevronDown,
   Pencil,
   Plus,
@@ -31,7 +32,7 @@ import { useNotice } from "../components/FeedbackProvider";
 import { Feedback, BusyButton, LoadingState } from "../components/Feedback";
 
 import { ContextMenu, type ContextMenuAnchor } from "../components/ContextMenu";
-import { WorkspaceTab } from "../components/WorkspaceTab";
+import { WorkspaceTabs } from "../components/WorkspaceTabs";
 import { WorkspaceDuplicate } from "../components/WorkspaceDuplicate";
 import { refreshOnFocus } from "../focus-refresh";
 import type { Workspace, WorkspaceDuplication } from "../../../server/src/contracts";
@@ -199,6 +200,13 @@ export default function Home() {
   );
   const status = useDashboard((state) => state.workspaceStatus);
   const error = useDashboard((state) => state.workspaceError);
+  const reorder = useDashboard(state => state.reorderWorkspace);
+  const orderSaving = useDashboard(state => state.workspaceOrderSaving);
+  const orderError = useDashboard(state => state.workspaceOrderError);
+  const retryOrder = useDashboard(state => state.retryWorkspaceOrder);
+  const [orderAnnouncement, setOrderAnnouncement] = useState("");
+  useNotice(orderError ? { id: "workspace-order", title: "Workspace order could not save", message: orderError,
+    actionLabel: "Retry workspace order", action: retryOrder } : null, "workspace-order");
   const total = useDashboard((state) => state.workspaceTotal);
   const offset = useDashboard((state) => state.workspaceOffset);
   const load = useDashboard((state) => state.loadWorkspaces);
@@ -240,16 +248,14 @@ export default function Home() {
     message: recoverable.error ?? recoverable.name, actionLabel: "Review duplication", action: () => guard(() => setDuplicate({ operation: recoverable })) } : null, "workspace-duplication");
   const home = useRef<HTMLElement>(null);
   const chrome = useRef<HTMLDivElement>(null);
-  const tabList = useRef<HTMLDivElement>(null);
   const active = selectedWorkspace;
   useNotice(positionError ? { id: "layout-save", title: "Layout could not save", message: positionError,
     actionLabel: "Retry layout save", action: () => agentStore.getState().retryPositions() } : null, "layout-save");
   useNotice(error && (!!active || workspaces.length > 0) ? { id: "workspaces", title: "Workspaces could not refresh", message: error,
     actionLabel: "Reload workspaces", action: () => load(!!workspaces.length) } : null, "workspaces");
-  const tabs =
-    active && !workspaces.some((workspace) => workspace.id === active.id)
-      ? [...workspaces, active]
-      : workspaces;
+  const tabs = useMemo(() => active && !workspaces.some(workspace => workspace.id === active.id)
+    ? [...workspaces, active].sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id)) : workspaces,
+  [active, workspaces]);
   const menuWorkspace = menu ? tabs.find(workspace => workspace.id === menu.workspaceId) : undefined;
   // Measure changed content before paint; observe later reflows without React state.
   useLayoutEffect(() => {
@@ -277,35 +283,20 @@ export default function Home() {
       container.style.removeProperty("--workspace-chrome-bottom");
     };
   }, [active?.id, active?.name, active?.description]);
-  useEffect(() => {
-    const list = tabList.current;
-    if (!list) return;
-    const selected = list.querySelector<HTMLElement>('[aria-selected="true"]');
-    if (!selected) return;
-    let frame = 0;
-    function revealSelection() {
-      const bounds = list!.getBoundingClientRect();
-      const tab = selected!.getBoundingClientRect();
-      if (tab.left < bounds.left) list!.scrollLeft -= bounds.left - tab.left;
-      else if (tab.right > bounds.right)
-        list!.scrollLeft += tab.right - bounds.right;
-    }
-    function scheduleReveal() {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(revealSelection);
-    }
-    const observer = new ResizeObserver(scheduleReveal);
-    observer.observe(list);
-    observer.observe(selected);
-    scheduleReveal();
-    return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-    };
-  }, [activeId, tabs.length]);
-  function select(id: string) {
-    if (id !== activeId)
-      guard(() => void updateSettings({ activeWorkspaceId: id }));
+  const select = useCallback((id: string) => {
+    if (id !== activeId) guard(() => void updateSettings({ activeWorkspaceId: id }));
+  }, [activeId, guard, updateSettings]);
+  useEffect(() => refreshOnFocus(() => load()), [load]);
+  const menuIndex = tabs.findIndex(workspace => workspace.id === menuWorkspace?.id);
+  function moveFromMenu(direction: -1 | 1) {
+    const relative = tabs[menuIndex + direction];
+    if (!menuWorkspace || !relative) return;
+    void reorder(menuWorkspace.id, relative.id, direction < 0 ? "before" : "after").then(saved => {
+      setOrderAnnouncement(saved ? `${menuWorkspace.name} moved to position ${menuIndex + direction + 1}.` : "Workspace order could not save.");
+      const tab = document.getElementById(`tab-${menuWorkspace.id}`);
+      tab?.focus({ preventScroll: true });
+      tab?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
   }
   useEffect(() => {
     if (status === "idle") void load();
@@ -347,21 +338,15 @@ export default function Home() {
       <div ref={chrome} className={styles.workspaceChrome}>
         <div className={`${styles.workspaceBar} glassSurface`}>
           <GlassMaterial />
-          <div
-            ref={tabList}
-            className={styles.tabs}
-            role="tablist"
-            aria-label="Workspaces"
-          >
-            {tabs.map(workspace => <WorkspaceTab key={workspace.id} workspace={workspace} activeId={activeId}
-              tabs={tabs} onSelect={select} onMenu={openMenu} menuOpen={menu?.workspaceId === workspace.id} />)}
-          </div>
+          <WorkspaceTabs tabs={tabs} activeId={activeId} menuId={menu?.workspaceId}
+            disabled={orderSaving || status === "loading"} onSelect={select} onMenu={openMenu} onMove={reorder} />
+          <span className={styles.srOnly} role="status" aria-live="polite">{orderAnnouncement}</span>
           {offset < total && (
             <Tooltip content="Load more workspaces">
               <button
                 className="iconButton"
                 aria-label="Load more workspaces"
-                disabled={status === "loading"}
+                disabled={status === "loading" || orderSaving}
                 onClick={handleMore}
               >
                 <ChevronDown size={17} />
@@ -374,7 +359,7 @@ export default function Home() {
               aria-label="Create workspace"
               onClick={handleCreate}
               disabled={
-                status === "idle" ||
+                orderSaving || status === "idle" ||
                 status === "loading" ||
                 (status === "error" && !workspaces.length)
               }
@@ -489,6 +474,9 @@ export default function Home() {
       {menu && menuWorkspace && <ContextMenu anchor={menu.anchor}
         label={`Actions for ${menuWorkspace.name}`} onClose={closeMenu}
         items={[
+          { id: "move-left", label: "Move left", icon: <ArrowLeft size={16} />, disabled: orderSaving || status === "loading" || menuIndex <= 0, onSelect: () => moveFromMenu(-1) },
+          { id: "move-right", label: "Move right", icon: <ArrowRight size={16} />, disabled: orderSaving || status === "loading" || menuIndex >= tabs.length - 1, onSelect: () => moveFromMenu(1) },
+          { id: "order-separator", separator: true },
           { id: "edit", label: "Edit…", icon: <Pencil size={16} />, onSelect: () => handleEdit(menuWorkspace) },
           { id: "duplicate", label: "Duplicate…", icon: <Copy size={16} />, onSelect: () => guard(() => {
             setDuplicateError(""); setDuplicate({ source: menuWorkspace });

@@ -222,7 +222,7 @@ export class WorkspaceDuplications {
       const stamp = this.triggers.now();
       this.db.transaction(() => {
         this.assertSource(row.sourceWorkspaceId);
-        this.db.prepare("INSERT INTO workspaces(id,name,description,createdAt,updatedAt) VALUES (?,?,?,?,?)").run(row.destinationId, options.name, options.description, stamp, stamp);
+        this.db.prepare("INSERT INTO workspaces(id,name,description,createdAt,updatedAt,sortOrder) VALUES (?,?,?,?,?,(SELECT COALESCE(MAX(sortOrder),-1)+1 FROM workspaces))").run(row.destinationId, options.name, options.description, stamp, stamp);
         for (const a of snapshot.agents) this.db.prepare("INSERT INTO agents(id,workspaceId,name,instructions,presetId,x,y,appearance,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)")
           .run(agents.get(a.id), row.destinationId, a.name, a.instructions, a.presetId, a.x, a.y, a.appearance, stamp, stamp);
         this.db.prepare("INSERT INTO workspace_viewports(workspaceId,x,y,zoom) VALUES (?,?,?,?)").run(row.destinationId, snapshot.viewport.x, snapshot.viewport.y, snapshot.viewport.zoom);

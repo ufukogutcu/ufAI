@@ -26,6 +26,7 @@ export interface WorkspaceInput {
 
 export interface Workspace extends WorkspaceInput {
   id: string;
+  readonly sortOrder: number;
   createdAt: string;
   updatedAt: string;
 }

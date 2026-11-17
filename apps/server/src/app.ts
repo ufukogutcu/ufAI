@@ -53,6 +53,7 @@ import type {
 } from "./contracts.js";
 import {
   InputError,
+  objectBody,
   pagination,
   presetInput,
   workspaceInput,
@@ -299,7 +300,7 @@ export function createApp(
   app.addHook("onClose", async () => execution.close());
 
   const workspaceList = database.prepare(
-    "SELECT * FROM workspaces ORDER BY createdAt, id LIMIT ? OFFSET ?",
+    "SELECT * FROM workspaces ORDER BY sortOrder, id LIMIT ? OFFSET ?",
   );
   const workspaceCount = database.prepare(
     "SELECT count(*) AS total FROM workspaces",
@@ -308,8 +309,8 @@ export function createApp(
     "SELECT * FROM workspaces WHERE id = ?",
   );
   const workspaceInsert = database.prepare(
-    `INSERT INTO workspaces (id, name, description, createdAt, updatedAt)
-     VALUES (@id, @name, @description, @createdAt, @updatedAt)`,
+    `INSERT INTO workspaces (id, name, description, createdAt, updatedAt, sortOrder)
+     VALUES (@id, @name, @description, @createdAt, @updatedAt, @sortOrder)`,
   );
   const workspaceUpdate = database.prepare(
     "UPDATE workspaces SET name = @name, description = @description, updatedAt = @updatedAt WHERE id = @id",
@@ -324,20 +325,41 @@ export function createApp(
   app.post("/api/workspaces", async (request, reply) => {
     const input = workspaceInput(request.body);
     const now = new Date().toISOString();
-    const workspace: Workspace = {
-      id: randomUUID(),
-      ...input,
-      createdAt: now,
-      updatedAt: now,
-    };
-    database.transaction(() => {
+    const workspace = database.transaction(() => {
+      const { sortOrder } = database.prepare("SELECT COALESCE(MAX(sortOrder), -1) + 1 AS sortOrder FROM workspaces").get() as { sortOrder: number };
+      const workspace: Workspace = { id: randomUUID(), ...input, createdAt: now, updatedAt: now, sortOrder };
       workspaceInsert.run(workspace);
       database
         .prepare("UPDATE app_settings SET activeWorkspaceId = ? WHERE id = 1")
         .run(workspace.id);
+      return workspace;
     })();
     files.kick();
     return reply.code(201).send(workspace);
+  });
+  app.patch<{ Params: { id: string } }>("/api/workspaces/:id/order", async (request, reply) => {
+    const input = objectBody(request.body);
+    const fields: Record<string, string> = {};
+    for (const key of Object.keys(input))
+      if (!["relativeToId", "placement"].includes(key)) fields[key] = "Unknown field.";
+    if (typeof input.relativeToId !== "string" || !input.relativeToId || input.relativeToId === request.params.id)
+      fields.relativeToId = "Choose a different existing workspace.";
+    if (input.placement !== "before" && input.placement !== "after") fields.placement = "Choose before or after.";
+    if (Object.keys(fields).length) throw new InputError(fields);
+    const moved = database.transaction(() => {
+      const workspace = workspaceGet.get(request.params.id) as Workspace | undefined;
+      const relative = workspaceGet.get(input.relativeToId as string) as Workspace | undefined;
+      if (!workspace || !relative) return false;
+      files.assertAvailable(workspace.id);
+      files.assertAvailable(relative.id);
+      const from = workspace.sortOrder;
+      const to = relative.sortOrder + (input.placement === "after" ? 1 : 0) - (from < relative.sortOrder ? 1 : 0);
+      if (from < to) database.prepare("UPDATE workspaces SET sortOrder = sortOrder - 1 WHERE sortOrder > ? AND sortOrder <= ?").run(from, to);
+      else if (from > to) database.prepare("UPDATE workspaces SET sortOrder = sortOrder + 1 WHERE sortOrder >= ? AND sortOrder < ?").run(to, from);
+      if (from !== to) database.prepare("UPDATE workspaces SET sortOrder = ? WHERE id = ?").run(to, workspace.id);
+      return true;
+    })();
+    return moved ? reply.code(204).send() : reply.code(404).send({ error: "Workspace not found." });
   });
   app.patch<{ Params: { id: string } }>(
     "/api/workspaces/:id",

@@ -9,6 +9,7 @@ import type { ModelPreset, Workspace } from "../src/api.js";
 function workspace(id: string): Workspace {
   return {
     id,
+    sortOrder: 0,
     name: id,
     description: "",
     createdAt: "2026-01-01T00:00:00.000Z",

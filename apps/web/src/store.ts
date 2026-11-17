@@ -28,6 +28,10 @@ interface DashboardState {
   workspaceStatus: Status;
   presetStatus: Status;
   workspaceError: string;
+  workspaceOrderSaving: boolean;
+  workspaceOrderError: string;
+  reorderWorkspace: (id: string, relativeToId: string, placement: "before" | "after") => Promise<boolean>;
+  retryWorkspaceOrder: () => Promise<void>;
   presetError: string;
   workspaceTotal: number;
   presetTotal: number;
@@ -63,7 +67,39 @@ function merge<T extends { id: string; createdAt: string }>(
   );
 }
 
+function mergeWorkspaces(old: Workspace[], items: Workspace[]): Workspace[] {
+  const records = new Map(old.map(item => [item.id, item]));
+  for (const item of items) records.set(item.id, item);
+  return [...records.values()].sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id));
+}
+
+async function workspaceRange(target: number, retainedIds: string[] = []) {
+  const items: Workspace[] = [];
+  const missing = new Set(retainedIds);
+  let total = 0;
+  do {
+    const page = await getPage<Workspace>("/workspaces", items.length);
+    total = page.total;
+    items.push(...page.items);
+    for (const item of page.items) missing.delete(item.id);
+    if (!page.items.length) break;
+  } while (items.length < total && (items.length < target || missing.size > 0));
+  return { items, total };
+}
+
+function refreshedWorkspaces(current: Workspace[], items: Workspace[]) {
+  const previous = new Map(current.map(item => [item.id, item]));
+  return items.map(item => {
+    const saved = previous.get(item.id);
+    if (saved && saved.updatedAt > item.updatedAt) return { ...saved, sortOrder: item.sortOrder };
+    return saved && JSON.stringify(saved) === JSON.stringify(item) ? saved : item;
+  });
+}
+
 export function createDashboardStore(settings: SettingsStore) {
+  let workspaceRevision = 0;
+  let orderWrite: Promise<boolean> | undefined;
+  let retryOrder: (() => Promise<void>) | undefined;
   let presetRevision = 0;
   let defaultLoad:
     | { revision: number; promise: Promise<ModelPreset | null> }
@@ -84,6 +120,8 @@ export function createDashboardStore(settings: SettingsStore) {
     workspaceStatus: "idle",
     presetStatus: "idle",
     workspaceError: "",
+    workspaceOrderSaving: false,
+    workspaceOrderError: "",
     presetError: "",
     workspaceTotal: 0,
     presetTotal: 0,
@@ -92,26 +130,79 @@ export function createDashboardStore(settings: SettingsStore) {
     viewports: {},
     viewportErrors: {},
     loadWorkspaces: async (more = false) => {
-      if (get().workspaceStatus === "loading") return;
+      if (get().workspaceStatus === "loading" || get().workspaceOrderSaving) return;
+      const revision = workspaceRevision;
       set({ workspaceStatus: "loading", workspaceError: "" });
       const offset = more ? get().workspaceOffset : 0;
       try {
-        const page = await getPage<Workspace>("/workspaces", offset);
-        set((state) => {
-          const workspaces = more
-            ? merge(state.workspaces, page.items)
-            : page.items;
-          return {
-            workspaces,
-            workspaceTotal: page.total,
-            workspaceOffset: offset + page.items.length,
-            workspaceStatus: "ready",
-          };
-        });
+        const page = more ? await getPage<Workspace>("/workspaces", offset)
+          : await workspaceRange(Math.max(1, get().workspaceOffset));
+        if (revision !== workspaceRevision) return;
+        set(state => ({
+          workspaces: more ? mergeWorkspaces(state.workspaces, refreshedWorkspaces(state.workspaces, page.items))
+            : refreshedWorkspaces(state.workspaces, page.items),
+          workspaceTotal: page.total,
+          workspaceOffset: offset + page.items.length,
+          workspaceStatus: "ready",
+        }));
       } catch (error) {
-        set({ workspaceStatus: "error", workspaceError: errorMessage(error) });
+        if (revision === workspaceRevision) set({ workspaceStatus: "error", workspaceError: errorMessage(error) });
       }
     },
+    reorderWorkspace: (id, relativeToId, placement) => {
+      if (orderWrite) return Promise.resolve(false);
+      const state = get();
+      const selected = settings.getState().snapshot.activeWorkspace;
+      const previous = selected && !state.workspaces.some(item => item.id === selected.id)
+        ? mergeWorkspaces(state.workspaces, [selected]) : state.workspaces;
+      const source = previous.find(item => item.id === id);
+      const target = previous.find(item => item.id === relativeToId);
+      if (!source || !target || id === relativeToId) return Promise.resolve(false);
+      const reordered = previous.filter(item => item.id !== id);
+      reordered.splice(reordered.findIndex(item => item.id === relativeToId) + (placement === "after" ? 1 : 0), 0, source);
+      if (reordered.every((item, index) => item.id === previous[index]?.id)) return Promise.resolve(false);
+      let revision = ++workspaceRevision;
+      const retainedIds = previous.map(item => item.id);
+      async function reconcile() {
+        const page = await workspaceRange(Math.max(state.workspaceOffset, previous.length), retainedIds);
+        if (workspaceRevision !== revision) return;
+        set(current => ({ workspaces: refreshedWorkspaces(current.workspaces, page.items), workspaceTotal: page.total,
+          workspaceOffset: page.items.length, workspaceStatus: "ready", workspaceError: "" }));
+      }
+      set({ workspaces: reordered, workspaceOrderSaving: true, workspaceOrderError: "", workspaceStatus: "ready" });
+      const save = async () => {
+        await request(`/workspaces/${encodeURIComponent(id)}/order`, "PATCH", { relativeToId, placement });
+      };
+      // A confirmed write only needs a refresh on retry; an uncertain write is safe to repeat.
+      let confirmed = false;
+      const run = async (): Promise<boolean> => {
+        try {
+          if (!confirmed) { await save(); confirmed = true; }
+          await reconcile();
+          retryOrder = undefined;
+          set({ workspaceOrderError: "" });
+          return true;
+        } catch (error) {
+          if (!confirmed) {
+            const order = new Map(previous.map((item, index) => [item.id, index]));
+            set(current => ({ workspaces: [...current.workspaces].sort((a, b) => (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity)) }));
+            try { await reconcile(); } catch { /* Keep the latest records available until explicit retry. */ }
+          }
+          set({ workspaceOrderError: errorMessage(error) });
+          retryOrder = async () => {
+            if (orderWrite) return;
+            revision = ++workspaceRevision;
+            set({ workspaceOrderSaving: true });
+            orderWrite = run();
+            try { await orderWrite; } finally { orderWrite = undefined; set({ workspaceOrderSaving: false }); }
+          };
+          return false;
+        }
+      };
+      orderWrite = run();
+      return orderWrite.finally(() => { orderWrite = undefined; set({ workspaceOrderSaving: false }); });
+    },
+    retryWorkspaceOrder: async () => { await retryOrder?.(); },
     loadDefaultPreset: () => {
       if (defaultLoad?.revision === presetRevision) return defaultLoad.promise;
       const started = presetRevision;
@@ -295,13 +386,16 @@ export function createDashboardStore(settings: SettingsStore) {
       }
     },
     createWorkspace: async (name, description = "") => {
+      await orderWrite;
       const workspace = await settings
         .getState()
         .mutate(() =>
           request<Workspace>("/workspaces", "POST", { name, description }),
         );
+      workspaceRevision++;
       set((state) => ({
-        workspaces: merge(state.workspaces, [workspace]),
+        workspaceStatus: "ready",
+        workspaces: mergeWorkspaces(state.workspaces, [workspace]),
         workspaceTotal: state.workspaceTotal + 1,
         workspaceOffset:
           state.workspaceOffset === state.workspaceTotal
@@ -310,12 +404,14 @@ export function createDashboardStore(settings: SettingsStore) {
       }));
     },
     openDuplicatedWorkspace: async (id) => {
+      await orderWrite;
       const { total } = await request<Page<Workspace>>("/workspaces?limit=1&offset=0");
       const response = await settings.getState().mutate(() => request<SettingsResponse>("/settings", "PATCH", { activeWorkspaceId: id }));
       const workspace = response.activeWorkspace;
+      workspaceRevision++;
       if (workspace) set(state => {
         const added = !state.workspaces.some(item => item.id === workspace.id);
-        return { workspaces: merge(state.workspaces, [workspace]),
+        return { workspaceStatus: "ready", workspaces: mergeWorkspaces(state.workspaces, [workspace]),
           workspaceTotal: total,
           workspaceOffset: added && state.workspaceOffset === state.workspaceTotal && total === state.workspaceTotal + 1 ? state.workspaceOffset + 1 : state.workspaceOffset };
       });
@@ -329,9 +425,11 @@ export function createDashboardStore(settings: SettingsStore) {
       }));
     },
     deleteWorkspace: async (id) => {
+      await orderWrite;
       await settings
         .getState()
         .mutate(() => deleteManaged(`/workspaces/${id}`));
+      workspaceRevision++;
       viewportRevisions.set(id, (viewportRevisions.get(id) ?? 0) + 1);
       await Promise.all([viewportLoads.get(id), viewportWrites.get(id)]);
       viewportRevisions.delete(id);
@@ -348,6 +446,7 @@ export function createDashboardStore(settings: SettingsStore) {
         delete viewportErrors[id];
         return {
           workspaces,
+          workspaceStatus: "ready",
           viewports,
           viewportErrors,
           workspaceTotal: state.workspaceTotal - 1,

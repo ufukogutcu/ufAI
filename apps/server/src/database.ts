@@ -35,7 +35,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 38)
+    if (version > 39)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -382,6 +382,18 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     if (version < 38) database.transaction(() => {
       migrateExecutionState(database);
       database.pragma("user_version = 38");
+    })();
+
+    if (version < 39) database.transaction(() => {
+      const columns = database.pragma("table_info(workspaces)") as { name: string }[];
+      if (!columns.some(column => column.name === "sortOrder")) {
+        database.exec("ALTER TABLE workspaces ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0");
+        database.exec(`WITH ranked AS (
+          SELECT id, ROW_NUMBER() OVER (ORDER BY createdAt,id) - 1 AS position FROM workspaces
+        ) UPDATE workspaces SET sortOrder = (SELECT position FROM ranked WHERE ranked.id = workspaces.id)`);
+      }
+      database.exec("CREATE INDEX IF NOT EXISTS workspaces_order ON workspaces(sortOrder,id)");
+      database.pragma("user_version = 39");
     })();
 
   } catch (error) {
