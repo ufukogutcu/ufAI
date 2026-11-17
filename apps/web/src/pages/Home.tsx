@@ -1,4 +1,5 @@
 import { WorkspaceInboxButton } from "../components/Messaging";
+import { WorkspaceTriggersButton } from "../components/Triggers";
 import { PublishedFiles } from "../components/TaskTools";
 import { FolderLocation } from "../components/FolderLocation";
 import { DeletionProgress } from "../components/DeletionProgress";
@@ -396,6 +397,7 @@ export default function Home() {
                 </Appearance>
                 <div className={styles.workspaceActions}>
                   <WorkspaceInboxButton key={active.id} workspaceId={active.id} />
+                  <WorkspaceTriggersButton key={`triggers:${active.id}`} workspaceId={active.id} />
                   <Tooltip content="Published Files">
                     <button
                       className="iconButton"

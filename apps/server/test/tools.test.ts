@@ -509,7 +509,7 @@ test("populated v11 upgrade retains task content and managed paths", async (t) =
   removeToolTables(s.db);
   s.db.pragma("user_version=11");
   const upgraded = openDatabase(s.path);
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 29);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 31);
   assert.equal(
     (
       upgraded

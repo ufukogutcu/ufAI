@@ -37,6 +37,7 @@ import { Field } from "./FormField";
 import { Tooltip } from "./Tooltip";
 import { SkillSwitch } from "./SkillSwitch";
 import styles from "./AgentSkills.module.scss";
+import { SkillAutomationsPanel } from "./Triggers";
 
 const emptySkill: SkillInput = { name: "", description: "", instructions: "" };
 const encode = encodeURIComponent;
@@ -801,6 +802,7 @@ export function AgentSkills({ agentId }: { agentId: string }) {
                 </div>
               )}
               <h4>Instructions</h4>
+              <SkillAutomationsPanel key={detail.id} agentId={agentId} skillId={detail.id} />
               <pre className={styles.instructions}>
                 {detail.instructions || "No instructions."}
               </pre>

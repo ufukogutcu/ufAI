@@ -71,6 +71,7 @@ const creationInstructions = `Help the user create, install and maintain reusabl
 
 export class Skills {
   onEnabledChanged?: (agentId: string, skillId: string, enabled: boolean) => void;
+  onInstalled?: (agentId: string, skillId: string) => void;
   root = "";
   private staging = "";
   private stopped = false;
@@ -430,9 +431,10 @@ Website downloads are saved under Files/Downloads. Use artifact_publish to share
     agentId?: string,
   ) {
     if (agentId) this.agent(agentId);
-    const text = skillDocument(input);
     return this.exclusive(async () => {
       const row = this.editable(id, revision);
+      const prior = JSON.parse(row.metadata) as SkillMetadata;
+      const text = skillDocument({ ...input, frontmatter: input.frontmatter ?? prior.frontmatter });
       if (input.name !== row.name)
         badSkill(
           "Skill names are immutable. Create a separate skill to use a different name.",
@@ -792,8 +794,10 @@ Website downloads are saved under Files/Downloads. Use artifact_publish to share
         .get(scanned.input.name) as Row | undefined;
       if (existing?.builtIn)
         badSkill("That name is reserved for a built-in skill.", 403);
-      if (existing && existing.fingerprint === scanned.fingerprint)
+      if (existing && existing.fingerprint === scanned.fingerprint) {
+        this.onInstalled?.(agentId, existing.id);
         return this.detail(existing.id, agentId);
+      }
       if (existing && (!replaceId || existing.id !== replaceId))
         badSkill(
           "A different skill with this name is installed. Explicitly replace it or rename the new skill.",
@@ -856,6 +860,7 @@ Website downloads are saved under Files/Downloads. Use artifact_publish to share
         throw error;
       }
       // Existing tasks can hold the old folder path. Keep replaced folders until restart.
+      this.onInstalled?.(agentId, id);
       this.notify();
       return this.detail(id, agentId);
     });

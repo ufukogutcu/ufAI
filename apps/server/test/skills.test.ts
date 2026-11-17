@@ -1,3 +1,4 @@
+import { removeTriggers } from "./legacy-schema.js";
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import {
@@ -923,6 +924,7 @@ test("v26 agents receive built-in defaults without changing existing records", a
   db.prepare(
     "INSERT INTO agents(id,workspaceId,name,instructions,createdAt,updatedAt) VALUES('old',?,'Existing','Keep this role','old','old')",
   ).run(workspace);
+  removeTriggers(db);
   db.exec(
     "DROP TABLE task_skill_activations; DROP TABLE skill_installations; DROP TABLE agent_skills; DROP TABLE skills; PRAGMA user_version=26",
   );

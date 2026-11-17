@@ -1,4 +1,5 @@
-import { randomUUID, createHash } from "node:crypto";
+import { ingestUpload } from "./upload-stream.js";
+import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { FastifyRequest } from "fastify";
 import type { AgentExecution } from "./agent-execution.js";
@@ -188,64 +189,16 @@ export class SubmissionMedia {
               400,
             );
           }
-          const onAbort = () =>
-            part.file.destroy(
-              new ConnectionError("File transfer cancelled.", 409),
-            );
-          signal.addEventListener("abort", onAbort, { once: true });
-          let v;
-          try {
-            if (priorAtStart) {
-              const hash = createHash("sha256");
-              let read = 0;
-              for await (const bytes of part.file) {
-                signal.throwIfAborted();
-                read += bytes.length;
-                if (read > entry.size)
-                  throw new ConnectionError(
-                    "File differs from the manifest.",
-                    409,
-                  );
-                hash.update(bytes);
-              }
-              if (read !== entry.size || part.file.truncated)
-                throw new ConnectionError("File transfer was incomplete.", 409);
-              hashes.push({
-                name: entry.name,
-                size: read,
-                sha256: hash.digest("hex"),
-                mode: entry.mode,
-              });
-              index++;
-              continue;
-            }
-            v = await this.media.artifacts.publish(
-              { workspaceId: agent.workspaceId, agentId },
-              {
-                stream: part.file,
-                size: entry.size,
-                name: entry.name,
-                origin: "user_upload",
-                ingestId: id,
-              },
-              signal,
-            );
-          } finally {
-            signal.removeEventListener("abort", onAbort);
-          }
-          if (part.file.truncated)
-            throw new ConnectionError("File exceeds the upload limit.", 413);
+          const received = await ingestUpload(this.media.artifacts,
+            { workspaceId: agent.workspaceId, agentId }, part, entry, id, signal, "user_upload", !!priorAtStart);
+          hashes.push(received.hash);
+          if (!received.version) { index++; continue; }
+          const v = received.version;
           const mode =
             entry.mode === "inspect" && v.mediaType.startsWith("image/")
               ? "inspect"
               : "file";
           attachments.push({ versionId: v.id, name: v.name, mode });
-          hashes.push({
-            name: entry.name,
-            size: v.size,
-            sha256: v.sha256,
-            mode: entry.mode,
-          });
           index++;
         }
       }

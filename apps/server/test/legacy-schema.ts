@@ -178,6 +178,7 @@ export function assertCharacterUpgrade(actual: any, previous: any) {
 
 /** Reconstruct v25 storage before assembling an older upgrade fixture. */
 export function restoreClusters(database: Database.Database) {
+  removeTriggers(database);
   database.exec("DROP TABLE IF EXISTS task_skill_activations; DROP TABLE IF EXISTS skill_installations; DROP TABLE IF EXISTS agent_skills; DROP TABLE IF EXISTS skills");
   if (database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='clusters'").get()) return;
   const locations = database.prepare("SELECT * FROM managed_locations").all() as Record<string, unknown>[];
@@ -191,4 +192,14 @@ export function restoreClusters(database: Database.Database) {
   database.exec("DELETE FROM managed_locations");
   for (const [table, rows] of [["managed_locations", locations], ["deletion_operations", deletions]] as const)
     for (const row of rows) database.prepare(`INSERT INTO ${table} (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
+}
+
+export function removeTriggers(database: Database.Database) {
+  database.exec(`DROP TRIGGER IF EXISTS trigger_task_event; DROP TRIGGER IF EXISTS trigger_artifact_event; DROP TRIGGER IF EXISTS trigger_occurrence_task_state;
+    DROP INDEX IF EXISTS trigger_turn_start;
+    DROP TABLE IF EXISTS trigger_dependencies; DROP TABLE IF EXISTS trigger_cancellations;
+    DROP TABLE IF EXISTS skill_automation_setups; DROP TABLE IF EXISTS trigger_occurrences;
+    DROP TABLE IF EXISTS trigger_revisions; DROP TABLE IF EXISTS agent_triggers;
+    DROP TABLE IF EXISTS trigger_events; DROP TABLE IF EXISTS trigger_event_sources;
+    DROP TABLE IF EXISTS trigger_ingests; DROP TABLE IF EXISTS trigger_notices; DROP TABLE IF EXISTS trigger_clock;`);
 }

@@ -1,4 +1,8 @@
 import { McpService, type McpOptions } from "./mcp-service.js";
+import { Triggers, type TriggerOptions } from "./triggers.js";
+import { SkillAutomations } from "./trigger-skills.js";
+import { TriggerUploads } from "./trigger-uploads.js";
+import { registerTriggers } from "./trigger-routes.js";
 import { registerMcp, mcpRedirectUrl } from "./mcp-routes.js";
 import websocket from "@fastify/websocket";
 import { BrowserService, type BrowserOptions } from "./browser-service.js";
@@ -91,6 +95,7 @@ export function createApp(
     agentFiles?: AgentFilesOptions;
     browser?: BrowserOptions;
     mcp?: McpOptions;
+    triggers?: TriggerOptions;
   } = {},
 ) {
   const app = Fastify({
@@ -237,6 +242,16 @@ export function createApp(
     options.uploads,
   );
   execution.incoming = incoming;
+  const triggers = new Triggers(database, execution, connections, skills, artifacts, files,
+    { ...options.triggers, onError: error => app.log.error(error) });
+  const automations = new SkillAutomations(triggers);
+  triggers.automation = automations;
+  skills.onInstalled = (agentId, skillId) => automations.installed(agentId, skillId);
+  tools.triggers = triggers;
+  const triggerUploads = new TriggerUploads(triggers, incoming);
+  registerTriggers(app, triggers, triggerUploads);
+  app.decorate("triggers", triggers);
+  files.triggerUploads = triggerUploads;
   registerMessaging(app,messaging,incoming);
   files.bind(execution);
   registerAgents(app, database, execution, files, incoming);
@@ -245,6 +260,8 @@ export function createApp(
   registerTools(app, database, execution, processes, artifacts);
   registerTimeline(app, database, execution);
   app.addHook("preClose", async () => {
+    await triggers.close();
+    await triggerUploads.close();
     await browsers.close();
     await agentFiles.close();
     await incoming.close();
@@ -254,9 +271,11 @@ export function createApp(
     await files.start();
     await skills.start();
     await artifacts.start();
+    await triggerUploads.start();
     messaging.start();
     tools.ready = true;
     execution.wake();
+    triggers.start();
   });
   app.addHook("onClose", async () => files.close());
   app.addHook("onClose", async () => artifacts.close());

@@ -62,7 +62,8 @@ test("agent creation and Details saves enforce workspace name uniqueness atomica
 
 test("existing duplicates survive reopening; saving Details requires manual resolution without blocking other updates", async t => {
   const directory = await mkdtemp(join(tmpdir(), "ufai-agent-names-"));
-  t.after(() => rm(directory, { recursive: true, force: true }));
+  let closeApp = async () => {};
+  t.after(async () => { await closeApp(); await rm(directory, { recursive: true, force: true }); });
   const path = join(directory, "app.sqlite");
   let db = openDatabase(path);
   const workspace = (db.prepare("SELECT id FROM workspaces").get() as { id: string }).id;
@@ -75,7 +76,7 @@ test("existing duplicates survive reopening; saving Details requires manual reso
   assert.deepEqual(db.prepare("SELECT * FROM agents ORDER BY id").all(), before);
   db.close();
   const app = createApp({ databasePath: path, serveStatic: false, execution: { autoStart: false } });
-  t.after(() => app.close());
+  closeApp = () => app.close();
   const patch = (id: string, payload: object) => app.inject({ method: "PATCH", url: `/api/agents/${id}`, payload });
   for (const payload of [{ name: "Alex" }, { instructions: "Change role" }, { presetId: null }]) {
     const response = await patch("first", payload);
@@ -94,7 +95,8 @@ test("existing duplicates survive reopening; saving Details requires manual reso
 
 test("suggestions check the full workspace, stay read-only, obey access checks, and are revalidated on create", async t => {
   const directory = await mkdtemp(join(tmpdir(), "ufai-name-suggestions-"));
-  t.after(() => rm(directory, { recursive: true, force: true }));
+  let closeApp = async () => {};
+  t.after(async () => { await closeApp(); await rm(directory, { recursive: true, force: true }); });
   const path = join(directory, "app.sqlite");
   const db = openDatabase(path);
   const workspace = (db.prepare("SELECT id FROM workspaces").get() as { id: string }).id;
@@ -107,7 +109,7 @@ test("suggestions check the full workspace, stay read-only, obey access checks, 
   const before = db.prepare("SELECT * FROM agents ORDER BY id").all();
   db.close();
   const app = createApp({ databasePath: path, serveStatic: false, execution: { autoStart: false } });
-  t.after(() => app.close());
+  closeApp = () => app.close();
   const url = `/api/workspaces/${workspace}/agents/name-suggestion`;
   assert.equal((await app.inject(`/api/workspaces/${workspace}/agents`)).json().items.length, 100);
   for (let index = 0; index < 3; index++) {

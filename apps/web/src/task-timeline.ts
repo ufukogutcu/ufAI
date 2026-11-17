@@ -177,6 +177,20 @@ export function createTimelineStore(
 
 type ActionCopy = readonly [string, string];
 export const toolLabels: Record<string, ActionCopy> = {
+  triggers_list: ["Checking triggers", "Checked triggers"],
+  trigger_inspect: ["Inspecting trigger", "Inspected trigger"],
+  trigger_preview: ["Previewing trigger", "Previewed trigger"],
+  trigger_create: ["Creating trigger", "Created trigger"],
+  trigger_update: ["Updating trigger", "Updated trigger"],
+  trigger_set_state: ["Changing trigger state", "Changed trigger state"],
+  trigger_run: ["Queuing trigger occurrence", "Queued trigger occurrence"],
+  trigger_cancel_queued: ["Cancelling queued trigger work", "Cancelled queued trigger work"],
+  trigger_remove: ["Removing trigger", "Removed trigger"],
+  event_sources_list: ["Checking event sources", "Checked event sources"],
+  event_emit: ["Emitting custom event", "Emitted custom event"],
+  skill_automation_inspect: ["Inspecting skill automation", "Inspected skill automation"],
+  skill_automation_review: ["Reviewing skill automation", "Reviewed skill automation"],
+  skill_automation_create: ["Setting up skill trigger", "Set up skill trigger"],
   mcp_server_inspect: ["Inspecting MCP server", "Inspected MCP server"],
   mcp_server_install: ["Installing MCP server", "Installed MCP server configuration"],
   mcp_server_update: ["Updating shared MCP server", "Updated shared MCP server"],

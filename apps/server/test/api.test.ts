@@ -397,12 +397,12 @@ test("newer database versions fail without downgrading schema", async (t) => {
   t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "test.sqlite");
   const db = openDatabase(path);
-  assert.equal(db.pragma("user_version", { simple: true }), 29);
+  assert.equal(db.pragma("user_version", { simple: true }), 31);
   assert.equal(db.pragma("foreign_keys", { simple: true }), 1);
-  db.pragma("user_version = 30");
+  db.pragma("user_version = 32");
   db.close();
   assert.throws(() => openDatabase(path), /newer version/);
   const inspection = new Database(path, { readonly: true });
-  assert.equal(inspection.pragma("user_version", { simple: true }), 30);
+  assert.equal(inspection.pragma("user_version", { simple: true }), 32);
   inspection.close();
 });

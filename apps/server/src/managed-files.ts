@@ -26,6 +26,7 @@ type DeletionRow = DeletionOperation & { relativePath: string };
 const time = () => new Date().toISOString();
 const missing = (e: unknown) => (e as NodeJS.ErrnoException).code === "ENOENT";
 export class ManagedFiles {
+  triggerUploads?: import("./trigger-uploads.js").TriggerUploads;
   root = "";
   ready = false;
   private temporary = false;
@@ -421,6 +422,7 @@ export class ManagedFiles {
       await this.execution?.settleAgents(ids);
       await this.agentBrowser?.settleAgents(ids);
       await this.mcp?.settleAgents(ids);
+      if (op.kind === "workspace") await this.triggerUploads?.settleWorkspace(op.ownerId);
       if (op.kind === "workspace")
         await this.execution?.settleWorkspaceFiles(op.ownerId);
       await this.browser?.settle(op);

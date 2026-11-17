@@ -1,4 +1,5 @@
 import { mcpTools, normalizeMcpDiscoveryArguments } from "./mcp-tools.js";
+import { triggerTools } from "./trigger-tools.js";
 import { McpAuthError } from "./mcp-auth-errors.js";
 import { browserTools } from "./browser-tools.js";
 import { browserAction } from "./browser-validation.js";
@@ -59,6 +60,7 @@ const skillInputSchema = {
 const skillId = {type:"string",maxLength:100,minLength:1};
 const skillRevision = number(1,Number.MAX_SAFE_INTEGER);
 const allTaskTools: ToolSpec[] = [
+  ...triggerTools,
   ...browserTools,
   spec("skills_list", "List shared skills and your enabled state.", {query:{type:"string",maxLength:1024},offset:number(0,1000000),limit:number(1,10)}),
   spec("skill_inspect", "Read metadata, instructions, revision, folder and affected agents.", {skillId},["skillId"]),
@@ -420,6 +422,7 @@ function validate(value: any, schema: any, path: string) {
   }
 }
 export class AgentTools {
+  triggers?: import("./triggers.js").Triggers;
   mcp?: import("./mcp-service.js").McpService;
   mcpRedirectUrl?: () => string;
   browser?: import("./browser-service.js").BrowserService;
@@ -667,6 +670,33 @@ export class AgentTools {
     callId?: string,
   ): Promise<Record<string, unknown>> {
     this.messaging?.assertOwner(owner);
+    if (name.startsWith("trigger") || name.startsWith("event_") || name.startsWith("skill_automation_")) {
+      const t = this.triggers;
+      if (!t) throw new ConnectionError("Triggers are unavailable.",503);
+      const automations = t.automation!;
+      const page = { limit:a.limit ?? 5, offset:a.offset ?? 0 };
+      if (name === "triggers_list") { const p=t.list(owner.workspaceId,owner.agentId,page.limit,page.offset); return {...p,items:p.items.map(({instructions:_instructions,...summary})=>summary)}; }
+      if (name === "event_sources_list") return {...t.sources(owner.workspaceId,page.limit,page.offset)};
+      if (name === "trigger_preview") return t.preview(a.when,a.sample);
+      if (name === "event_emit") return {receipt:t.emit(owner,a.event)};
+      if (name === "skill_automation_inspect") {
+        const info = await automations.inspect(owner.agentId,a.skillId);
+        const snap = (s:any) => s ? {...s,instructions:s.instructions.slice(0,8000),manifest:undefined,files:s.files.slice(a.fileOffset ?? 0,(a.fileOffset ?? 0)+20),fileTotal:s.files.length} : null;
+        return {...info,snapshot:snap(info.snapshot),templates:info.templates.slice(page.offset,page.offset+page.limit).map(t=>({...t,instructions:t.instructions.slice(0,2000)})),templateTotal:info.templates.length,instances:info.instances.slice(0,10).map((r:any)=>({id:r.id,name:JSON.parse(r.input).name})),setups:info.setups.slice(0,1).map(s=>({...s,snapshot:undefined,previousSnapshot:snap(s.previousSnapshot),templates:undefined})),notice:"Read complete instructions and manifests from the skill folder with existing file tools if excerpts are insufficient."};
+      }
+      if (name === "skill_automation_review") { const s=automations.review(a.setupId,a.fingerprint,a.state,owner); return {setup:{id:s.id,state:s.state,fingerprint:s.fingerprint}}; }
+      if (name === "trigger_inspect") { const r=t.assertOwned(a.triggerId,owner); return {trigger:t.get(r.id),occurrences:t.occurrences(owner.workspaceId,r.id,page.limit,page.offset)}; }
+      automations.assertMutation(owner);
+      if (name === "skill_automation_create") return {trigger:await automations.fromTemplate(owner.agentId,a.skillId,a.templateId,a.overrides,owner,a.fingerprint)};
+      if (name === "trigger_create") return {trigger:await t.save(owner.agentId,a.trigger)};
+      const r = t.assertOwned(a.triggerId,owner);
+      if (name === "trigger_update") return {trigger:await t.save(owner.agentId,a.trigger,r.id,a.expectedRevision)};
+      if (name === "trigger_set_state") return {trigger:await t.toggle(r.id,a.expectedRevision,{...(a.enabled===undefined?{}:{enabled:a.enabled}),...(a.paused===undefined?{}:{paused:a.paused})})};
+      if (name === "trigger_run") return t.run(r.id,`tool_${owner.turnId}_${callId}`,a.event);
+      if (name === "trigger_cancel_queued") return t.cancelQueued(r.id,a.confirmed);
+      if (name === "trigger_remove") return t.remove(r.id,a.expectedRevision,a.confirmed);
+      throw new ConnectionError("Unknown trigger tool.",400);
+    }
     if (name.startsWith("browser_")) {
       const browser = this.browser;
       if (!browser) throw new ConnectionError("Browser is unavailable.", 503);
@@ -699,21 +729,22 @@ export class AgentTools {
         return {total:page.total,items:page.items.map(({id,name,description,builtIn,revision,enabled,error})=>({id,name,description,builtIn,revision,enabled,error}))};
       }
       const saved = (detail:import("./skill-types.js").SkillDetail) => ({id:detail.id,name:detail.name,revision:detail.revision,enabled:detail.enabled,builtIn:detail.builtIn,path:detail.path,source:detail.source});
+      const installed = (detail:import("./skill-types.js").SkillDetail) => ({...saved(detail),automation:this.triggers?.automation?.claim(owner.agentId,detail.id,owner.taskId)});
       if (name === "skill_inspect") {
         await skills.refresh(a.skillId);
         const detail = await skills.detail(a.skillId,owner.agentId);
         return {...detail,files:detail.files.slice(0,20),fileCount:detail.files.length,enabledAgents:detail.enabledAgents.slice(0,5),enabledAgentCount:detail.enabledAgents.length};
       }
       if (name === "skill_activate") return skills.activate(owner.agentId,owner.taskId,a.skillId);
-      if (name === "skill_create") return saved(await skills.create(owner.agentId,a.skill,signal));
+      if (name === "skill_create") return installed(await skills.create(owner.agentId,a.skill,signal));
       if (name === "skill_set_enabled") return {...skills.setEnabled(owner.agentId,a.skillId,a.enabled)};
       if (name === "skill_update") { await skills.refresh(a.skillId); return saved(await skills.update(a.skillId,a.expectedRevision,a.skill,owner.agentId)); }
       if (name === "skill_remove") return skills.remove(a.skillId,a.expectedRevision,a.confirmed);
-      if (name === "skill_install_commit") return saved(await skills.commit(owner.agentId,a.installationId,a.candidateKey,a.replaceId,a.expectedRevision,signal));
+      if (name === "skill_install_commit") return installed(await skills.commit(owner.agentId,a.installationId,a.candidateKey,a.replaceId,a.expectedRevision,signal));
       if (name === "skill_install") {
         const preview=await skills.prepare(owner.agentId,{url:a.url,path:a.path},signal);
         const candidate=preview.candidates[0];
-        if(preview.candidates.length===1 && candidate && (!candidate.existingId || candidate.identical)) return {...saved(await skills.commit(owner.agentId,preview.id,candidate.key,undefined,undefined,signal)),warnings:candidate.warnings};
+        if(preview.candidates.length===1 && candidate && (!candidate.existingId || candidate.identical)) return {...installed(await skills.commit(owner.agentId,preview.id,candidate.key,undefined,undefined,signal)),warnings:candidate.warnings};
         return {...preview,candidates:preview.candidates.map(candidate=>({...candidate,description:candidate.description.slice(0,128)}))};
       }
     }

@@ -84,6 +84,10 @@ export function parseSkill(text: string): SkillInput {
     description: (meta!.description as string).trim(),
     instructions: match![2]!.trim(),
   };
+  const known = ["name", "description", "license", "compatibility", "allowed-tools", "metadata"];
+  const foreign = Object.fromEntries(Object.entries(meta!).filter(([k]) => !known.includes(k)));
+  if (Object.keys(foreign).some(k => ["__proto__", "constructor", "prototype"].includes(k))) badSkill("Invalid frontmatter key.");
+  if (Object.keys(foreign).length) result.frontmatter = foreign;
   for (const key of ["license", "compatibility", "allowed-tools"] as const) {
     if (meta![key] !== undefined) {
       if (
@@ -95,6 +99,9 @@ export function parseSkill(text: string): SkillInput {
     }
   }
   if (meta!.metadata !== undefined) {
+    if (meta!.metadata && typeof meta!.metadata === "object" && !Array.isArray(meta!.metadata)) {
+      meta!.metadata = Object.fromEntries(Object.entries(meta!.metadata).map(([k,v]) => [k, typeof v === "object" && v !== null ? JSON.stringify(v) : v]));
+    }
     if (
       !meta!.metadata ||
       typeof meta!.metadata !== "object" ||
@@ -129,12 +136,15 @@ export function skillDocument(input: SkillInput) {
     "compatibility",
     "metadata",
     "allowed-tools",
+    "frontmatter",
   ];
   if (Object.keys(meta).some((k) => !allowed.includes(k)))
     badSkill("Unknown skill metadata field.");
   for (const key of ["license", "compatibility", "allowed-tools"] as const)
     if (meta[key] === "") delete meta[key];
-  const text = `---\n${stringify(meta)}---\n\n${instructions.trim()}\n`;
+  const { frontmatter, ...supported } = meta;
+  if (frontmatter && (typeof frontmatter !== "object" || Array.isArray(frontmatter) || Object.keys(frontmatter).some(k => ["__proto__", "constructor", "prototype"].includes(k)))) badSkill("Invalid preserved frontmatter.");
+  const text = `---\n${stringify({ ...frontmatter, ...supported })}---\n\n${instructions.trim()}\n`;
   parseSkill(text);
   return text;
 }
@@ -178,8 +188,9 @@ export async function readSkillFile(path: string, maximum = skillLimits.file) {
 }
 export async function scanPackage(root: string, signal?: AbortSignal) {
   await managedDirectory(root);
-  const files: { path: string; size: number }[] = [];
+  const files: { path: string; size: number; hash: string }[] = [];
   const hash = createHash("sha256");
+  let document = "", triggerManifest: string | null = null;
   let bytes = 0,
     count = 0;
   async function walk(relative: string) {
@@ -204,20 +215,20 @@ export async function scanPackage(root: string, signal?: AbortSignal) {
       if (bytes > skillLimits.expanded)
         badSkill("Skill package exceeds 64 MiB.", 413);
       const contents = await readSkillFile(full);
+      if (path === "SKILL.md") document = contents.toString("utf8");
+      if (path === "ufai.triggers.json") triggerManifest = contents.length <= 65536 ? contents.toString("utf8") : '{"invalid":"Trigger manifest exceeds 64 KiB."}';
       hash
         .update(path)
         .update("\0")
         .update(contents)
         .update("\0")
         .update(String(Number(Boolean(stat.mode & 0o111))));
-      files.push({ path, size: contents.length });
+      files.push({ path, size: contents.length, hash: createHash("sha256").update(contents).update(String(Number(Boolean(stat.mode & 0o111)))).digest("hex") });
     }
   }
   await walk("");
-  const input = parseSkill(
-    (await readSkillFile(join(root, "SKILL.md"))).toString("utf8"),
-  );
-  return { input, files, fingerprint: hash.digest("hex") };
+  const input = parseSkill(document);
+  return { input, files, fingerprint: hash.digest("hex"), triggerManifest };
 }
 export async function copyPackage(
   source: string,

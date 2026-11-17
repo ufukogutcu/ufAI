@@ -1,4 +1,5 @@
 import { SkillsContext, createSkillsStore } from "../skills-store";
+import { TriggerContext, createTriggerStore } from "../trigger-store";
 import { CharacterMotionProvider } from "./CharacterMotion";
 import { useEffect, useState, type ReactNode } from "react";
 import { AgentContext, createAgentStore } from "../agent-store";
@@ -9,6 +10,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   const settings = useSettingsStore();
   const [agents] = useState(createAgentStore);
   const [skills] = useState(createSkillsStore);
+  const [triggers] = useState(createTriggerStore);
   const [store] = useState(() => createDashboardStore(settings));
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -33,7 +35,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   );
   return (
     <DashboardContext.Provider value={store}>
-      <AgentContext.Provider value={agents}><SkillsContext.Provider value={skills}><CharacterMotionProvider>{children}</CharacterMotionProvider></SkillsContext.Provider></AgentContext.Provider>
+      <AgentContext.Provider value={agents}><SkillsContext.Provider value={skills}><TriggerContext.Provider value={triggers}><CharacterMotionProvider>{children}</CharacterMotionProvider></TriggerContext.Provider></SkillsContext.Provider></AgentContext.Provider>
     </DashboardContext.Provider>
   );
 }

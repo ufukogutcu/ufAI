@@ -28,6 +28,8 @@ function validateAnchors(input: Record<string, unknown>, required = false): Part
   return result;
 }
 export interface MessageEnvelope {
+  trigger?: { id: string; name: string; occurrenceId: string; scheduledAt: string; dispatchedAt: string; lineage: string[] };
+  skillAutomationId?: string;
   source?: "user" | "agent" | "system";
   senderId?: string;
   requestId?: string;
@@ -565,6 +567,7 @@ export class MessagingService {
         })),
         JSON.stringify(ids),
         {
+          trigger: JSON.parse((this.db.prepare('SELECT envelope FROM agent_turns WHERE id=?').get(owner.turnId) as {envelope:string}).envelope).trigger,
           source: "agent",
           senderId: owner.agentId,
           requestId: id,

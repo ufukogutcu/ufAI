@@ -1,3 +1,4 @@
+import { withTaskTrigger } from "./task-trigger.js";
 import { generateAppearance, validateAppearance, workspaceAppearanceCounts } from "./agent-appearance.js";
 import { assertAgentNameAvailable, generateAgentName, workspaceAgentNameKeys } from "./agent-names.js";
 import { randomUUID } from "node:crypto";
@@ -234,7 +235,7 @@ export function registerAgents(
         .prepare(
           "SELECT * FROM agent_tasks WHERE agentId=? AND kind='task' ORDER BY updatedAt DESC,id LIMIT ? OFFSET ?",
         )
-        .all(req.params.id, limit, offset),
+        .all(req.params.id, limit, offset).map(row => withTaskTrigger(db, row as import("./contracts.js").AgentTask)),
       total: (
         db
           .prepare("SELECT count(*) AS n FROM agent_tasks WHERE agentId=? AND kind='task'")

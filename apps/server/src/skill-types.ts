@@ -5,6 +5,8 @@ export interface SkillMetadata {
   license?: string;
   compatibility?: string;
   metadata?: Record<string, string>;
+  /** Preserved foreign frontmatter; never interpreted as permissions. */
+  frontmatter?: Record<string, unknown>;
   "allowed-tools"?: string;
 }
 export interface SkillInput extends SkillMetadata {

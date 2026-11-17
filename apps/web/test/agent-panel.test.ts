@@ -1,3 +1,4 @@
+import { TriggerContext, createTriggerStore } from "../src/trigger-store";
 import { SkillsContext, createSkillsStore } from "../src/skills-store";
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
@@ -48,7 +49,7 @@ async function setup(t: TestContext) {
           h(UnsavedContext.Provider, { value: { setDirty() {}, attempt(action) {
             if (allowed) action();
             return allowed;
-          } } }, h(SkillsContext.Provider, { value: skills }, h(Probe))))))));
+          } } }, h(SkillsContext.Provider, { value: skills }, h(TriggerContext.Provider, {value:createTriggerStore()}, h(Probe)))))))));
   return { ...p, store, skills,
     tab: (name: string) => [...p.document.querySelectorAll<HTMLButtonElement>("nav[aria-label='Agent sections'] button")].find(b => b.textContent === name)!,
     active: () => p.document.querySelector("nav [aria-current]")?.textContent,
@@ -60,7 +61,7 @@ async function setup(t: TestContext) {
 test("panels default to Chat, use the requested order, and retain independent agent tabs after remount and reload", async t => {
   const p = await setup(t);
   assert.deepEqual([...p.document.querySelectorAll("nav button")].map(b => b.textContent),
-    ["Details", "Chat", "Skills", "MCP", "Tasks", "Memory", "Files", "Browser"]);
+    ["Details", "Chat", "Skills", "MCP", "Triggers", "Tasks", "Memory", "Files", "Browser"]);
   assert.equal(p.active(), "Chat");
   await p.click(p.tab("Memory"));
   await p.click(p.document.querySelector("button[aria-label='Close agent panel']")!);

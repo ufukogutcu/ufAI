@@ -257,10 +257,11 @@ export interface Agent {
   runningTaskCount: number;
 }
 export interface AgentTask {
+  trigger?: { id: string; occurrenceId: string; name: string; scheduledAt: string; dispatchedAt: string | null };
   pendingReason?: "message" | "check_in" | null;
   nextCheckInAt?: string | null;
   kind: "task" | "chat";
-  source?: "user" | "agent";
+  source?: "user" | "agent" | "system";
   rootWorkflowId?: string;
   parentRequestId?: string | null;
   id: string;
@@ -429,7 +430,7 @@ export interface ProcessOutput {
   state: OwnedProcess["state"];
 }
 export interface ArtifactVersion {
-  origin?: "published" | "user_upload" | "inspection";
+  origin?: "published" | "user_upload" | "event_upload" | "inspection";
   id: string;
   artifactId: string;
   workspaceId: string;

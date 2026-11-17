@@ -1,3 +1,4 @@
+import { useTriggerStore } from "../trigger-store";
 import { AgentBrowser } from "./AgentBrowser";
 import { useStore } from "zustand";
 import { useSkillsStore } from "../skills-store";
@@ -46,6 +47,7 @@ import type {
 import { FolderLocation } from "./FolderLocation";
 import { AgentFiles } from "./AgentFiles";
 import { agentPanelTabs, type AgentPanelTab } from "../agent-panel-tabs";
+import { TriggersView } from "./Triggers";
 import { Field } from "./FormField";
 import { Dialog } from "./Dialog";
 import styles from "./AgentPanel.module.scss";
@@ -470,6 +472,7 @@ export function AgentPanel({
     guard = useNavigationGuard();
   const [editingCharacter, setEditingCharacter] = useState(false);
   const skillsStore = useSkillsStore();
+  const triggerStore = useTriggerStore();
   const eventVersion = useAgents(s => s.eventVersion);
   const browserEnabled = useStore(skillsStore, s => s.enabled[agent.id]?.["builtin-browser"]);
   const refreshBrowserSkill = useCallback(() => {
@@ -671,6 +674,7 @@ export function AgentPanel({
                 All tasks
               </button>
               <h3>{current?.title ?? "Task"}</h3>
+              {current?.trigger && <div className={styles.help}><button className="textButton" onClick={() => guard(() => {triggerStore.setState({requestedId:current.trigger!.id});setTab("Triggers");})}>Trigger: {current.trigger.name}</button><p>Originally triggered: {new Date(current.trigger.scheduledAt).toLocaleString()} · Occurrence {current.trigger.occurrenceId}</p></div>}
               <details>
                 <summary>Working folder</summary>
                 <FolderLocation
@@ -745,7 +749,7 @@ export function AgentPanel({
                 className={styles.taskLink}
                 onClick={() => setTaskId(t.id)}
               >
-                <span>{t.title}</span>
+                <span>{t.title}{t.trigger && <small> · Trigger: {t.trigger.name}</small>}</span>
                 <small>{t.status.replaceAll("_", " ")}</small>
               </button>
             ))}
@@ -770,6 +774,7 @@ export function AgentPanel({
       {tab === "Browser" && browserEnabled && <AgentBrowser key={agent.id} agentId={agent.id} onDisabled={refreshBrowserSkill} />}
       {tab === "Skills" && <AgentSkills key={agent.id} agentId={agent.id} />}
       {tab === "MCP" && <AgentMcp key={agent.id} agentId={agent.id} />}
+      {tab === "Triggers" && <TriggersView key={agent.id} agentId={agent.id} workspaceId={agent.workspaceId} />}
       {tab === "Files" && <AgentFiles key={agent.id} agentId={agent.id} />}
       {tab === "Memory" && (
         <div className={styles.scroll}>
