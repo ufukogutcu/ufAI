@@ -11,6 +11,8 @@ import {
 } from "./api";
 import type {
   WorkspaceInput,
+  SettingsResponse,
+  Page,
   WorkspaceViewport as Viewport,
 } from "../../server/src/contracts";
 import type { SettingsStore } from "./settings-store";
@@ -42,6 +44,7 @@ interface DashboardState {
   loadViewport: (id: string) => Promise<void>;
   saveViewport: (id: string, viewport: Viewport) => Promise<void>;
   createWorkspace: (name: string, description?: string) => Promise<void>;
+  openDuplicatedWorkspace: (id: string) => Promise<void>;
   updateWorkspace: (id: string, input: WorkspaceInput) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
   savePreset: (id: string | null, input: PresetInput) => Promise<ModelPreset>;
@@ -305,6 +308,17 @@ export function createDashboardStore(settings: SettingsStore) {
             ? state.workspaceOffset + 1
             : state.workspaceOffset,
       }));
+    },
+    openDuplicatedWorkspace: async (id) => {
+      const { total } = await request<Page<Workspace>>("/workspaces?limit=1&offset=0");
+      const response = await settings.getState().mutate(() => request<SettingsResponse>("/settings", "PATCH", { activeWorkspaceId: id }));
+      const workspace = response.activeWorkspace;
+      if (workspace) set(state => {
+        const added = !state.workspaces.some(item => item.id === workspace.id);
+        return { workspaces: merge(state.workspaces, [workspace]),
+          workspaceTotal: total,
+          workspaceOffset: added && state.workspaceOffset === state.workspaceTotal && total === state.workspaceTotal + 1 ? state.workspaceOffset + 1 : state.workspaceOffset };
+      });
     },
     updateWorkspace: async (id, input) => {
       const workspace = await settings

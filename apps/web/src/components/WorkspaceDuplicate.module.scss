@@ -1,0 +1,32 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.options {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 16px;
+  legend { font-weight: 600; margin-bottom: 8px; }
+}
+.option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  cursor: pointer;
+  input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    padding: 0;
+    flex-shrink: 0;
+    accent-color: var(--accent);
+  }
+}
+.hint { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0; }
+@media (max-width: 480px) { .options { grid-template-columns: 1fr; } }
+@media (any-pointer: coarse) { .option { min-height: 44px; } }

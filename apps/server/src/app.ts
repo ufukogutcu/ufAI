@@ -1,4 +1,5 @@
 import { registerInboxNotifications } from "./inbox-notifications.js";
+import { WorkspaceDuplications, registerWorkspaceDuplications } from "./workspace-duplications.js";
 import { Vault } from "./vault.js";
 import { registerVault } from "./vault-routes.js";
 import { McpService, type McpOptions } from "./mcp-service.js";
@@ -260,6 +261,8 @@ export function createApp(
   registerTriggers(app, triggers, triggerUploads);
   app.decorate("triggers", triggers);
   files.triggerUploads = triggerUploads;
+  const duplications = new WorkspaceDuplications(database, files, triggers);
+  registerWorkspaceDuplications(app, duplications);
   registerMessaging(app,messaging,incoming);
   files.bind(execution);
   registerAgents(app, database, execution, files, incoming);
@@ -268,6 +271,7 @@ export function createApp(
   registerTools(app, database, execution, processes, artifacts);
   registerTimeline(app, database, execution);
   app.addHook("preClose", async () => {
+    await duplications.close();
     await triggers.close();
     await triggerUploads.close();
     await browsers.close();
@@ -277,6 +281,7 @@ export function createApp(
   });
   app.addHook("onReady", async () => {
     await files.start();
+    await duplications.start();
     await skills.start();
     await artifacts.start();
     await triggerUploads.start();

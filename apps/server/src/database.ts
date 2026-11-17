@@ -34,7 +34,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 34)
+    if (version > 35)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -357,6 +357,16 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
       })();
 
     if (version < 34) migrateUserInputs(database);
+
+    if (version < 35) database.transaction(() => {
+      database.exec(`CREATE TABLE IF NOT EXISTS workspace_duplications (
+        id TEXT PRIMARY KEY, sourceWorkspaceId TEXT NOT NULL, destinationId TEXT NOT NULL UNIQUE,
+        input TEXT NOT NULL, snapshot TEXT, state TEXT NOT NULL, phase TEXT NOT NULL,
+        error TEXT, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS workspace_duplications_state ON workspace_duplications(state,updatedAt,id);`);
+      database.pragma("user_version = 35");
+    })();
 
   } catch (error) {
     database.close();

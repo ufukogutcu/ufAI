@@ -315,3 +315,34 @@ test("default reads coalesce, reject stale responses after saves, retain failure
   assert.equal(await retry, null);
   assert.equal(store.getState().defaultPreset, null);
 });
+
+test("opening a completed duplicate persists selection and merges a paginated tab exactly once", async t => {
+  const { app, settings, initial } = await connectedSetup(t);
+  const store = createDashboardStore(settings);
+  await store.getState().loadWorkspaces();
+  const source = initial.settings.activeWorkspaceId!;
+  const response = await app.inject({ method: "POST", url: `/api/workspaces/${source}/duplicate`, payload: {
+    requestId: "store-duplicate", name: "Copied workspace", description: "",
+    includeConnections: false, includeSkills: false, includeMcp: false, includeMemories: false,
+    includeWorkspaceFiles: false, includeAgentFiles: false, includeTriggers: false,
+  } });
+  assert.equal(response.statusCode, 202, response.body);
+  let copiedId: string | null = null;
+  for (let n = 0; n < 100 && !copiedId; n++) {
+    const operation = (await app.inject("/api/workspace-duplications/store-duplicate")).json();
+    if (operation.state === "failed") assert.fail(operation.error);
+    copiedId = operation.workspaceId;
+    if (!copiedId) await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.ok(copiedId);
+  await store.getState().openDuplicatedWorkspace(copiedId);
+  assert.equal(settings.getState().snapshot.settings.activeWorkspaceId, copiedId);
+  assert.equal(store.getState().workspaceTotal, 2); assert.equal(store.getState().workspaceOffset, 2);
+  await store.getState().openDuplicatedWorkspace(copiedId);
+  assert.equal(store.getState().workspaceTotal, 2);
+  assert.equal(store.getState().workspaces.filter(item => item.id === copiedId).length, 1);
+  store.setState(state => ({ workspaces: state.workspaces.filter(item => item.id !== copiedId), workspaceOffset: 1 }));
+  await store.getState().openDuplicatedWorkspace(copiedId);
+  assert.equal(store.getState().workspaceTotal, 2);
+  assert.equal(store.getState().workspaceOffset, 1);
+});

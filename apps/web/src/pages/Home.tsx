@@ -5,8 +5,10 @@ import { FolderLocation } from "../components/FolderLocation";
 import { DeletionProgress } from "../components/DeletionProgress";
 import { useNavigationGuard } from "../navigation-guard";
 import { useSettings } from "../settings-store";
-import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import {
+  Copy,
+  Ellipsis,
   ArrowRight,
   ChevronDown,
   Pencil,
@@ -16,7 +18,7 @@ import {
   FolderOpen,
 } from "lucide-react";
 import { useDashboard } from "../store";
-import { errorMessage, RequestError } from "../api";
+import { errorMessage, request, RequestError } from "../api";
 import { Dialog } from "../components/Dialog";
 import { useAgentStore, useAgents } from "../agent-store";
 import { Flowboard } from "../components/Flowboard";
@@ -27,6 +29,12 @@ import { Appearance } from "../components/Appearance";
 import { AddAgentButton } from "../components/AddAgentButton";
 import { useNotice } from "../components/FeedbackProvider";
 import { Feedback, BusyButton, LoadingState } from "../components/Feedback";
+
+import { ContextMenu, type ContextMenuAnchor } from "../components/ContextMenu";
+import { WorkspaceTab } from "../components/WorkspaceTab";
+import { WorkspaceDuplicate } from "../components/WorkspaceDuplicate";
+import { refreshOnFocus } from "../focus-refresh";
+import type { Workspace, WorkspaceDuplication } from "../../../server/src/contracts";
 
 type WorkspaceAction =
   | { kind: "create" }
@@ -76,7 +84,7 @@ function WorkspaceDialog({
     }
   }
   return (
-    <Dialog title={title} onClose={onClose} busy={busy}>
+    <Dialog title={title} onClose={onClose} busy={busy} initialFocusSelector={action.kind === "delete" ? ".dialogActions button" : "input"}>
       <form onSubmit={handleSubmit} className={styles.workspaceForm}>
         {action.kind === "delete" ? (
           <p>
@@ -196,6 +204,40 @@ export default function Home() {
   const load = useDashboard((state) => state.loadWorkspaces);
   const updateSettings = useSettings((state) => state.update);
   const [action, setAction] = useState<WorkspaceAction | null>(null);
+  const [menu, setMenu] = useState<{ workspaceId: string; anchor: ContextMenuAnchor } | null>(null);
+  const [duplicate, setDuplicate] = useState<{ source?: Workspace; operation?: WorkspaceDuplication } | null>(null);
+  const [duplicateError, setDuplicateError] = useState("");
+  const [recoverable, setRecoverable] = useState<WorkspaceDuplication | null>(null);
+  const [discoveryError, setDiscoveryError] = useState("");
+  const [discoveryAttempt, setDiscoveryAttempt] = useState(0);
+  const openDuplicate = useDashboard(state => state.openDuplicatedWorkspace);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const openMenu = useCallback((workspace: Workspace, anchor: ContextMenuAnchor) => setMenu({ workspaceId: workspace.id, anchor }), []);
+  const handleDuplicateCompleted = useCallback((id: string) => {
+    guard(() => {
+      void openDuplicate(id).then(() => { setDuplicate(null); setRecoverable(null); setDuplicateError(""); })
+        .catch(failure => setDuplicateError(errorMessage(failure)));
+    });
+  }, [guard, openDuplicate]);
+  useEffect(() => {
+    const controller = new AbortController();
+    async function discover() {
+      try {
+        const result = await request<{ items: WorkspaceDuplication[] }>("/workspace-duplications", "GET", undefined, controller.signal);
+        if (!controller.signal.aborted) {
+          setDiscoveryError("");
+          setRecoverable(result.items.find(item => item.state === "pending" || item.state === "running" || item.state === "failed") ?? null);
+        }
+      } catch (failure) { if (!controller.signal.aborted) setDiscoveryError(errorMessage(failure)); }
+    }
+    void discover();
+    const unlisten = refreshOnFocus(discover);
+    return () => { controller.abort(); unlisten(); };
+  }, [discoveryAttempt]);
+  useNotice(discoveryError ? { id: "workspace-duplication-status", title: "Duplication progress could not load", message: discoveryError,
+    actionLabel: "Reload duplication progress", action: () => setDiscoveryAttempt(attempt => attempt + 1) } : null, "workspace-duplication-status");
+  useNotice(recoverable && !duplicate ? { id: "workspace-duplication", title: recoverable.state === "failed" ? "Workspace duplication failed" : "Workspace duplication in progress",
+    message: recoverable.error ?? recoverable.name, actionLabel: "Review duplication", action: () => guard(() => setDuplicate({ operation: recoverable })) } : null, "workspace-duplication");
   const home = useRef<HTMLElement>(null);
   const chrome = useRef<HTMLDivElement>(null);
   const tabList = useRef<HTMLDivElement>(null);
@@ -208,6 +250,7 @@ export default function Home() {
     active && !workspaces.some((workspace) => workspace.id === active.id)
       ? [...workspaces, active]
       : workspaces;
+  const menuWorkspace = menu ? tabs.find(workspace => workspace.id === menu.workspaceId) : undefined;
   // Measure changed content before paint; observe later reflows without React state.
   useLayoutEffect(() => {
     const container = home.current;
@@ -273,21 +316,21 @@ export default function Home() {
   function handleClose() {
     setAction(null);
   }
-  function handleEdit() {
-    if (active)
+  function handleEdit(workspace = active) {
+    if (workspace)
       guard(() =>
         setAction({
           kind: "edit",
-          id: active.id,
-          name: active.name,
-          description: active.description,
+          id: workspace.id,
+          name: workspace.name,
+          description: workspace.description,
         }),
       );
   }
-  function handleDelete() {
-    if (active)
+  function handleDelete(workspace = active) {
+    if (workspace)
       guard(() =>
-        setAction({ kind: "delete", id: active.id, name: active.name }),
+        setAction({ kind: "delete", id: workspace.id, name: workspace.name }),
       );
   }
   function handleRetry() {
@@ -310,36 +353,8 @@ export default function Home() {
             role="tablist"
             aria-label="Workspaces"
           >
-            {tabs.map((workspace, index) => (
-              <button
-                key={workspace.id}
-                role="tab"
-                id={`tab-${workspace.id}`}
-                aria-selected={workspace.id === activeId}
-                aria-controls="workspace-panel"
-                tabIndex={workspace.id === activeId ? 0 : -1}
-                className={`${styles.tab} ${workspace.id === activeId ? styles.active : ""}`}
-                onClick={() => select(workspace.id)}
-                onKeyDown={(event) => {
-                  let next: number | undefined;
-                  if (event.key === "ArrowRight")
-                    next = (index + 1) % tabs.length;
-                  if (event.key === "ArrowLeft")
-                    next = (index - 1 + tabs.length) % tabs.length;
-                  if (event.key === "Home") next = 0;
-                  if (event.key === "End") next = tabs.length - 1;
-                  const target = next === undefined ? undefined : tabs[next];
-                  if (target) {
-                    event.preventDefault();
-                    select(target.id);
-                    document.getElementById(`tab-${target.id}`)?.focus();
-                  }
-                }}
-              >
-                <Workflow size={14} />
-                <span>{workspace.name}</span>
-              </button>
-            ))}
+            {tabs.map(workspace => <WorkspaceTab key={workspace.id} workspace={workspace} activeId={activeId}
+              tabs={tabs} onSelect={select} onMenu={openMenu} menuOpen={menu?.workspaceId === workspace.id} />)}
           </div>
           {offset < total && (
             <Tooltip content="Load more workspaces">
@@ -392,7 +407,7 @@ export default function Home() {
                     <button
                       className="iconButton"
                       aria-label="Edit workspace"
-                      onClick={handleEdit}
+                      onClick={() => handleEdit()}
                     >
                       <Pencil size={14} />
                     </button>
@@ -401,10 +416,18 @@ export default function Home() {
                     <button
                       className="iconButton"
                       aria-label="Delete workspace"
-                      onClick={handleDelete}
+                      onClick={() => handleDelete()}
                     >
                       <Trash2 size={14} />
                     </button>
+                  </Tooltip>
+                  <Tooltip content="Workspace actions">
+                    <button type="button" className="iconButton" aria-label="Workspace actions" aria-haspopup="menu"
+                      aria-expanded={menu?.workspaceId === active.id || undefined}
+                      onClick={event => {
+                        const trigger = event.currentTarget, rect = trigger.getBoundingClientRect();
+                        openMenu(active, { x: rect.left, y: rect.bottom, returnFocus: trigger });
+                      }}><Ellipsis size={14} /></button>
                   </Tooltip>
                 </div>
               </div>
@@ -463,7 +486,19 @@ export default function Home() {
           onClose={() => setPublishedIn(null)}
         />
       )}
+      {menu && menuWorkspace && <ContextMenu anchor={menu.anchor}
+        label={`Actions for ${menuWorkspace.name}`} onClose={closeMenu}
+        items={[
+          { id: "edit", label: "Edit…", icon: <Pencil size={16} />, onSelect: () => handleEdit(menuWorkspace) },
+          { id: "duplicate", label: "Duplicate…", icon: <Copy size={16} />, onSelect: () => guard(() => {
+            setDuplicateError(""); setDuplicate({ source: menuWorkspace });
+          }) },
+          { id: "separator", separator: true },
+          { id: "delete", label: "Delete…", icon: <Trash2 size={16} />, destructive: true, onSelect: () => handleDelete(menuWorkspace) },
+        ]} />}
       {action && <WorkspaceDialog action={action} onClose={handleClose} />}
+      {duplicate && <WorkspaceDuplicate source={duplicate.source} initialOperation={duplicate.operation} openError={duplicateError}
+        onClose={() => { setDuplicate(null); setDuplicateError(""); setDiscoveryAttempt(attempt => attempt + 1); }} onCompleted={handleDuplicateCompleted} />}
     </section>
   );
 }

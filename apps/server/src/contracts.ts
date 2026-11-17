@@ -30,6 +30,29 @@ export interface Workspace extends WorkspaceInput {
   updatedAt: string;
 }
 
+export interface WorkspaceDuplicateInput extends WorkspaceInput {
+  requestId: string;
+  includeConnections: boolean;
+  includeSkills: boolean;
+  includeMcp: boolean;
+  includeMemories: boolean;
+  includeWorkspaceFiles: boolean;
+  includeAgentFiles: boolean;
+  includeTriggers: boolean;
+}
+
+export interface WorkspaceDuplication {
+  id: string;
+  sourceWorkspaceId: string;
+  name: string;
+  state: "pending" | "running" | "completed" | "failed";
+  phase: "pending" | "copying" | "publishing" | "completed" | "failed";
+  error: string | null;
+  workspaceId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PresetInput {
   name: string;
   isDefault?: boolean;
