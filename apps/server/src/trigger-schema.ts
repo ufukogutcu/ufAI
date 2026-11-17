@@ -1,5 +1,21 @@
 import type Database from "better-sqlite3";
 
+const lineage = `(SELECT json_extract(envelope,'$.trigger.lineage') FROM agent_turns WHERE taskId=NEW.id ORDER BY rowid DESC LIMIT 1)`;
+const turn = `(SELECT id||':'||attempt FROM agent_turns WHERE taskId=NEW.id ORDER BY rowid DESC LIMIT 1)`;
+const taskLifecycle = `    CREATE TRIGGER trigger_task_event AFTER UPDATE OF status ON agent_tasks
+    WHEN NEW.kind='task' AND NEW.status IN ('completed','failed') AND NEW.status!=OLD.status
+    BEGIN
+      UPDATE trigger_clock SET value=value+1 WHERE id=1;
+      INSERT OR IGNORE INTO trigger_events(sequence,id,workspaceId,sourceKey,eventId,eventType,occurredAt,receivedAt,data,fingerprint,lineage)
+      SELECT (SELECT value FROM trigger_clock), 'task:'||NEW.id||':'||coalesce(${turn},'none')||':'||NEW.status,
+        a.workspaceId, 'builtin', 'task:'||NEW.id||':'||coalesce(${turn},'none')||':'||NEW.status,
+        'ufai.task.'||NEW.status, NEW.updatedAt, NEW.updatedAt,
+        json_object('taskId',NEW.id,'agentId',NEW.agentId,'title',NEW.title,'status',NEW.status,'turnId',(SELECT id FROM agent_turns WHERE taskId=NEW.id ORDER BY rowid DESC LIMIT 1),'summary',substr(NEW.summary,1,2000),'error',substr(NEW.error,1,2000)),
+        NEW.id||':'||coalesce(${turn},'none')||':'||NEW.status,coalesce(${lineage},'[]')
+      FROM agents a WHERE a.id=NEW.agentId;
+    END;
+`;
+
 export function migrateTriggers(db: Database.Database) {
   db.exec(`
     CREATE INDEX trigger_turn_start ON agent_turns(taskId) WHERE snapshot IS NOT NULL;
@@ -76,26 +92,13 @@ export function migrateTriggers(db: Database.Database) {
     );
   `);
   // Persist lifecycle events in the same transaction as the state transition.
-  const lineage = `(SELECT json_extract(envelope,'$.trigger.lineage') FROM agent_turns WHERE taskId=NEW.id ORDER BY rowid DESC LIMIT 1)`;
-  const turn = `(SELECT id||':'||attempt FROM agent_turns WHERE taskId=NEW.id ORDER BY rowid DESC LIMIT 1)`;
   db.exec(`
     CREATE TRIGGER trigger_occurrence_task_state AFTER UPDATE OF status ON agent_tasks
     WHEN NEW.status!=OLD.status BEGIN
       UPDATE trigger_occurrences SET state=CASE WHEN NEW.status IN ('completed','failed','cancelled') THEN NEW.status ELSE 'submitted' END,
         error=NEW.error WHERE taskId=NEW.id;
     END;
-    CREATE TRIGGER trigger_task_event AFTER UPDATE OF status ON agent_tasks
-    WHEN NEW.kind='task' AND NEW.status IN ('completed','failed') AND NEW.status!=OLD.status
-    BEGIN
-      UPDATE trigger_clock SET value=value+1 WHERE id=1;
-      INSERT OR IGNORE INTO trigger_events(sequence,id,workspaceId,sourceKey,eventId,eventType,occurredAt,receivedAt,data,fingerprint,lineage)
-      SELECT (SELECT value FROM trigger_clock), 'task:'||NEW.id||':'||coalesce(${turn},'none')||':'||NEW.status,
-        a.workspaceId, 'builtin', 'task:'||NEW.id||':'||coalesce(${turn},'none')||':'||NEW.status,
-        'ufai.task.'||NEW.status, NEW.updatedAt, NEW.updatedAt,
-        json_object('taskId',NEW.id,'agentId',NEW.agentId,'title',NEW.title,'status',NEW.status,'turnId',(SELECT id FROM agent_turns WHERE taskId=NEW.id ORDER BY rowid DESC LIMIT 1),'summary',substr(NEW.summary,1,2000),'error',substr(NEW.error,1,2000)),
-        NEW.id||':'||coalesce(${turn},'none')||':'||NEW.status,coalesce(${lineage},'[]')
-      FROM agents a WHERE a.id=NEW.agentId;
-    END;
+    ${taskLifecycle}
     CREATE TRIGGER trigger_artifact_event AFTER UPDATE OF state ON artifact_versions
     WHEN NEW.state='ready' AND OLD.state!='ready' AND NEW.origin='published' AND NEW.ingestId IS NULL
     BEGIN
@@ -111,6 +114,34 @@ export function migrateTriggers(db: Database.Database) {
 }
 
 export function migrateTriggerReviews(db: Database.Database) {
+  // Early development builds also used version 30. Normalize their additive
+  // fields before rebuilding reviews so existing local installations can boot.
+  const addColumn = (table: string, name: string, declaration: string) => {
+    const columns = db.pragma(`table_info(${table})`) as { name: string }[];
+    if (columns.some((column) => column.name === name)) return false;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${declaration}`);
+    return true;
+  };
+  addColumn("agent_triggers", "dispatchFailures", "INTEGER NOT NULL DEFAULT 0");
+  addColumn("trigger_events", "uploadFingerprint", "TEXT");
+  if (
+    addColumn(
+      "skill_automation_setups",
+      "consentAfterRow",
+      "INTEGER NOT NULL DEFAULT 0",
+    )
+  )
+    db.exec(
+      "UPDATE skill_automation_setups SET consentAfterRow=(SELECT coalesce(max(rowid),0) FROM agent_messages) WHERE kind='setup' AND state!='approved'",
+    );
+  db.exec(`CREATE INDEX IF NOT EXISTS trigger_turn_start ON agent_turns(taskId) WHERE snapshot IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS trigger_cancellations (
+      triggerId TEXT PRIMARY KEY REFERENCES agent_triggers(id) ON DELETE CASCADE,
+      throughSequence INTEGER NOT NULL
+    );
+    DROP TRIGGER trigger_task_event;
+    ${taskLifecycle}`);
+
   db.exec(`
     ALTER TABLE agent_triggers ADD COLUMN dependencyError TEXT;
     UPDATE agent_turns SET envelope=json_set(envelope,'$.trigger',json((SELECT json_extract(o.envelope,'$.trigger')

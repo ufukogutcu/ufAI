@@ -1458,79 +1458,109 @@ test("state-filtered lists ignore historical skill requirements once their work 
   );
 });
 
-test("version 30 upgrades preserve collected occurrences and installation reviews", async (t) => {
-  const s = await setup(t);
-  const skill = await s.service.skills.create("a", {
-    name: "upgrade-review",
-    description: "Upgrade fixture",
-    instructions: "Original reviewed guidance",
-  });
-  const trigger = await s.create(
-    { kind: "every", everyMs: 1000 },
-    { paused: true, requiredSkillIds: [skill.id] },
-  );
-  s.advance(3000);
-  await s.service.tick();
-  const reviewId = s.service.automation!.list("a", skill.id).items[0].id;
-  const tables = [
-    "trigger_clock",
-    "agent_triggers",
-    "trigger_revisions",
-    "trigger_occurrences",
-    "trigger_dependencies",
-    "skill_automation_setups",
-  ];
-  const rows = tables.map(
-    (table) =>
-      s.db.prepare(`SELECT * FROM ${table}`).all() as Record<string, unknown>[],
-  );
-  await s.app.close();
-  const legacy = openDatabase(s.databasePath);
-  removeTriggers(legacy);
-  migrateTriggers(legacy);
-  legacy.exec("DELETE FROM trigger_clock");
-  tables.forEach((table, index) => {
-    const columns = (
-      legacy.pragma(`table_info(${table})`) as { name: string }[]
-    ).map((c) => c.name);
-    const insert = legacy.prepare(
-      `INSERT INTO ${table}(${columns.join(",")}) VALUES(${columns.map(() => "?").join(",")})`,
+for (const early of [false, true])
+  test(`version 30 ${early ? "early development" : "final"} upgrades preserve collected occurrences and installation reviews`, async (t) => {
+    const s = await setup(t);
+    const skill = await s.service.skills.create("a", {
+      name: "upgrade-review",
+      description: "Upgrade fixture",
+      instructions: "Original reviewed guidance",
+    });
+    const trigger = await s.create(
+      { kind: "every", everyMs: 1000 },
+      { paused: true, requiredSkillIds: [skill.id] },
     );
-    for (const row of rows[index]) insert.run(...columns.map((c) => row[c]));
-  });
-  legacy.pragma("user_version=30");
-  legacy.close();
-  await s.reopen();
-  assert.equal(s.db.pragma("user_version", { simple: true }), 31);
-  assert.equal(s.service.automation!.get(reviewId).skillId, skill.id);
-  assert.equal(
-    s.service.occurrences(s.workspaceId, trigger.id).items.length,
-    3,
-  );
-  assert.equal(
-    (
+    s.advance(3000);
+    await s.service.tick();
+    const reviewId = s.service.automation!.list("a", skill.id).items[0].id;
+    const tables = [
+      "trigger_clock",
+      "agent_triggers",
+      "trigger_revisions",
+      "trigger_occurrences",
+      "trigger_dependencies",
+      "skill_automation_setups",
+    ];
+    const rows = tables.map(
+      (table) =>
+        s.db.prepare(`SELECT * FROM ${table}`).all() as Record<
+          string,
+          unknown
+        >[],
+    );
+    await s.app.close();
+    const legacy = openDatabase(s.databasePath);
+    removeTriggers(legacy);
+    migrateTriggers(legacy);
+    legacy.exec("DELETE FROM trigger_clock");
+    tables.forEach((table, index) => {
+      const columns = (
+        legacy.pragma(`table_info(${table})`) as { name: string }[]
+      ).map((c) => c.name);
+      const insert = legacy.prepare(
+        `INSERT INTO ${table}(${columns.join(",")}) VALUES(${columns.map(() => "?").join(",")})`,
+      );
+      for (const row of rows[index]) insert.run(...columns.map((c) => row[c]));
+    });
+    if (early)
+      legacy.exec(`
+    DROP INDEX trigger_turn_start;
+    DROP TABLE trigger_cancellations;
+    ALTER TABLE agent_triggers DROP COLUMN dispatchFailures;
+    ALTER TABLE trigger_events DROP COLUMN uploadFingerprint;
+    ALTER TABLE skill_automation_setups DROP COLUMN consentAfterRow;
+  `);
+    legacy.pragma("user_version=30");
+    legacy.close();
+    await s.reopen();
+    assert.equal(s.db.pragma("user_version", { simple: true }), 31);
+    assert.ok(
+      (s.db.pragma("table_info(agent_triggers)") as { name: string }[]).some(
+        (c) => c.name === "dispatchFailures",
+      ),
+    );
+    assert.ok(
+      (s.db.pragma("table_info(trigger_events)") as { name: string }[]).some(
+        (c) => c.name === "uploadFingerprint",
+      ),
+    );
+    assert.ok(
       s.db
         .prepare(
-          "SELECT collectedThrough FROM trigger_revisions WHERE triggerId=?",
+          "SELECT 1 FROM sqlite_master WHERE name='trigger_cancellations'",
         )
-        .get(trigger.id) as any
-    ).collectedThrough,
-    s.now(),
-  );
-  s.advance(-2000);
-  await s.service.save(
-    "a",
-    { ...trigger, name: "Edited after rollback" },
-    trigger.id,
-    trigger.revision,
-  );
-  s.advance(3000);
-  await s.service.tick();
-  assert.equal(
-    s.service.occurrences(s.workspaceId, trigger.id).items.length,
-    4,
-  );
-});
+        .get(),
+    );
+
+    assert.equal(s.service.automation!.get(reviewId).skillId, skill.id);
+    assert.equal(
+      s.service.occurrences(s.workspaceId, trigger.id).items.length,
+      3,
+    );
+    assert.equal(
+      (
+        s.db
+          .prepare(
+            "SELECT collectedThrough FROM trigger_revisions WHERE triggerId=?",
+          )
+          .get(trigger.id) as any
+      ).collectedThrough,
+      s.now(),
+    );
+    s.advance(-2000);
+    await s.service.save(
+      "a",
+      { ...trigger, name: "Edited after rollback" },
+      trigger.id,
+      trigger.revision,
+    );
+    s.advance(3000);
+    await s.service.tick();
+    assert.equal(
+      s.service.occurrences(s.workspaceId, trigger.id).items.length,
+      4,
+    );
+  });
 
 test("deleting a trigger during asynchronous dispatch validation does not submit or report a false failure", async (t) => {
   const s = await setup(t);
