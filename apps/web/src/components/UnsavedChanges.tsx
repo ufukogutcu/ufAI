@@ -4,13 +4,13 @@ import { Dialog } from "./Dialog";
 import { UnsavedContext } from "../navigation-guard";
 
 export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
-  const dirty = useRef(false);
+  const dirty = useRef(new Map<symbol, (() => void) | undefined>());
   const [pending, setPending] = useState<(() => void) | null>(null);
-  const setDirty = useCallback((value: boolean) => {
-    dirty.current = value;
+  const setDirty = useCallback((value: boolean, owner: symbol, onDiscard?: () => void) => {
+    if (value) dirty.current.set(owner, onDiscard); else dirty.current.delete(owner);
   }, []);
   const attempt = useCallback((action: () => void) => {
-    if (dirty.current) {
+    if (dirty.current.size) {
       setPending(() => action);
       return false;
     }
@@ -21,7 +21,9 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
     setPending(null);
   }
   function handleDiscard() {
-    dirty.current = false;
+    const discard = [...dirty.current.values()];
+    dirty.current.clear();
+    for (const reset of discard) reset?.();
     setPending(null);
     pending?.();
   }

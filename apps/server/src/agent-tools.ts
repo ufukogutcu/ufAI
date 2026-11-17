@@ -1,6 +1,7 @@
 import { mcpTools, normalizeMcpDiscoveryArguments } from "./mcp-tools.js";
 import { triggerTools } from "./trigger-tools.js";
 import { McpAuthError } from "./mcp-auth-errors.js";
+import { vaultTools } from "./vault-tools.js";
 import { browserTools } from "./browser-tools.js";
 import { browserAction } from "./browser-validation.js";
 import { randomUUID, createHash } from "node:crypto";
@@ -62,6 +63,7 @@ const skillRevision = number(1,Number.MAX_SAFE_INTEGER);
 const allTaskTools: ToolSpec[] = [
   ...triggerTools,
   ...browserTools,
+  ...vaultTools,
   spec("skills_list", "List shared skills and your enabled state.", {query:{type:"string",maxLength:1024},offset:number(0,1000000),limit:number(1,10)}),
   spec("skill_inspect", "Read metadata, instructions, revision, folder and affected agents.", {skillId},["skillId"]),
   spec("skill_activate", "Activate an enabled skill for this task; resources use relative paths.", {skillId},["skillId"]),
@@ -422,6 +424,7 @@ function validate(value: any, schema: any, path: string) {
   }
 }
 export class AgentTools {
+  vault?: import("./vault.js").Vault;
   triggers?: import("./triggers.js").Triggers;
   mcp?: import("./mcp-service.js").McpService;
   mcpRedirectUrl?: () => string;
@@ -578,12 +581,6 @@ export class AgentTools {
             call.id,
           )),
         };
-        if (Buffer.byteLength(JSON.stringify(result)) > 65536)
-          result = {
-            ok: false,
-            error:
-              "Tool result exceeded the size limit. Use a smaller page or read limit; inspect state before repeating actions.",
-          };
       } catch (e) {
         signal.throwIfAborted();
         result = {
@@ -595,6 +592,9 @@ export class AgentTools {
               : "Tool failed. Check the path, process, permissions, and supplied arguments.",
         };
       }
+      if ((call.name.startsWith("browser_") || call.name === "vault_browser_fill") && this.browser) result = this.browser.redact(owner.agentId, result);
+      if (Buffer.byteLength(JSON.stringify(result)) > 65536)
+        result = { ok: false, error: "Tool result exceeded the size limit. Use a smaller page or read limit; inspect state before repeating actions." };
       signal.throwIfAborted();
       this.files.assertAvailable(owner.workspaceId, owner.agentId);
       this.db
@@ -696,6 +696,10 @@ export class AgentTools {
       if (name === "trigger_cancel_queued") return t.cancelQueued(r.id,a.confirmed);
       if (name === "trigger_remove") return t.remove(r.id,a.expectedRevision,a.confirmed);
       throw new ConnectionError("Unknown trigger tool.",400);
+    }
+    if (name.startsWith("vault_") || name.startsWith("user_input_")) {
+      if (!this.vault) throw new ConnectionError("Vault is unavailable.", 503);
+      return this.vault.execute(owner, name, a, signal, callId!);
     }
     if (name.startsWith("browser_")) {
       const browser = this.browser;

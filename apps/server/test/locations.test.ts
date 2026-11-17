@@ -215,7 +215,7 @@ test("v10 upgrade backfills folders without altering Phase 1 history and memory,
     path,
   );
   db = openDatabase(databasePath);
-  assert.equal(db.pragma("user_version", { simple: true }), 31);
+  assert.equal(db.pragma("user_version", { simple: true }), 32);
   db.close();
 });
 

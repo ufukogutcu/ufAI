@@ -194,7 +194,14 @@ export function restoreClusters(database: Database.Database) {
     for (const row of rows) database.prepare(`INSERT INTO ${table} (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
 }
 
+export function removeVault(database: Database.Database) {
+  const columns = database.pragma("table_info(workspace_inbox)") as { name: string }[];
+  if (columns.some(c => c.name === "userInputRequestId")) database.exec("ALTER TABLE workspace_inbox DROP COLUMN userInputRequestId");
+  database.exec("DROP TABLE IF EXISTS user_input_requests; DROP TABLE IF EXISTS vault_secrets");
+}
+
 export function removeTriggers(database: Database.Database) {
+  removeVault(database);
   database.exec(`DROP TRIGGER IF EXISTS trigger_task_event; DROP TRIGGER IF EXISTS trigger_artifact_event; DROP TRIGGER IF EXISTS trigger_occurrence_task_state;
     DROP INDEX IF EXISTS trigger_turn_start;
     DROP TABLE IF EXISTS trigger_dependencies; DROP TABLE IF EXISTS trigger_cancellations;

@@ -6,16 +6,18 @@ import { join } from "node:path";
 export class ConnectionSecrets {
   private key?: Buffer;
   constructor(private directory: string | null) {}
-  private getKey() {
+  private getKey(create = true) {
     if (this.key) return this.key;
     if (!this.directory) return (this.key = randomBytes(32));
-    mkdirSync(this.directory, { recursive: true, mode: 0o700 });
-    chmodSync(this.directory, 0o700);
     const path = join(this.directory, "connections.key");
-    try {
-      writeFileSync(path, randomBytes(32), { flag: "wx", mode: 0o600 });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    if (create) {
+      mkdirSync(this.directory, { recursive: true, mode: 0o700 });
+      chmodSync(this.directory, 0o700);
+      try {
+        writeFileSync(path, randomBytes(32), { flag: "wx", mode: 0o600 });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
     }
     chmodSync(path, 0o600);
     const key = readFileSync(path);
@@ -39,7 +41,7 @@ export class ConnectionSecrets {
     const data = Buffer.from(value, "base64");
     const cipher = createDecipheriv(
       "aes-256-gcm",
-      this.getKey(),
+      this.getKey(false),
       data.subarray(0, 12),
     );
     cipher.setAAD(Buffer.from(connectionId));

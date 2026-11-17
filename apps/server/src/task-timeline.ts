@@ -330,6 +330,9 @@ export function taskTimeline(
       request,
       contextName,
       checkin,
+      userInput: content.name === "user_input_request"
+        ? db.prepare("SELECT id,kind,workspaceId,agentId,taskId,name,purpose,secretId,expectedRevision,state,createdAt,updatedAt FROM user_input_requests WHERE turnId=? AND callId=? AND taskId=?").get(e.turnId, callId, taskId) as import("./vault-types.js").UserInputRequest | undefined
+        : undefined,
     };
   }
   return db.transaction(() => {

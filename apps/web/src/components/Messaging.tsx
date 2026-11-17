@@ -1,3 +1,4 @@
+import { PrivateInputCard } from "./PrivateInputCard";
 import { Feedback } from "./Feedback";
 import { useNavigationGuard } from "../navigation-guard";
 import {
@@ -435,7 +436,7 @@ export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
         </button>
       </Tooltip>
       {open && (
-        <Dialog title="Workspace Inbox" onClose={() => setOpen(false)}>
+        <Dialog title="Workspace Inbox" onClose={() => { guard(() => setOpen(false)); }}>
           <div className={styles.panel}>
             <p>
               Deliberate messages from your agents. Normal task answers remain
@@ -454,6 +455,7 @@ export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
                   </span>
                   <RichText content={entry.content} instanceId={`inbox-${entry.id}`} />
                   <AttachedFiles ids={entry.attachments} />
+                  {entry.userInputRequestId && <PrivateInputCard requestId={entry.userInputRequestId} refreshKey={data?.inbox} onChange={refresh} />}
                   <div className={styles.actions}>
                     <button
                       className="textButton"
@@ -484,7 +486,7 @@ export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
                     )}
                     <button
                       className="textButton"
-                      disabled={!entry.taskId}
+                      disabled={!entry.taskId || !!entry.userInputRequestId}
                       onClick={() =>
                         setReply(reply === entry.id ? null : entry.id)
                       }

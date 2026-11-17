@@ -20,18 +20,37 @@ One local installation holds one shared setup across browser sessions. There are
 ### saved-data
 
 - **Status:** implemented
-- **Purpose:** Keep saved agents, task transcripts, memories, workspaces, Agent Presets, Providers, MCP servers and switches, custom themes, and application preferences on this local installation.
+- **Purpose:** Keep saved agents, task transcripts, memories, workspaces, Agent Presets, Providers, Vault secrets and private input requests, MCP servers and switches, custom themes, and application preferences on this local installation.
 - **Behavior:** Saved records survive closing the browser and restarting ufAI. The selected workspace, active theme, and completed canvas pan/zoom positions are shared across browser sessions. Unsaved forms, open dialogs, and navigation history are temporary.
 - **Limitations:** Saving and viewing data requires the local application to be reachable. There is no built-in full-installation backup, import, or export tool. Connection credentials and the rest of the saved installation data must be kept together when making a manual backup. Deleting saved records requires confirmation and has no in-app undo.
 
 ### dashboard-navigation
 
 - **Status:** implemented
-- **Purpose:** Reach Home, Providers, Agent Presets, Theme, and Settings.
+- **Purpose:** Reach Home, Vault, Providers, Agent Presets, Theme, and Settings.
 - **Behavior:** Use the page icons on the left. Hover or keyboard focus shows their labels. Pages support direct links, refresh, and browser back/forward. The logo opens ufAI's [GitHub project](https://github.com/ufukogutcu/ufAI) in a new tab, keeping the current page and drafts open.
 - **Dialogs:** Click or tap outside a dialog to dismiss it, following the same behavior as its Close control, including existing unsaved-change prompts. Only the top dialog closes when dialogs are stacked. Clicking inside or dragging from inside to outside keeps it open. Dialogs temporarily block dismissal while saving, deleting, or using a reset.
 - **Appearance:** Backgrounds and panel surfaces stay steady. Switching workspaces or editors adds a tiny settling movement to foreground content. Dialogs, tooltips, small feedback messages, and individually created list items use brief entrance effects. Initial lists and additional result pages appear immediately. Motion follows the device's reduced-motion preference and does not delay interaction or dismissal.
 - **Limitations:** Settings contains a heading only. Use [Theme](#dashboard-themes) for appearance changes. If a preference cannot be saved, the last confirmed setting remains in use and Retry is available.
+
+### shared-vault
+
+- **Status:** implemented
+- **Purpose:** Save encrypted secrets once and let all agents use them without requesting their values in ordinary chat.
+- **Behavior:** Open Vault between Home and Providers. Search, create, rename, describe, replace, or delete secrets. Leave the replacement field blank to preserve its value. Saved values can be revealed or copied explicitly; reveal hides after 30 seconds or when the page loses focus. Deletion asks for confirmation. Secrets are shared across every workspace and agent, without destination restrictions or per-use approval.
+- **Agent use:** Agents discover secret names and references, fill browser fields, or send authenticated API requests using those references. The normal tool outputs and history contain references and outcomes; known secret echoes are masked. Browser screenshots mask secret-filled fields and can be unavailable when those fields can no longer be located. HTTPS and local HTTP requests are supported; redirects require a separate request.
+- **Storage and limits:** Unlocking is automatic on this computer. Keep the original connection credential key with the database when making a manual backup. Up to 256 secrets are supported, each containing 1–8,192 characters. Names and descriptions are visible metadata and should not contain secret values. Saved provider and MCP credentials remain in their existing editors.
+- **Limitations:** This protects normal model context; it does not isolate unrestricted host commands from local keys or data. A receiving website or API receives the actual value and may transform or visually echo it beyond practical masking. There is no master-password lock, terminal injection, automatic credential migration, or key recovery. Deleting a secret does not revoke remote credentials or end existing website sessions.
+- **Related references:** [Private input requests](#private-user-input), [Saved data](#saved-data), [Agent Browser](#agent-browser).
+
+### private-user-input
+
+- **Status:** implemented
+- **Purpose:** Let agents ask for secret input privately while keeping the value out of conversation messages.
+- **Behavior:** A request appears as a private card in its originating Chat or Task and in the workspace Inbox. Pending requests also appear in Vault. Enter a new value, select a saved secret, or Decline. New values are saved in the shared Vault for all agents. Use the card rather than the ordinary message composer. Only the outcome and secret reference return to the agent. The agent can continue independent work and yield until an answer resumes its task.
+- **Recovery:** Pending requests survive restarting ufAI. Repeated submissions do not create duplicate secrets. Conflicting replacements preserve the input and require explicitly choosing the latest saved revision before retrying. Cancelling or deleting the originating task closes pending requests; deleting an agent or workspace removes its requests while preserving shared Vault secrets.
+- **Limitations:** Only secret inputs are available. General text questions and multiple-choice request cards remain planned. A task can have at most ten pending private requests. Host access and receiving-site limitations are the same as for the shared Vault.
+- **Related references:** [Shared Vault](#shared-vault), [Dashboard navigation](#dashboard-navigation).
 
 ### dashboard-feedback
 

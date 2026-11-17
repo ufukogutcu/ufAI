@@ -7,6 +7,7 @@ import {
 } from "react";
 import {
   Home as HomeIcon,
+  LockKeyhole,
   Palette,
   Settings,
   Server,
@@ -28,6 +29,7 @@ import type { SettingsResponse } from "../../server/src/contracts";
 import Themes from "./pages/Themes";
 import Home from "./pages/Home";
 import Providers from "./pages/Providers";
+import VaultPage from "./pages/Vault";
 import { ConnectionContext, createConnectionStore } from "./connection-store";
 import Presets from "./pages/Presets";
 import styles from "./App.module.scss";
@@ -38,6 +40,7 @@ import { RichTextProvider } from "./components/RichText";
 
 const pages = [
   { id: "home", label: "Home", icon: HomeIcon },
+  { id: "vault", label: "Vault", icon: LockKeyhole },
   { id: "providers", label: "Providers", icon: Server },
   { id: "agent-presets", label: "Agent Presets", icon: SlidersHorizontal },
   { id: "theme", label: "Theme", icon: Palette },
@@ -195,6 +198,8 @@ function Shell() {
             <Home />
           ) : page === "agent-presets" ? (
             <Presets />
+          ) : page === "vault" ? (
+            <VaultPage />
           ) : page === "providers" ? (
             <Providers />
           ) : page === "theme" ? (

@@ -52,6 +52,7 @@ export class MessagingService {
   private timer?: ReturnType<typeof setInterval>;
   private operations = new Map<string, Promise<void>>();
   private checkinCursor = "";
+  private inputCursor = "";
   constructor(
     readonly db: Database.Database,
     readonly execution: AgentExecution,
@@ -246,7 +247,14 @@ export class MessagingService {
       )
       .get(taskId, taskId, taskId);
   }
+  inputsChanged(taskId: string) {
+    this.refreshPending(taskId);
+    const task = this.db.prepare("SELECT agentId FROM agent_tasks WHERE id=?").get(taskId) as { agentId: string } | undefined;
+    if (task) this.changed(this.owner(task.agentId).workspaceId);
+    this.execution.wake();
+  }
   private pendingReason(taskId: string) {
+    if (this.db.prepare("SELECT 1 FROM user_input_requests WHERE taskId=? AND (state='pending' OR (state IN ('fulfilled','declined','cancelled') AND deliveredTurnId IS NULL)) LIMIT 1").get(taskId)) return "user_input";
     if (this.hasReplyDependency(taskId)) return "message";
     return this.db
       .prepare(
@@ -352,6 +360,7 @@ export class MessagingService {
         "UPDATE task_checkins SET state='cancelled',updatedAt=? WHERE taskId=? AND (state='scheduled' OR (state='fired' AND deliveredTurnId IS NULL))",
       )
       .run(now(), taskId);
+    this.db.prepare("UPDATE user_input_requests SET state=CASE WHEN state='pending' THEN 'cancelled' ELSE state END,deliveredTurnId=coalesce(deliveredTurnId,(SELECT id FROM agent_turns WHERE taskId=? ORDER BY rowid DESC LIMIT 1)),updatedAt=? WHERE taskId=? AND (state='pending' OR deliveredTurnId IS NULL)").run(taskId, now(), taskId);
     this.db
       .prepare(
         "UPDATE agent_tasks SET pendingReason=NULL,resumeEnvelope=NULL WHERE id=?",
@@ -788,12 +797,16 @@ export class MessagingService {
       WHERE taskId=? AND state='fired' AND deliveredTurnId IS NULL ORDER BY dueAt,id LIMIT 32`,
       )
       .all(taskId) as any[];
+    const privateInputs = this.db.prepare(`SELECT id AS userInputId,id,'user_input' AS kind,
+      json_object('requestId',id,'state',state,'secretId',secretId) AS content,'user' AS senderName,
+      NULL AS senderAgentId,NULL AS requestId,'[]' AS attachments,updatedAt AS createdAt,returnEnvelope
+      FROM user_input_requests WHERE taskId=? AND state!='pending' AND deliveredTurnId IS NULL ORDER BY updatedAt,id LIMIT 32`).all(taskId);
     const batch: any[] = [];
     let bytes = 0,
       files = 0,
       characters = 0;
     let route = activeEnvelope ? this.resultRoute(activeEnvelope) : null;
-    for (const item of [...messages, ...checkins].sort((a, b) =>
+    for (const item of [...messages, ...checkins, ...privateInputs].sort((a, b) =>
       a.createdAt.localeCompare(b.createdAt),
     )) {
       item.returnEnvelope =
@@ -826,7 +839,9 @@ export class MessagingService {
     inputMessageId: string,
   ) {
     for (const item of batch) {
-      if (item.checkinId)
+      if (item.userInputId)
+        this.db.prepare("UPDATE user_input_requests SET deliveredTurnId=?,updatedAt=? WHERE id=? AND state!='pending' AND deliveredTurnId IS NULL").run(turnId, now(), item.userInputId);
+      else if (item.checkinId)
         this.db
           .prepare(
             "UPDATE task_checkins SET deliveredTurnId=?,updatedAt=? WHERE id=? AND state='fired'",
@@ -866,7 +881,7 @@ export class MessagingService {
             owner.turnId,
             this.inputContent(item),
             now(),
-            item.checkinId ? "system" : "agent",
+            item.checkinId || item.userInputId ? "system" : "agent",
             item.senderAgentId,
           );
         (JSON.parse(item.attachments) as string[]).forEach(
@@ -884,7 +899,7 @@ export class MessagingService {
         messageId: item.id,
         requestId: item.requestId,
         kind: item.kind,
-        authorType: item.checkinId ? "system" : "agent",
+        authorType: item.checkinId || item.userInputId ? "system" : "agent",
         authorId: item.senderAgentId,
         authorName: item.senderName,
         content: item.content,
@@ -937,7 +952,7 @@ export class MessagingService {
     // and are answered explicitly with agent_message, independently of the task's final result.
     const envelope: MessageEnvelope = {
       ...base,
-      source: first.checkinId ? "system" : "agent",
+      source: first.checkinId || first.userInputId ? "system" : "agent",
       senderId: first.senderAgentId ?? undefined,
       causationId: first.id,
       continuation: true,
@@ -1112,6 +1127,7 @@ export class MessagingService {
     if (!item) fail("Inbox message not found.", 404);
     if (!item.taskId || !item.agentId)
       fail("The originating task is no longer available.");
+    if (item.userInputRequestId) fail("Use the private input card to answer this request.", 400);
     const text = this.text(body.content);
     if (
       typeof body.requestId !== "string" ||
@@ -1424,6 +1440,9 @@ export class MessagingService {
       )
       .all() as any[])
       this.db.transaction(() => this.deliver(d.messageId))();
+    const privateTasks = this.db.prepare("SELECT DISTINCT taskId FROM user_input_requests WHERE state!='pending' AND deliveredTurnId IS NULL ORDER BY (taskId<=?),taskId LIMIT 32").all(this.inputCursor) as { taskId: string }[];
+    if (privateTasks.length) this.inputCursor = privateTasks.at(-1)!.taskId;
+    for (const input of privateTasks) this.db.transaction(() => this.deliverTask(input.taskId))();
     for (const op of this.db
       .prepare(
         "SELECT id FROM messaging_operations WHERE state='pending' ORDER BY createdAt LIMIT 2",
@@ -1732,6 +1751,7 @@ export function registerMessaging(
           .get(req.params.id) as any;
         if (!item?.agentId || !item?.taskId)
           fail("The originating task is no longer available.", 404);
+        if (item.userInputRequestId) fail("Use the private input card to answer this request.", 400);
         return reply.code(202).send(
           await incoming.receive(req, item.agentId, item.taskId, {
             source: "user",

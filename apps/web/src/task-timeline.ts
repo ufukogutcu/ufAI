@@ -53,6 +53,8 @@ function sameEntry(a: TimelineEntry | undefined, b: TimelineEntry): boolean {
     a.checkin?.id === b.checkin?.id &&
     a.checkin?.state === b.checkin?.state &&
     a.checkin?.deliveredTurnId === b.checkin?.deliveredTurnId &&
+    a.userInput?.state === b.userInput?.state &&
+    a.userInput?.updatedAt === b.userInput?.updatedAt &&
     a.file?.state === b.file?.state &&
     a.file?.error === b.file?.error
   );
@@ -99,6 +101,7 @@ export function createTimelineStore(
                   (i.checkin.state === "scheduled" ||
                     (i.checkin.state === "fired" &&
                       !i.checkin.deliveredTurnId))) ||
+                i.userInput?.state === "pending" ||
                 i.request?.state === "open" ||
                 i.message?.state === "streaming",
             )
@@ -231,6 +234,12 @@ export const toolLabels: Record<string, ActionCopy> = {
   agents_find: ["Finding connected agents", "Found connected agents"],
   agent_send: ["Sending a message", "Sent a message"],
   agent_message: ["Sending a reply", "Sent a reply"],
+  vault_list: ["Searching the Vault", "Searched the Vault"],
+  user_input_request: ["Requesting private input", "Requested private input"],
+  user_input_status: ["Checking private input", "Checked private input"],
+  user_input_cancel: ["Cancelling private input", "Cancelled private input"],
+  vault_browser_fill: ["Filling a secret privately", "Filled a secret privately"],
+  vault_http_request: ["Sending a private API request", "Sent a private API request"],
   agent_request_status: ["Checking request status", "Checked request status"],
   agent_wait: [
     "Waiting for agent replies",

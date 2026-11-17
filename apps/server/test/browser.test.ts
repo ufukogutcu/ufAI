@@ -325,3 +325,33 @@ test("browser transfer limits reject large uploads and cancel oversized website 
   await until(() => f.browsers.state("a").downloads[0]?.state === "failed");
   assert.equal(f.browsers.state("a").downloads[0]?.path, undefined);
 });
+
+test("vault browser fills keep values out of tool history and mask saved screenshots", async t => {
+  const { Vault } = await import("../src/vault.js");
+  const { MessagingService } = await import("../src/messaging.js");
+  const url = await website(t), rt = await runtime(t), f = rt.current;
+  const connections = new ConnectionService(f.db);
+  t.after(() => connections.close());
+  const messaging = new MessagingService(f.db, f.engine, connections);
+  const vault = new Vault(f.db, connections.secrets, () => {});
+  vault.messaging = messaging; vault.browser = f.browsers; f.tools.vault = vault;
+  const value = "vault-browser-canary-87245", entry = vault.save({ name: "Login", value });
+  await f.browsers.action("a", { action: "navigate", url });
+  const fieldRef = ref(await snapshot(f), "Draft");
+  const result = await f.dispatch("vault_browser_fill", { secretId: entry.id, ref: fieldRef });
+  assert.deepEqual(result, { ok: true, filled: true });
+  const session = (f.browsers as any).sessions.get("a"), page = session.pages.get(session.activeTabId);
+  assert.equal(await page.getByRef(fieldRef).inputValue(), value);
+  const text = await f.dispatch("browser_snapshot");
+  assert.ok(!JSON.stringify(text).includes(value)); assert.match(String(text.snapshot), /secret hidden/);
+  const image = await f.dispatch("browser_screenshot"); assert.equal(image.ok, true, JSON.stringify(image));
+  const masked = await readFile(String(image.path)); assert.ok(masked.length > 100);
+  const raw = await page.screenshot(); assert.notDeepEqual(masked, raw);
+  const history = JSON.stringify([f.db.prepare("SELECT * FROM tool_invocations").all(), f.db.prepare("SELECT * FROM execution_items").all()]);
+  assert.ok(!history.includes(value));
+  const viewer = new Viewer(), viewerId = f.browsers.attach("a", viewer as unknown as WebSocket);
+  await f.browsers.control("a", viewerId, true);
+  const blocked = await f.dispatch("vault_browser_fill", { secretId: entry.id, ref: fieldRef });
+  assert.equal(blocked.ok, false); assert.match(String(blocked.error), /user is controlling/);
+  viewer.close();
+});

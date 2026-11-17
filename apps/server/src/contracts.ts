@@ -258,7 +258,7 @@ export interface Agent {
 }
 export interface AgentTask {
   trigger?: { id: string; occurrenceId: string; name: string; scheduledAt: string; dispatchedAt: string | null };
-  pendingReason?: "message" | "check_in" | null;
+  pendingReason?: "message" | "check_in" | "user_input" | null;
   nextCheckInAt?: string | null;
   kind: "task" | "chat";
   source?: "user" | "agent" | "system";
@@ -478,6 +478,7 @@ export interface CommunicationMessage {
   content: string; attachments: string[]; replyToId: string | null; createdAt: string;
 }
 export interface InboxEntry {
+  userInputRequestId?: string | null;
   id: string; workspaceId: string; agentId: string | null; agentName: string;
   taskId: string | null; content: string; attachments: string[]; readAt: string | null; createdAt: string;
 }
@@ -527,6 +528,7 @@ export interface TimelineEntry {
   request?: AgentRequest;
   communication?: CommunicationMessage;
   checkin?: TaskCheckIn;
+  userInput?: import("./vault-types.js").UserInputRequest;
   file?: ArtifactVersion;
   contextName?: string;
 }

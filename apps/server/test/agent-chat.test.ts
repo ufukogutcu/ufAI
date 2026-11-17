@@ -218,7 +218,7 @@ test("v17 upgrade preserves work and status history while fencing unfinished sta
         .instructions,
       "Keep me",
     );
-    assert.equal(db.pragma("user_version", { simple: true }), 31);
+    assert.equal(db.pragma("user_version", { simple: true }), 32);
   } finally {
     db.close();
   }

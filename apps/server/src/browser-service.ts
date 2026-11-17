@@ -1,3 +1,5 @@
+import { redactSecrets } from "./vault.js";
+import catalog from "@ufai/theme-catalog" with { type: "json" };
 import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -5,7 +7,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
-import { chromium, type BrowserContext, type Page, type CDPSession, type Dialog, type FileChooser, type Download } from "playwright";
+import { chromium, type BrowserContext, type Page, type CDPSession, type Dialog, type FileChooser, type Download, type Locator } from "playwright";
 import type Database from "better-sqlite3";
 import type { WebSocket } from "ws";
 import type { ManagedFiles } from "./managed-files.js";
@@ -38,6 +40,8 @@ interface Session {
   frame?: string;
   metadataSerial: number;
   metadataWork?: ReturnType<typeof setTimeout>;
+  privateValues?: Set<string>;
+  privateFields?: Map<Page, Locator[]>;
 }
 export interface BrowserOptions {
   /** Injectable launch adapter for fixtures; production uses pinned Chromium. */
@@ -51,6 +55,24 @@ export class BrowserService {
   constructor(readonly db: Database.Database, private files: ManagedFiles, private skills: Skills,
     private changed: (workspaceId: string) => void, private options: BrowserOptions = {}) {
     this.maxTransferBytes = options.maxTransferBytes ?? 256 * 1024 * 1024;
+  }
+  redact<T>(id: string, result: T): T {
+    return redactSecrets(result, this.sessions.get(id)?.privateValues ?? []);
+  }
+  fillSecret(id: string, ref: string, value: string, signal: AbortSignal) {
+    return this.enqueue(id, undefined, true, signal, async s => {
+      if (s.dialog) fail("Handle the open website dialog first.");
+      const p = this.page(s);
+      s.privateValues ??= new Set(); s.privateFields ??= new Map();
+      const fields = s.privateFields.get(p) ?? [];
+      if (fields.length >= 64 || s.privateValues.size >= 256) fail("Close this browser session before using more secrets.");
+      const field = p.getByRef(ref);
+      // Record before filling: a failed/cancelled operation can already have effects.
+      s.privateValues.add(value); fields.push(field); s.privateFields.set(p, fields);
+      try { await field.fill(value, { signal }); }
+      catch { fail("Private fill failed. Inspect the page before retrying; effects may have occurred."); }
+      return { filled: true };
+    });
   }
   private agent(id: string, requireEnabled = true) {
     if (this.stopped) fail("Browsers are shutting down.", 503);
@@ -78,7 +100,7 @@ export class BrowserService {
     const s = this.session(id);
     return { enabled, status: s.status, error: s.error, tabs: enabled ? s.tabs : [], activeTabId: enabled ? s.activeTabId : null,
       controller: enabled ? s.controller : null,
-      dialog: enabled && s.dialog ? { type: s.dialog.type(), message: s.dialog.message().slice(0, 4000), defaultValue: s.dialog.defaultValue().slice(0, 4000) } : null,
+      dialog: enabled && s.dialog ? { type: s.dialog.type(), message: this.redact(id, s.dialog.message()).slice(0, 4000), defaultValue: this.redact(id, s.dialog.defaultValue()).slice(0, 4000) } : null,
       fileChooser: enabled && s.chooser ? { multiple: s.chooser.isMultiple() } : null,
       downloads: enabled ? s.downloads.map(d => ({ ...d })) : [], viewport };
   }
@@ -128,7 +150,7 @@ export class BrowserService {
   }
   private async refreshMetadata(s: Session) {
     const sequence = ++s.metadataSerial;
-    const tabs = await Promise.all([...s.pages].map(async ([id, p]) => ({ id, url: p.url().slice(0, 4096), title: (s.dialog ? s.tabs.find(t => t.id === id)?.title ?? "" : await p.title().catch(() => "")).slice(0, 300) })));
+    const tabs = await Promise.all([...s.pages].map(async ([id, p]) => ({ id, url: this.redact(s.agentId, p.url()).slice(0, 4096), title: this.redact(s.agentId, (s.dialog ? s.tabs.find(t => t.id === id)?.title ?? "" : await p.title().catch(() => ""))).slice(0, 300) })));
     if (s.closing || !s.context || sequence !== s.metadataSerial) return;
     s.tabs = tabs;
     if (!s.pages.has(s.activeTabId ?? "")) s.activeTabId = tabs[0]?.id ?? null;
@@ -147,6 +169,7 @@ export class BrowserService {
     p.on("load", () => this.metadata(s));
     p.on("close", () => {
       s.pages.delete(id);
+      s.privateFields?.delete(p);
       if (s.dialog?.page() === p) { s.dialog = undefined; s.blockedAction = undefined; }
       if (s.chooser?.page() === p) s.chooser = undefined;
       if (s.activeTabId === id) s.activeTabId = s.pages.keys().next().value ?? null;
@@ -234,7 +257,7 @@ export class BrowserService {
       catch (error) {
         signal?.throwIfAborted();
         if (error instanceof ConnectionError) throw error;
-        const detail = error instanceof Error ? error.message : "Unknown browser failure";
+        const detail = this.redact(id, error instanceof Error ? error.message : "Unknown browser failure");
         throw new ConnectionError(/Timeout|timed out/i.test(detail)
           ? "Browser action timed out. Inspect the current page before retrying; effects may have occurred."
           : `Browser action failed. Inspect the current page or tabs before retrying: ${detail.slice(0, 500)}`, 409);
@@ -282,11 +305,16 @@ export class BrowserService {
           case "back": await this.interaction(s, () => p.goBack({ waitUntil: "domcontentloaded", signal })); break;
           case "forward": await this.interaction(s, () => p.goForward({ waitUntil: "domcontentloaded", signal })); break;
           case "reload": await this.interaction(s, () => p.reload({ waitUntil: "domcontentloaded", signal })); break;
-          case "snapshot": return { snapshot: Buffer.from(await p.ariaSnapshot({ mode: "ai", signal, depth: 30 })).subarray(0, 24000).toString("utf8"), url: p.url() };
+          case "snapshot": return { snapshot: Buffer.from(this.redact(id, await p.ariaSnapshot({ mode: "ai", signal, depth: 30 }))).subarray(0, 24000).toString("utf8"), url: p.url() };
           case "screenshot": {
             const folder = (await this.files.repair("agent", id)).path;
             const path = join(folder, `Browser-${randomUUID()}.png`);
-            await managedDirectory(folder); await p.screenshot({ path, type: "png", timeout: 10000, signal });
+            const mask = s.privateFields?.get(p) ?? [];
+            if (mask.length && (await Promise.all(mask.map(field => field.count().catch(() => 0)))).some(count => count !== 1))
+              fail("Cannot safely mask a secret field. Close this tab before taking an agent screenshot.");
+            await managedDirectory(folder);
+            try { await p.screenshot({ path, type: "png", timeout: 10000, signal, mask, maskColor: catalog.tokens.surface.light }); }
+            catch { await rm(path, { force: true }); fail("Screenshot failed. Secret fields could not be safely captured."); }
             return { path };
           }
           case "click":
