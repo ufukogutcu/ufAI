@@ -261,6 +261,10 @@ test("one occurrence per trigger, waiting tasks hold queue, delayed context and 
     (s.db.prepare("SELECT count(*) n FROM workspace_inbox").get() as any).n,
     1,
   );
+  const arrivals = (await s.send("GET", "/api/inbox/notifications?after=0")).json();
+  assert.equal(arrivals.items.length, 1);
+  assert.equal(arrivals.items[0].workspaceId, s.workspaceId);
+  assert.ok(arrivals.items[0].preview.length > 0);
   assert.equal(
     s.service.occurrences(s.workspaceId, a.id).items.filter((o) => o.taskId)
       .length,
@@ -1513,7 +1517,7 @@ for (const early of [false, true])
     legacy.pragma("user_version=30");
     legacy.close();
     await s.reopen();
-    assert.equal(s.db.pragma("user_version", { simple: true }), 32);
+    assert.equal(s.db.pragma("user_version", { simple: true }), 33);
     assert.ok(
       (s.db.pragma("table_info(agent_triggers)") as { name: string }[]).some(
         (c) => c.name === "dispatchFailures",

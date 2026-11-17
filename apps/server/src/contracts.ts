@@ -164,6 +164,8 @@ export interface AppSettings {
   activeWorkspaceId: string | null;
   sidebarExpanded: boolean;
   characterAnimationsPaused: boolean;
+  inboxInAppAlertsEnabled: boolean;
+  inboxDesktopAlertsEnabled: boolean;
 }
 export interface SettingsResponse {
   settings: AppSettings;
@@ -481,6 +483,21 @@ export interface InboxEntry {
   userInputRequestId?: string | null;
   id: string; workspaceId: string; agentId: string | null; agentName: string;
   taskId: string | null; content: string; attachments: string[]; readAt: string | null; createdAt: string;
+}
+export interface InboxNotification {
+  sequence: number;
+  id: string;
+  workspaceId: string;
+  workspaceName: string;
+  agentName: string;
+  preview: string;
+  readAt: string | null;
+}
+export interface InboxNotifications {
+  cursor: number;
+  unreadTotal: number;
+  items: InboxNotification[];
+  hasMore: boolean;
 }
 export interface RevocationImpact {
   link: CommunicationLink; requests: AgentRequest[]; tasks: string[];

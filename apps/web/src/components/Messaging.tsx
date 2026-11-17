@@ -1,3 +1,4 @@
+import { useInboxNotifications, useInboxNotificationStore } from "./InboxNotifications";
 import { PrivateInputCard } from "./PrivateInputCard";
 import { Feedback } from "./Feedback";
 import { useNavigationGuard } from "../navigation-guard";
@@ -5,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useState,
+  useRef,
   type FormEvent,
 } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -372,6 +374,10 @@ function InboxReply({
 }
 export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
   const guard = useNavigationGuard();
+  const target = useInboxNotifications(state => state.target);
+  const notifications = useInboxNotificationStore();
+  const targetRef = useRef<HTMLLIElement>(null);
+  const [targetEntry, setTargetEntry] = useState<InboxEntry | null>(null);
   const store = useAgentStore(),
     data = useAgents((s) => s.communication[workspaceId]);
   const [open, setOpen] = useState(false),
@@ -384,15 +390,41 @@ export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
   useEffect(() => {
     refresh();
   }, [refresh]);
-  const entries = [
+  useEffect(() => {
+    if (!target || target.workspaceId !== workspaceId) return;
+    const controller = new AbortController();
+    setOpen(true); setError(""); setTargetEntry(null);
+    // Reveal only after the first page settles; inserting that page afterward
+    // can otherwise move an older target out of view again.
+    void Promise.all([
+      request<InboxEntry>(`/inbox/${encodeURIComponent(target.id)}`, "GET", undefined, controller.signal),
+      store.getState().loadCommunication(workspaceId),
+    ]).then(([entry]) => {
+      if (!controller.signal.aborted && entry.workspaceId === workspaceId) setTargetEntry(entry);
+    }).catch(error => { if (!controller.signal.aborted) setError(errorMessage(error)); });
+    return () => controller.abort();
+  }, [target, workspaceId, store]);
+  useEffect(() => {
+    if (open && targetEntry?.id === target?.id) {
+      targetRef.current?.scrollIntoView({ block: "center", behavior: "instant" });
+      targetRef.current?.focus({ preventScroll: true });
+    }
+  }, [open, target?.id, targetEntry]);
+  function closeInbox() {
+    setOpen(false);
+    if (notifications?.getState().target?.workspaceId === workspaceId) notifications.setState({ target: null });
+  }
+  const pageEntries = [
     ...(data?.inbox ?? []),
     ...older.filter((e) => !data?.inbox.some((n) => n.id === e.id)),
   ];
+  const entries = targetEntry && !pageEntries.some(entry => entry.id === targetEntry.id) ? [...pageEntries, targetEntry] : pageEntries;
   async function mark(entry: InboxEntry) {
     try {
       const updated = await request<InboxEntry>(`/inbox/${entry.id}`, "PATCH", {
         read: !entry.readAt,
       });
+      setTargetEntry(previous => previous?.id === entry.id ? { ...previous, readAt: updated.readAt } : previous);
       setOlder((previous) =>
         previous.map((item) =>
           item.id === entry.id ? { ...item, readAt: updated.readAt } : item,
@@ -406,7 +438,7 @@ export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
   async function more() {
     try {
       const p = await request<Page<InboxEntry>>(
-        `/workspaces/${workspaceId}/inbox?limit=50&offset=${entries.length}`,
+        `/workspaces/${workspaceId}/inbox?limit=50&offset=${pageEntries.length}`,
       );
       setOlder((previous) => [
         ...previous,
@@ -436,7 +468,7 @@ export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
         </button>
       </Tooltip>
       {open && (
-        <Dialog title="Workspace Inbox" onClose={() => { guard(() => setOpen(false)); }}>
+        <Dialog title="Workspace Inbox" onClose={() => { guard(closeInbox); }}>
           <div className={styles.panel}>
             <p>
               Deliberate messages from your agents. Normal task answers remain
@@ -445,7 +477,7 @@ export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
             {!entries.length && <p>No messages yet.</p>}
             <ul className={styles.list}>
               {entries.map((entry) => (
-                <li key={entry.id} className={styles.item}>
+                <li key={entry.id} className={styles.item} tabIndex={entry.id === target?.id ? -1 : undefined} ref={entry.id === target?.id ? targetRef : undefined}>
                   <strong>
                     {entry.agentName}
                     {entry.readAt ? "" : " · Unread"}
@@ -477,7 +509,7 @@ export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
                                 taskId: entry.taskId!,
                               },
                             });
-                            setOpen(false);
+                            closeInbox();
                           })
                         }
                       >
@@ -500,7 +532,7 @@ export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
                 </li>
               ))}
             </ul>
-            {entries.length < (data?.total ?? 0) && (
+            {pageEntries.length < (data?.total ?? 0) && (
               <button className="button" onClick={() => void more()}>
                 Load earlier messages
               </button>

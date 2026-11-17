@@ -1,3 +1,4 @@
+import { registerInboxNotifications } from "./inbox-notifications.js";
 import { Vault } from "./vault.js";
 import { registerVault } from "./vault-routes.js";
 import { McpService, type McpOptions } from "./mcp-service.js";
@@ -206,6 +207,7 @@ export function createApp(
   const vault = new Vault(database, connections.secrets, changed);
   vault.messaging = messaging; vault.browser = browsers; tools.vault = vault;
   registerVault(app, vault, execution.events);
+  registerInboxNotifications(app, database, execution.events);
   app.addHook("onClose", async () => vault.close());
   const media = new MediaService(artifacts);
   tools.media = media;

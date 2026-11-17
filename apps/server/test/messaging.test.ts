@@ -1,3 +1,5 @@
+import Fastify from "fastify";
+import { registerInboxNotifications } from "../src/inbox-notifications.js";
 import { assertCharacterUpgrade, restoreClusters } from "./legacy-schema.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -857,7 +859,7 @@ test("v13 upgrade preserves populated records and stable paths while backfilling
       );
     else assert.deepEqual(rows, retained[table], table);
   }
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 32);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 33);
   assert.deepEqual(
     (upgraded.prepare("SELECT content FROM agent_messages").all() as any[]).map(
       (r) => r.content,
@@ -1512,6 +1514,10 @@ test("revoking a completed helper stops its remaining background process and pre
 
 test("an Inbox user reply and the helper original request retain independent final destinations", async (t) => {
   const s = await setup(t);
+  const feed = Fastify();
+  registerInboxNotifications(feed, s.db, s.engine.events);
+  t.after(() => feed.close());
+  const baseline = (await feed.inject("/api/inbox/notifications")).json().cursor;
   s.messaging.createLink(s.workspaceId, "a", "b");
   const sent = s.messaging.send(
       s.owner,
@@ -1565,6 +1571,9 @@ test("an Inbox user reply and the helper original request retain independent fin
     ).content,
     "User Inbox answer",
   );
+  const arrivals = (await feed.inject(`/api/inbox/notifications?after=${baseline}`)).json();
+  assert.deepEqual(arrivals.items.map((item: any) => item.preview), ["User question", "User Inbox answer"]);
+  assert.equal(arrivals.unreadTotal, 2);
 });
 
 test("confirmed revocation fences agent continuation but the user may explicitly continue the retained task afterward", async (t) => {
@@ -2761,7 +2770,7 @@ test("v20 routing upgrade preserves existing check-ins and installs missing rout
   );
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 32);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 33);
     const row = upgraded
       .prepare("SELECT * FROM task_checkins WHERE id=?")
       .get(reminder.checkinId) as any;
@@ -2936,7 +2945,7 @@ function insertReverseLink(s: Awaited<ReturnType<typeof setup>>, id: string) {
 function upgradeLinks(s: Awaited<ReturnType<typeof setup>>) {
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 32);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 33);
     assert.deepEqual(upgraded.pragma("foreign_key_check"), []);
     assert.deepEqual(upgraded.pragma("integrity_check"), [{ integrity_check: "ok" }]);
   } finally {
@@ -3242,7 +3251,7 @@ test("v22 upgrade preserves old messages without adding retrospective transmissi
   s.db.exec("DROP INDEX communication_deliveries_turn; DROP TABLE message_transits; PRAGMA user_version=22");
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 32);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 33);
     assert.equal((upgraded.prepare("SELECT count(*) n FROM message_transits").get() as any).n, 0);
     assert.equal((upgraded.prepare("SELECT content FROM communication_messages WHERE id=?").get(sent.messageId) as any).content, "Old message");
     assert.deepEqual(upgraded.pragma("foreign_key_check"), []);

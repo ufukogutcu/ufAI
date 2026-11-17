@@ -378,6 +378,8 @@ test("version 3 migration adds empty descriptions without changing existing work
       activeThemeId: "dark-mode",
       sidebarExpanded: true,
       characterAnimationsPaused: false,
+      inboxInAppAlertsEnabled: true,
+      inboxDesktopAlertsEnabled: false,
     });
     assert.deepEqual(
       (await app.inject(`/api/workspaces/${workspace.id}/viewport`)).json(),
@@ -397,12 +399,12 @@ test("newer database versions fail without downgrading schema", async (t) => {
   t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "test.sqlite");
   const db = openDatabase(path);
-  assert.equal(db.pragma("user_version", { simple: true }), 32);
+  assert.equal(db.pragma("user_version", { simple: true }), 33);
   assert.equal(db.pragma("foreign_keys", { simple: true }), 1);
-  db.pragma("user_version = 33");
+  db.pragma("user_version = 34");
   db.close();
   assert.throws(() => openDatabase(path), /newer version/);
   const inspection = new Database(path, { readonly: true });
-  assert.equal(inspection.pragma("user_version", { simple: true }), 33);
+  assert.equal(inspection.pragma("user_version", { simple: true }), 34);
   inspection.close();
 });

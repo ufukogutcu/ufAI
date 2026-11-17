@@ -63,6 +63,8 @@ test("one settings record, resolved selections beyond pagination, and independen
     activeWorkspaceId: workspaceId,
     sidebarExpanded: true,
     characterAnimationsPaused: false,
+      inboxInAppAlertsEnabled: true,
+      inboxDesktopAlertsEnabled: false,
   });
   assert.equal(settings.activeTheme.id, themeId);
   assert.equal(settings.activeWorkspace?.id, workspaceId);
@@ -88,6 +90,8 @@ test("settings and viewport validation is atomic and rejects invalid references 
     [],
     null,
     { sidebarExpanded: 1 },
+    { inboxInAppAlertsEnabled: 1 },
+    { inboxDesktopAlertsEnabled: "true" },
     { activeThemeId: "missing", sidebarExpanded: true },
     { activeThemeId: null },
     { activeWorkspaceId: "missing" },
@@ -276,7 +280,7 @@ test("version 2 migration preserves data; all settings survive reopening by inde
   await server.inject({
     method: "PATCH",
     url: "/api/settings",
-    payload: { activeThemeId: theme.id, sidebarExpanded: true },
+    payload: { activeThemeId: theme.id, sidebarExpanded: true, inboxInAppAlertsEnabled: false, inboxDesktopAlertsEnabled: true },
   });
   await server.inject({
     method: "PATCH",
@@ -303,7 +307,7 @@ test("version 2 migration preserves data; all settings survive reopening by inde
   await deleteOwner(otherClient, `/api/workspaces/${workspace.id}`);
   await server.close();
   const storage = new Database(databasePath);
-  assert.equal(storage.pragma("user_version", { simple: true }), 32);
+  assert.equal(storage.pragma("user_version", { simple: true }), 33);
   assert.equal(
     (
       storage
@@ -319,4 +323,25 @@ test("version 2 migration preserves data; all settings survive reopening by inde
     null,
   );
   assert.equal((await server.inject("/api/workspaces")).json().total, 0);
+});
+
+test("v32 upgrade adds notification defaults while preserving settings and Inbox history", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "ufai-inbox-upgrade-"));
+  const path = join(directory, "app.sqlite");
+  const server = createApp({ databasePath: path, serveStatic: false, execution: { autoStart: false } });
+  const initial = (await server.inject("/api/settings")).json<SettingsResponse>();
+  await server.close();
+  const old = new Database(path);
+  old.prepare("INSERT INTO workspace_inbox(id,workspaceId,agentName,content,attachments,createdAt) VALUES('kept',?,'Agent','Kept message','[]','now')").run(initial.settings.activeWorkspaceId);
+  old.exec("ALTER TABLE app_settings DROP COLUMN inboxInAppAlertsEnabled; ALTER TABLE app_settings DROP COLUMN inboxDesktopAlertsEnabled; UPDATE app_settings SET sidebarExpanded=1; DROP INDEX inbox_unread; PRAGMA user_version=32");
+  old.close();
+  const upgraded = createApp({ databasePath: path, serveStatic: false, execution: { autoStart: false } });
+  t.after(async () => { await upgraded.close(); await rm(directory, { recursive: true, force: true }); });
+  const saved = (await upgraded.inject("/api/settings")).json<SettingsResponse>();
+  assert.equal(saved.settings.inboxInAppAlertsEnabled, true);
+  assert.equal(saved.settings.inboxDesktopAlertsEnabled, false);
+  assert.equal(saved.settings.sidebarExpanded, true);
+  assert.equal(saved.settings.activeWorkspaceId, initial.settings.activeWorkspaceId);
+  assert.equal((await upgraded.inject("/api/inbox/kept")).json().content, "Kept message");
+  assert.deepEqual((await upgraded.inject("/api/inbox/notifications")).json().items, []);
 });

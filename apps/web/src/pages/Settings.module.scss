@@ -1,0 +1,24 @@
+.page {
+  overflow: auto;
+  padding: 32px 48px 48px calc(var(--shell-gutter) + 8px);
+}
+.content {
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  h2, p { margin: 0; }
+  p { color: var(--muted); line-height: 1.6; overflow-wrap: anywhere; }
+}
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  strong { display: block; color: var(--text); font-weight: 600; }
+  p { margin-top: 4px; }
+}
+.actions { display: flex; flex-wrap: wrap; gap: 12px; }
+@media (max-width: 640px) {
+  .page { padding: 48px 20px 24px calc(var(--shell-gutter) + 8px); }
+}

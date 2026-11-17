@@ -22,6 +22,26 @@
     }
   ],
   "tokens": {
+    "inbox-unread-background": {
+      "cssVariable": "--inbox-unread-background",
+      "label": "Inbox unread badge background",
+      "description": "Background of the total unread Inbox count on Home navigation.",
+      "components": ["Home Inbox unread badge", "Notification badge preview"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#303030",
+      "dark": "#eeeeee"
+    },
+    "inbox-unread-text": {
+      "cssVariable": "--inbox-unread-text",
+      "label": "Inbox unread badge text",
+      "description": "Text of the total unread Inbox count on Home navigation.",
+      "components": ["Home Inbox unread badge", "Notification badge preview"],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#ffffff",
+      "dark": "#202020"
+    },
     "rich-code-surface": {
       "cssVariable": "--rich-code-surface",
       "label": "Code background",

@@ -9,17 +9,15 @@ import type {
 import { readTheme } from "./themes.js";
 import { InputError, objectBody } from "./validation.js";
 
-type SettingsRow = Omit<AppSettings, "sidebarExpanded" | "characterAnimationsPaused"> & {
-  sidebarExpanded: number;
-  characterAnimationsPaused: number;
-};
+const booleanSettings = ["sidebarExpanded", "characterAnimationsPaused", "inboxInAppAlertsEnabled", "inboxDesktopAlertsEnabled"] as const;
+type SettingsRow = Omit<AppSettings, typeof booleanSettings[number]> & Record<typeof booleanSettings[number], number>;
 
 export function registerSettings(
   app: FastifyInstance,
   database: Database.Database,
 ) {
   const getSettings = database.prepare(
-    "SELECT activeThemeId, activeWorkspaceId, sidebarExpanded, characterAnimationsPaused FROM app_settings WHERE id = 1",
+    "SELECT activeThemeId, activeWorkspaceId, sidebarExpanded, characterAnimationsPaused, inboxInAppAlertsEnabled, inboxDesktopAlertsEnabled FROM app_settings WHERE id = 1",
   );
   const getWorkspace = database.prepare(
     "SELECT * FROM workspaces WHERE id = ?",
@@ -27,7 +25,7 @@ export function registerSettings(
   function read(): SettingsResponse {
     const row = getSettings.get() as SettingsRow;
     return {
-      settings: { ...row, sidebarExpanded: Boolean(row.sidebarExpanded), characterAnimationsPaused: Boolean(row.characterAnimationsPaused) },
+      settings: { ...row, sidebarExpanded: Boolean(row.sidebarExpanded), characterAnimationsPaused: Boolean(row.characterAnimationsPaused), inboxInAppAlertsEnabled: Boolean(row.inboxInAppAlertsEnabled), inboxDesktopAlertsEnabled: Boolean(row.inboxDesktopAlertsEnabled) },
       activeTheme: readTheme(database, row.activeThemeId)!,
       activeWorkspace: row.activeWorkspaceId
         ? (getWorkspace.get(row.activeWorkspaceId) as Workspace)
@@ -40,7 +38,7 @@ export function registerSettings(
     const fields: Record<string, string> = {};
     for (const key of Object.keys(patch))
       if (
-        !["activeThemeId", "activeWorkspaceId", "sidebarExpanded", "characterAnimationsPaused"].includes(key)
+        !["activeThemeId", "activeWorkspaceId", ...booleanSettings].includes(key)
       )
         fields[key] = "Unknown field.";
     if (
@@ -56,21 +54,17 @@ export function registerSettings(
         !getWorkspace.get(patch.activeWorkspaceId))
     )
       fields.activeWorkspaceId = "Choose an existing workspace, or null.";
-    if (
-      Object.hasOwn(patch, "sidebarExpanded") &&
-      typeof patch.sidebarExpanded !== "boolean"
-    )
-      fields.sidebarExpanded = "Provide true or false.";
-    if (Object.hasOwn(patch, "characterAnimationsPaused") && typeof patch.characterAnimationsPaused !== "boolean")
-      fields.characterAnimationsPaused = "Provide true or false.";
+    for (const key of booleanSettings)
+      if (Object.hasOwn(patch, key) && typeof patch[key] !== "boolean")
+        fields[key] = "Provide true or false.";
     if (Object.keys(fields).length) throw new InputError(fields);
     const settings = { ...read().settings, ...patch } as AppSettings;
     database
       .prepare(
         `UPDATE app_settings SET activeThemeId = @activeThemeId,
-      activeWorkspaceId = @activeWorkspaceId, sidebarExpanded = @sidebarExpanded, characterAnimationsPaused = @characterAnimationsPaused WHERE id = 1`,
+      activeWorkspaceId = @activeWorkspaceId, sidebarExpanded = @sidebarExpanded, characterAnimationsPaused = @characterAnimationsPaused, inboxInAppAlertsEnabled = @inboxInAppAlertsEnabled, inboxDesktopAlertsEnabled = @inboxDesktopAlertsEnabled WHERE id = 1`,
       )
-      .run({ ...settings, sidebarExpanded: Number(settings.sidebarExpanded), characterAnimationsPaused: Number(settings.characterAnimationsPaused) });
+      .run({ ...settings, ...Object.fromEntries(booleanSettings.map(key => [key, Number(settings[key])])) });
     return read();
   });
 

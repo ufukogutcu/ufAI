@@ -33,7 +33,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 32)
+    if (version > 33)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -343,6 +343,16 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
       database.transaction(() => {
         migrateVault(database);
         database.pragma("user_version = 32");
+      })();
+
+    if (version < 33)
+      database.transaction(() => {
+        const columns = database.prepare("PRAGMA table_info(app_settings)").all() as { name: string }[];
+        for (const [key, initial] of [["inboxInAppAlertsEnabled", 1], ["inboxDesktopAlertsEnabled", 0]] as const)
+          if (!columns.some(column => column.name === key))
+            database.exec(`ALTER TABLE app_settings ADD COLUMN ${key} INTEGER NOT NULL DEFAULT ${initial} CHECK (${key} IN (0,1))`);
+        database.exec("CREATE INDEX IF NOT EXISTS inbox_unread ON workspace_inbox(sequence) WHERE readAt IS NULL");
+        database.pragma("user_version = 33");
       })();
 
   } catch (error) {

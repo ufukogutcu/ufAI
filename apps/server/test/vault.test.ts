@@ -1,3 +1,5 @@
+import Fastify from "fastify";
+import { registerInboxNotifications } from "../src/inbox-notifications.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtemp, rm, readFile, stat, unlink } from "node:fs/promises";
@@ -68,9 +70,16 @@ test("missing encryption key never gets replaced while encrypted records exist",
 
 test("private input creates one Inbox notification, yields, resolves once and resumes with metadata only", async t => {
   const s = await setup(t);
+  const feed = Fastify();
+  registerInboxNotifications(feed, s.db, s.engine.events);
+  t.after(() => feed.close());
   const r = s.vault.request(s.owner, { kind: "secret", name: "Login", purpose: "Sign in" }, "call-one");
   assert.equal(s.vault.request(s.owner, { kind: "secret", name: "Login", purpose: "Sign in" }, "call-one").id, r.id);
   assert.equal((s.db.prepare("SELECT count(*) n FROM workspace_inbox").get() as any).n, 1);
+  const arrivals = (await feed.inject("/api/inbox/notifications?after=0")).json();
+  assert.equal(arrivals.items.length, 1);
+  assert.equal(arrivals.items[0].preview, "Private input requested. Open Inbox to respond.");
+  assert.ok(!JSON.stringify(arrivals).includes("Login"));
   assert.equal(s.messaging.yieldTask(s.owner, "Waiting for private input").taskYield, true);
   assert.equal(s.engine.task(s.owner.taskId).pendingReason, "user_input");
   s.db.prepare("UPDATE agent_turns SET status='completed',phase='yielded' WHERE id=?").run(s.owner.turnId);

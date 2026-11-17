@@ -21,6 +21,7 @@ import {
   createSettingsStore,
   SettingsContext,
   useSettings,
+  useSettingsStore,
 } from "./settings-store";
 import { UnsavedChangesProvider } from "./components/UnsavedChanges";
 import { useNavigationGuard } from "./navigation-guard";
@@ -35,7 +36,9 @@ import Presets from "./pages/Presets";
 import styles from "./App.module.scss";
 import { CodexUsageDock } from "./components/CodexUsageDock";
 import { CodexUsageContext, createCodexUsageStore } from "./codex-usage-store";
-import { FeedbackProvider, useNotice } from "./components/FeedbackProvider";
+import { FeedbackProvider, useFeedbackStore, useNotice } from "./components/FeedbackProvider";
+import SettingsPage from "./pages/Settings";
+import { InboxNotificationsProvider, useInboxNotificationStore, useInboxNotifications } from "./components/InboxNotifications";
 import { RichTextProvider } from "./components/RichText";
 
 const pages = [
@@ -55,6 +58,11 @@ function readPage(): PageId {
 
 function Shell() {
   const [page, setPage] = useState(readPage);
+  const unreadTotal = useInboxNotifications(state => state.unreadTotal);
+  const inboxNavigation = useInboxNotifications(state => state.navigation);
+  const inbox = useInboxNotificationStore();
+  const settings = useSettingsStore();
+  const feedback = useFeedbackStore();
   const settingsError = useSettings((state) => state.error);
   const settingsErrorDetails = useSettings((state) => state.errorDetails);
   const retrySettings = useSettings((state) => state.retry);
@@ -117,6 +125,27 @@ function Shell() {
       window.removeEventListener("hashchange", handleHashChange);
     };
   }, [attempt]);
+  useEffect(() => {
+    if (!inboxNavigation || !inbox) return;
+    inbox.setState({ navigation: null });
+    attempt(() => {
+      void (async () => {
+        await settings.getState().update({ activeWorkspaceId: inboxNavigation.workspaceId });
+        if (settings.getState().snapshot.settings.activeWorkspaceId !== inboxNavigation.workspaceId || settings.getState().error) {
+          feedback?.getState().publish({ id: "inbox-navigation", title: "Inbox could not open", message: settings.getState().error || "This workspace is no longer available.", tone: "error" });
+          return;
+        }
+        feedback?.getState().resolve("inbox-navigation");
+        if (pageRef.current !== "home") {
+          historyIndex.current += 1;
+          window.history.pushState({ ufaiIndex: historyIndex.current }, "", "#/home");
+          pageRef.current = "home";
+          setPage("home");
+        }
+        inbox.setState({ target: inboxNavigation });
+      })();
+    });
+  }, [attempt, feedback, inbox, inboxNavigation, settings]);
   function navigate(event: MouseEvent<HTMLAnchorElement>, target: PageId) {
     if (
       event.metaKey ||
@@ -139,7 +168,6 @@ function Shell() {
       setPage(target);
     });
   }
-  const current = pages.find((item) => item.id === page)!;
   return (
     <div className={styles.app}>
       <a
@@ -181,11 +209,12 @@ function Shell() {
             <a
               href={`#/${item.id}`}
               className={`${styles.navItem} ${page === item.id ? styles.active : ""}`}
-              aria-label={item.label}
+              aria-label={item.id === "home" ? `Home, ${unreadTotal} unread Inbox messages` : item.label}
               aria-current={page === item.id ? "page" : undefined}
               onClick={(event) => navigate(event, item.id)}
             >
               <item.icon size={18} strokeWidth={1.65} aria-hidden="true" />
+              {item.id === "home" && unreadTotal > 0 && <span className={styles.unreadBadge} aria-hidden="true">{unreadTotal > 99 ? "99+" : unreadTotal}</span>}
             </a>
           </Tooltip>
         ))}
@@ -205,13 +234,7 @@ function Shell() {
           ) : page === "theme" ? (
             <Themes />
           ) : (
-            <section className={styles.placeholder}>
-              <header className="pageHeader">
-                <div>
-                  <h1>{current.label}</h1>
-                </div>
-              </header>
-            </section>
+            <SettingsPage />
           )}
         </main>
       </div>
@@ -229,7 +252,7 @@ export default function App({ initial }: { initial: SettingsResponse }) {
           <CodexUsageContext.Provider value={usage}>
           <DashboardProvider>
             <FeedbackProvider><UnsavedChangesProvider>
-              <RichTextProvider><Shell /></RichTextProvider>
+              <RichTextProvider><InboxNotificationsProvider><Shell /></InboxNotificationsProvider></RichTextProvider>
             </UnsavedChangesProvider></FeedbackProvider>
           </DashboardProvider>
           </CodexUsageContext.Provider>

@@ -89,14 +89,21 @@
   outline-offset: -3px;
   > section { flex: 1; min-height: 0; }
 }
-.placeholder {
-  height: 100%;
-  overflow: auto;
-  padding: 32px 48px 48px calc(var(--shell-gutter) + 8px);
-}
-@media (max-width: 640px) {
-  .placeholder { padding: 48px 20px 24px calc(var(--shell-gutter) + 8px); }
-}
 @media (max-height: 520px) {
   .dockStack { justify-content: flex-start; gap: 8px; bottom: 12px; }
+}
+
+.unreadBadge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 16px;
+  padding: 1px 3px;
+  border-radius: var(--radius-compact);
+  background: var(--inbox-unread-background);
+  color: var(--inbox-unread-text);
+  font-size: 10px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }

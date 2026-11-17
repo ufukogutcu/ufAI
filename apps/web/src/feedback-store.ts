@@ -11,6 +11,7 @@ export interface NoticeInput {
   action?: () => Promise<unknown> | unknown;
   dismissible?: boolean;
   details?: string;
+  episode?: string;
 }
 export interface Notice extends NoticeInput {
   busy: boolean;
@@ -41,7 +42,7 @@ export function createFeedbackStore() {
       set(state => {
         const previous = state.notices.find(notice => notice.id === input.id);
         // Polling the same failure must not reopen a dismissed notice.
-        const sameEpisode = previous?.message === input.message && previous.title === input.title && previous.tone === input.tone;
+        const sameEpisode = previous?.message === input.message && previous.title === input.title && previous.tone === input.tone && previous.episode === input.episode;
         const notice: Notice = { ...input, busy: previous?.busy ?? false, dismissed: sameEpisode ? previous.dismissed : false, resolved: false };
         return { notices: previous
           ? state.notices.map(item => item === previous ? notice : item)

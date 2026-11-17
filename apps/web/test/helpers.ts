@@ -11,6 +11,8 @@ export function initialSettings(): SettingsResponse {
       activeWorkspaceId: null,
       sidebarExpanded: false,
       characterAnimationsPaused: false,
+      inboxInAppAlertsEnabled: true,
+      inboxDesktopAlertsEnabled: false,
     },
     activeTheme: defaultThemes[0]!,
     activeWorkspace: null,

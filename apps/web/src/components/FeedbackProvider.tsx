@@ -20,14 +20,14 @@ export function useNotice(input: NoticeInput | null, sourceId: string) {
   const action = useCallback(() => actionRef.current?.(), []);
   const title = input?.title, message = input?.message, tone = input?.tone;
   const actionLabel = input?.actionLabel, dismissible = input?.dismissible;
-  const details = input?.details;
+  const details = input?.details, episode = input?.episode;
   const enabled = input !== null, hasAction = !!input?.action;
   useEffect(() => {
     if (!store) return;
     if (!enabled) { store.getState().resolve(sourceId); return; }
-    store.getState().publish({ id: sourceId, title: title!, message: message!, tone, actionLabel, dismissible, details,
+    store.getState().publish({ id: sourceId, title: title!, message: message!, tone, actionLabel, dismissible, details, episode,
       action: hasAction ? action : undefined });
-  }, [store, sourceId, enabled, title, message, tone, actionLabel, dismissible, details, hasAction, action]);
+  }, [store, sourceId, enabled, title, message, tone, actionLabel, dismissible, details, episode, hasAction, action]);
   useEffect(() => () => store?.getState().remove(sourceId), [store, sourceId]);
 }
 
