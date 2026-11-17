@@ -190,6 +190,7 @@ test("a process wait is a safe freeze boundary and process completion does not r
   await s.until(()=>s.engine.task(task.taskId!).status==="waiting");
   await s.action("freeze");
   assert.equal(s.control().state,"frozen");
+  assert.equal((s.db.prepare("SELECT phase FROM execution_checkpoints WHERE turnId=?").get(task.turnId) as any).phase,"waiting");
   await s.until(()=>!!s.db.prepare("SELECT 1 FROM owned_processes WHERE state NOT IN ('starting','running')").get());
   const proc=s.db.prepare("SELECT * FROM owned_processes").get() as any;
   assert.equal(proc.state,"exited",JSON.stringify(proc));
@@ -473,4 +474,38 @@ test("initial task-event delivery rolls back if saving its provider checkpoint f
   await s.until(()=>s.engine.task(task.taskId!).status==="completed");
   assert.equal(sawReminder,true);
   assert.equal((s.db.prepare("SELECT deliveredTurnId FROM task_checkins WHERE id=?").get(checkin) as any).deliveredTurnId,retry.turnId);
+});
+
+for (const restarted of [false,true]) test(`trigger replay waits for the frozen Chat turn${restarted ? " after restart" : ""} but permits later Chat turns to run concurrently`,async t=>{
+  const s=await setup(t);
+  let initialStarted=false;
+  let finishInitial!:(result:ToolRound)=>void;
+  s.service.connections.toolRound=async()=>{initialStarted=true;return new Promise(resolve=>finishInitial=resolve);};
+  const chat=s.engine.submit("a","chat","Resume this Chat first",randomUUID());
+  await s.until(()=>initialStarted);await s.action("freeze");finishInitial(round());
+  await s.until(()=>s.control().state==="frozen");
+  if (restarted) {
+    // Older checkpoints parked in process waits did not retain a freeze phase.
+    s.db.prepare("UPDATE execution_checkpoints SET phase=NULL WHERE turnId=?").run(chat.turnId);
+    await s.reopen();
+    assert.ok((s.db.prepare("SELECT phase FROM execution_checkpoints WHERE turnId=?").get(chat.turnId) as any).phase);
+  }
+  const trigger=await s.trigger();s.service.run(trigger.id,randomUUID());s.service.run(trigger.id,randomUUID());
+  await s.action("resume","all");await s.service.tick();
+  assert.equal(s.control().state,"active");
+  assert.equal((s.db.prepare("SELECT count(*) n FROM trigger_occurrences WHERE taskId IS NOT NULL").get() as any).n,0,"trigger dispatch must wait for the captured Chat turn");
+  await s.until(()=>s.engine.task(chat.taskId!).status==="completed");
+  await s.service.tick();
+  assert.equal((s.db.prepare("SELECT count(*) n FROM trigger_occurrences WHERE taskId IS NOT NULL").get() as any).n,1);
+  // Holding a subsequent Chat turn must not extend the earlier freeze fence.
+  s.service.connections.toolRound=async(_snapshot,request)=>{
+    if(request.messages.at(-1)?.content.includes("Later Chat"))return new Promise((_resolve,reject)=>request.signal.addEventListener("abort",()=>reject(request.signal.reason),{once:true}));
+    return round();
+  };
+  s.engine.submit("a","chat","Later Chat",randomUUID());
+  await s.until(()=>!!s.db.prepare("SELECT 1 FROM agent_turns WHERE taskId=? AND status='running'").get(chat.taskId));
+  await s.until(()=>s.service.occurrences(s.workspaceId,trigger.id).items.some(o=>o.state==="completed"));
+  await s.service.tick();
+  assert.equal((s.db.prepare("SELECT count(*) n FROM trigger_occurrences WHERE taskId IS NOT NULL").get() as any).n,2,"later Chat work does not hold the trigger queue");
+  await s.engine.cancelTask(chat.taskId!);
 });

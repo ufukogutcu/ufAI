@@ -115,6 +115,7 @@ export class AgentExecution {
         error = CASE WHEN phase = 'maintenance' THEN NULL ELSE 'Execution was interrupted. Retry explicitly.' END,
         generation = generation + 1 WHERE (status IN ('running','waiting') OR (status='queued' AND phase='waiting')) AND NOT EXISTS (SELECT 1 FROM messaging_waits w WHERE w.turnId=agent_turns.id AND w.state='waiting') AND NOT EXISTS (SELECT 1 FROM execution_checkpoints c WHERE c.turnId=agent_turns.id AND c.safe=1)`,
       ).run();
+      db.prepare("UPDATE execution_checkpoints SET phase=(SELECT phase FROM agent_turns WHERE id=execution_checkpoints.turnId) WHERE safe=1 AND phase IS NULL").run();
       db.prepare("UPDATE agent_turns SET status='queued' WHERE id IN (SELECT turnId FROM execution_checkpoints WHERE safe=1) AND status IN ('running','waiting') AND NOT EXISTS(SELECT 1 FROM messaging_waits w WHERE w.turnId=agent_turns.id AND w.state='waiting')").run();
       db.prepare("UPDATE agent_freezes SET state='frozen',frozenAt=coalesce(frozenAt,?) WHERE state='freezing'").run(now());
       db.prepare(
@@ -706,7 +707,7 @@ export class AgentExecution {
     if ([...this.active.values()].some(a => a.agentId === id && !a.waiting && !a.freezeParked)) return;
     for (const [turnId,a] of this.active) if (a.agentId === id && a.waiting) {
       this.db.prepare("INSERT OR IGNORE INTO execution_checkpoints(turnId) VALUES(?)").run(turnId);
-      this.db.prepare("UPDATE execution_checkpoints SET safe=1 WHERE turnId=?").run(turnId);
+      this.db.prepare("UPDATE execution_checkpoints SET safe=1,phase=(SELECT phase FROM agent_turns WHERE id=execution_checkpoints.turnId) WHERE turnId=?").run(turnId);
     }
     this.db.prepare("UPDATE agent_freezes SET state='frozen',frozenAt=? WHERE agentId=? AND state='freezing'").run(now(),id);
   }

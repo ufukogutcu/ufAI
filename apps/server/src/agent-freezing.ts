@@ -128,6 +128,10 @@ export class AgentFreezing {
     return `NOT EXISTS(SELECT 1 FROM agent_freezes freeze_control WHERE freeze_control.agentId=${occurrence}.agentId AND freeze_control.replaying=1 AND (
       EXISTS(SELECT 1 FROM agent_resume_blockers b JOIN agent_tasks task ON task.id=b.taskId
         WHERE b.agentId=freeze_control.agentId AND task.status NOT IN ('completed','failed','cancelled'))
+      OR EXISTS(SELECT 1 FROM agent_turns chat_turn JOIN agent_tasks chat_task ON chat_task.id=chat_turn.taskId
+        JOIN execution_checkpoints checkpoint ON checkpoint.turnId=chat_turn.id
+        WHERE chat_task.agentId=freeze_control.agentId AND chat_task.kind='chat'
+        AND checkpoint.phase IS NOT NULL AND chat_turn.status IN ('queued','running','waiting'))
       OR EXISTS(SELECT 1 FROM trigger_occurrences other_occurrence JOIN agent_triggers other_trigger ON other_trigger.id=other_occurrence.triggerId JOIN agent_tasks task ON task.id=other_occurrence.taskId
         WHERE other_trigger.agentId=freeze_control.agentId AND task.status NOT IN ('completed','failed','cancelled') AND other_occurrence.id!=${occurrence}.id
         AND EXISTS(SELECT 1 FROM agent_turns started WHERE started.taskId=task.id AND started.snapshot IS NOT NULL))
