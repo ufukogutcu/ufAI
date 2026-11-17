@@ -52,6 +52,7 @@ import { agentPanelTabs, type AgentPanelTab } from "../agent-panel-tabs";
 import { TriggersView } from "./Triggers";
 import { Field } from "./FormField";
 import { Dialog } from "./Dialog";
+import { AgentDeleteDialog } from "./AgentDeleteDialog";
 import styles from "./AgentPanel.module.scss";
 
 export function AgentForm({
@@ -498,7 +499,6 @@ export function AgentPanel({
     [newTask, setNewTask] = useState(false),
     [error, setError] = useState(""),
     [deleting, setDeleting] = useState(false),
-    [deleteBusy, setDeleteBusy] = useState(false),
     [source, setSource] = useState<{
       message: AgentMessage;
       taskId: string;
@@ -823,52 +823,7 @@ export function AgentPanel({
         </div>
       )}
       {editingCharacter && <CharacterEditor initial={agent.appearance} onClose={() => setEditingCharacter(false)} onSave={async appearance => { await store.getState().update(agent.id, { appearance }); }} />}
-      {deleting && (
-        <Dialog
-          title="Delete agent?"
-          busy={deleteBusy}
-          onClose={() => setDeleting(false)}
-        >
-          <p>
-            Permanently delete {agent.name}, its conversations, memories, and
-            all files in its agent and task folders? Its work will be cancelled.
-            This cannot be undone.
-          </p>
-          {error && (
-            <Feedback role="alert">
-              {error}
-            </Feedback>
-          )}
-          {deleteBusy && (
-            <LoadingState>
-              Cleaning up files… This continues if the page closes.
-            </LoadingState>
-          )}
-          <div className={styles.actions}>
-            <button
-              className="button"
-              disabled={deleteBusy}
-              onClick={() => setDeleting(false)}
-            >
-              Keep Agent
-            </button>
-            <BusyButton busy={deleteBusy}
-              className="button danger"
-              disabled={deleteBusy}
-              onClick={() => {
-                setDeleteBusy(true);
-                void store
-                  .getState()
-                  .remove(agent.id)
-                  .catch((e) => setError(errorMessage(e)))
-                  .finally(() => setDeleteBusy(false));
-              }}
-            >
-              {deleteBusy ? "Deleting files…" : "Delete Agent and files"}
-            </BusyButton>
-          </div>
-        </Dialog>
-      )}
+      {deleting && <AgentDeleteDialog agent={agent} onClose={() => setDeleting(false)} />}
       {source && (
         <Dialog title="Memory source" onClose={() => setSource(null)}>
           <RichText content={source.message.content} instanceId={`memory-source-${source.message.id}`} streaming={source.message.state === "streaming"} />
