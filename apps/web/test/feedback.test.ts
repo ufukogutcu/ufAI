@@ -90,7 +90,7 @@ test("a failed read after an accepted message retries only that read and unrelat
   const agent: Agent = { id: "one", workspaceId: "workspace", name: "Ava", instructions: "", presetId: null,
     appearance: { kind: "pebble", color: "sage", accessories: [] }, x: 0, y: 0, revision: 1,
     createdAt: "now", updatedAt: "now", state: "idle", queuedCount: 0, runningTaskCount: 0,
-    issueCounts: { warning: 0, error: 0 } };
+    pendingUserInputCount: 0, issueCounts: { warning: 0, error: 0 } };
   let sent = 0, fail = true, reads = 0;
   t.mock.method(globalThis, "fetch", async (url: string, init?: RequestInit) => {
     if (init?.method === "POST") { sent++; return Response.json({ taskId: null, turnId: "accepted" }); }

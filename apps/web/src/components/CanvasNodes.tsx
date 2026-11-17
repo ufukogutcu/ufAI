@@ -1,5 +1,6 @@
+import { AgentInputBubble } from "./AgentInputBubble";
 import { LiveAgentCharacter } from "./LiveAgentCharacter";
-import { memo, useContext } from "react";
+import { memo, useContext, useRef } from "react";
 import { AgentConnectionRing } from "./ConnectionRings";
 import ringStyles from "./ConnectionRings.module.scss";
 import type { NodeProps } from "@xyflow/react";
@@ -35,7 +36,8 @@ export const AgentNode = memo(function AgentNode({
     guard = useNavigationGuard();
   const paused = useSettings(s => s.snapshot.settings.characterAnimationsPaused);
   const hidden = useContext(CharacterVisibilityContext);
-  const hasIssues = !!agent && (agent.issueCounts.warning > 0 || agent.issueCounts.error > 0);
+  const nameButton = useRef<HTMLButtonElement>(null);
+  const hasIssues = !!agent && (agent.issueCounts.warning > 0 || agent.issueCounts.error > 0 || agent.pendingUserInputCount > 0);
   if (!agent) return null;
   const state = agentStates[agent.state];
   const StateIcon = state.icon;
@@ -79,6 +81,7 @@ export const AgentNode = memo(function AgentNode({
         <Tooltip content={agent.name}>
           <button
             className={`nodrag ${agentStyles.nodeName}`}
+            ref={nameButton}
             data-move="true"
             onClick={selectAgent}
           >
@@ -86,6 +89,7 @@ export const AgentNode = memo(function AgentNode({
           </button>
         </Tooltip>
         <div className={agentStyles.nodeIssues}>
+          <AgentInputBubble agentId={agent.id} agentName={agent.name} count={agent.pendingUserInputCount} fallbackRef={nameButton} />
           {(["warning", "error"] as const).map(severity => agent.issueCounts[severity] > 0 && (
             <AgentIssueBubble key={severity} agentId={agent.id} agentName={agent.name} severity={severity} count={agent.issueCounts[severity]} />
           ))}

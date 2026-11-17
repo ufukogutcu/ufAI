@@ -243,6 +243,7 @@ export interface AgentAppearance {
 }
 export interface Agent {
   issueCounts: { warning: number; error: number };
+  pendingUserInputCount: number;
   appearance: AgentAppearance;
   id: string;
   workspaceId: string;

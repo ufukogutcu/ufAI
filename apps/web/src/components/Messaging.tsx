@@ -1,5 +1,5 @@
 import { useInboxNotifications, useInboxNotificationStore } from "./InboxNotifications";
-import { PrivateInputCard } from "./PrivateInputCard";
+import { UserInputCard } from "./UserInputCard";
 import { Feedback } from "./Feedback";
 import { useNavigationGuard } from "../navigation-guard";
 import {
@@ -487,7 +487,7 @@ export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
                   </span>
                   <RichText content={entry.content} instanceId={`inbox-${entry.id}`} />
                   <AttachedFiles ids={entry.attachments} />
-                  {entry.userInputRequestId && <PrivateInputCard requestId={entry.userInputRequestId} refreshKey={data?.inbox} onChange={refresh} />}
+                  {entry.userInputRequestId && <UserInputCard requestId={entry.userInputRequestId} refreshKey={data?.inbox} onChange={refresh} />}
                   <div className={styles.actions}>
                     <button
                       className="textButton"

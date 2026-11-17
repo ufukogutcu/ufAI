@@ -17,7 +17,7 @@ export function PrivateInputCard({ requestId, item, refreshKey, onChange }: {
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [revision, setRevision] = useState<number | undefined>();
   const fieldId = useId(), input = useRef<HTMLTextAreaElement>(null), generation = useRef(0);
-  const current = item && (!loaded || item.updatedAt > loaded.updatedAt) ? item : loaded ?? item;
+  const current = item && (!loaded || (item.updatedAt > loaded.updatedAt || (loaded.state === "pending" && item.state !== "pending"))) ? item : loaded ?? item;
   const pending = current?.state === "pending";
   const discard = useCallback(() => { setValue(""); setSelected(""); }, []);
   useUnsavedChanges(!!pending && (!!value || !!selected), discard);

@@ -230,6 +230,7 @@
   // Equal columns anchor the last badge's center even when counts grow.
   transform: translateX(calc(25% - var(--issue-gap) / 4));
   &:has(> :only-child) { transform: translateX(50%); }
+  &:has(> :nth-child(3)) { transform: translateX(calc(16.6667% - var(--issue-gap) / 3)); }
 }
 .nodeIndicators {
   display: flex;

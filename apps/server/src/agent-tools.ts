@@ -196,7 +196,7 @@ const allTaskTools: ToolSpec[] = [
   ),
   spec(
     "user_notify",
-    "Deliberately send a message to the user's workspace Inbox. Normal final answers go to the immediate requester and do not use this Inbox.",
+    "Send an informational update to the user's Inbox. For questions or decisions use user_input_request. Final answers go to the immediate requester.",
     { content: { type: "string", maxLength: 12000 }, versionIds },
     ["content"],
   ),

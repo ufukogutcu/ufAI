@@ -8,9 +8,9 @@ const agent: Agent = {
   presetId: null, x: 10, y: 20, revision: 1,
   createdAt: "now", updatedAt: "now", state: "idle", queuedCount: 0, runningTaskCount: 0,
   appearance: { kind: "pebble", color: "sage", accessories: [] },
-  issueCounts: { warning: 1, error: 0 },
+  pendingUserInputCount: 0, issueCounts: { warning: 1, error: 0 },
 };
-const running: Agent = { ...agent, state: "running", runningTaskCount: 1, issueCounts: { warning: 0, error: 2 } };
+const running: Agent = { ...agent, state: "running", runningTaskCount: 1, pendingUserInputCount: 2, issueCounts: { warning: 0, error: 2 } };
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>(r => { resolve = r; });
@@ -93,6 +93,7 @@ for (const older of ["workspace", "agent"] as const) {
     gate.resolve(Response.json(older === "workspace" ? { items: [agent], total: 1 } : agent));
     await first;
     assert.equal(store.getState().agents.agent, record);
+    assert.equal(store.getState().agents.agent!.pendingUserInputCount, 2);
     assert.equal(store.getState().nodes.workspace, nodes);
   });
 }

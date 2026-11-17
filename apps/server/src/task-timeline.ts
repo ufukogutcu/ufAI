@@ -1,3 +1,4 @@
+import { inputColumns, readInput } from "./user-inputs.js";
 import type Database from "better-sqlite3";
 import type { FastifyInstance } from "fastify";
 import type { AgentExecution } from "./agent-execution.js";
@@ -331,7 +332,7 @@ export function taskTimeline(
       contextName,
       checkin,
       userInput: content.name === "user_input_request"
-        ? db.prepare("SELECT id,kind,workspaceId,agentId,taskId,name,purpose,secretId,expectedRevision,state,createdAt,updatedAt FROM user_input_requests WHERE turnId=? AND callId=? AND taskId=?").get(e.turnId, callId, taskId) as import("./vault-types.js").UserInputRequest | undefined
+        ? (() => { const row = db.prepare(`SELECT ${inputColumns} FROM user_input_requests r JOIN agent_tasks t ON t.id=r.taskId WHERE r.turnId=? AND r.callId=? AND r.taskId=?`).get(e.turnId, callId, taskId); return row ? readInput(row) : undefined; })()
         : undefined,
     };
   }

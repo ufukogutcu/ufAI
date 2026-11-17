@@ -9,7 +9,10 @@ export interface VaultSecret {
 }
 export interface UserInputRequest {
   id: string;
-  kind: "secret";
+  kind: "secret" | "text" | "single_choice" | "multi_select" | "form";
+  definition?: InputDefinition;
+  answer?: InputAnswer | null;
+  taskTitle?: string;
   workspaceId: string;
   agentId: string;
   taskId: string;
@@ -20,4 +23,27 @@ export interface UserInputRequest {
   state: "pending" | "fulfilled" | "declined" | "cancelled";
   createdAt: string;
   updatedAt: string;
+}
+
+export interface InputOption { id: string; label: string; description?: string }
+export type InputValue = string | number | boolean | { selected: string[]; other?: string };
+export type InputAnswer = InputValue | Record<string, InputValue>;
+export interface InputDefinition {
+  fields?: InputField[];
+  options?: InputOption[];
+  allowOther?: boolean;
+  default?: InputValue;
+  minLength?: number;
+  maxLength?: number;
+  minSelections?: number;
+  maxSelections?: number;
+}
+export interface InputField extends Omit<InputDefinition, "fields"> {
+  id: string;
+  label: string;
+  description?: string;
+  type: "text" | "single_choice" | "multi_select" | "boolean" | "number" | "integer" | "email" | "url" | "date" | "date_time";
+  required?: boolean;
+  minimum?: number;
+  maximum?: number;
 }

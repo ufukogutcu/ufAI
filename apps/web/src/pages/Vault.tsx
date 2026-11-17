@@ -101,7 +101,7 @@ export default function VaultPage() {
     try {
       const [page, requests] = await Promise.all([
         request<Page<VaultSecret>>(`/vault/secrets?limit=100&query=${encodeURIComponent(query)}`),
-        request<Page<UserInputRequest>>("/user-input-requests?limit=100"),
+        request<Page<UserInputRequest>>("/user-input-requests?kind=secret&limit=100"),
       ]);
       if (serial !== generation.current) return;
       setSecrets(page.items); setTotal(page.total); setInputs(requests.items); setInputTotal(requests.total); setError("");
@@ -134,7 +134,7 @@ export default function VaultPage() {
   }
   async function moreInputs() {
     try {
-      const page = await request<Page<UserInputRequest>>(`/user-input-requests?limit=100&offset=${inputs.length}`);
+      const page = await request<Page<UserInputRequest>>(`/user-input-requests?kind=secret&limit=100&offset=${inputs.length}`);
       setInputs(old => [...old, ...page.items.filter(s => !old.some(o => o.id === s.id))]); setInputTotal(page.total);
     } catch (e) { setError(errorMessage(e)); }
   }

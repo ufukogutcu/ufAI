@@ -20,14 +20,14 @@ export function registerInboxNotifications(app: FastifyInstance, db: Database.Da
   const latest = db.prepare("SELECT coalesce((SELECT seq FROM sqlite_sequence WHERE name='workspace_inbox'),0) AS cursor");
   const unread = db.prepare("SELECT count(*) AS total FROM workspace_inbox WHERE readAt IS NULL");
   const arrivals = db.prepare(`SELECT i.sequence,i.id,i.workspaceId,w.name AS workspaceName,i.agentName,
-    substr(i.content,1,2000) AS content,i.userInputRequestId,i.readAt FROM workspace_inbox i
+    substr(i.content,1,2000) AS content,i.userInputRequestId,r.kind AS inputKind,i.readAt FROM workspace_inbox i LEFT JOIN user_input_requests r ON r.id=i.userInputRequestId
     JOIN workspaces w ON w.id=i.workspaceId WHERE i.sequence>? AND i.sequence<=? ORDER BY i.sequence LIMIT 101`);
   const snapshot = db.transaction((after?: number): InboxNotifications => {
     const { cursor } = latest.get() as { cursor: number };
     if (after !== undefined && after > cursor) throw new InputError({ after: "The Inbox cursor is no longer valid. Refresh ufAI." });
-    const rows = after === undefined ? [] : arrivals.all(after, cursor) as (InboxNotification & { content: string; userInputRequestId: string | null })[];
+    const rows = after === undefined ? [] : arrivals.all(after, cursor) as (InboxNotification & { content: string; userInputRequestId: string | null; inputKind: string | null })[];
     const hasMore = rows.length > 100;
-    const items = rows.slice(0, 100).map(({ content, userInputRequestId, ...row }) => ({ ...row, preview: inboxPreview(content, !!userInputRequestId) }));
+    const items = rows.slice(0, 100).map(({ content, userInputRequestId, inputKind, ...row }) => ({ ...row, preview: inboxPreview(content, !!userInputRequestId && inputKind === "secret") }));
     return { cursor: hasMore ? items.at(-1)!.sequence : cursor, unreadTotal: (unread.get() as { total: number }).total, items, hasMore };
   });
   let streams = 0;

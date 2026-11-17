@@ -1,3 +1,4 @@
+import { migrateUserInputs } from "./user-input-schema.js";
 import { migrateVault } from "./vault-schema.js";
 import { migrateMcp } from "./mcp-schema.js";
 import { migrateTriggers, migrateTriggerReviews } from "./trigger-schema.js";
@@ -33,7 +34,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 33)
+    if (version > 34)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -354,6 +355,8 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
         database.exec("CREATE INDEX IF NOT EXISTS inbox_unread ON workspace_inbox(sequence) WHERE readAt IS NULL");
         database.pragma("user_version = 33");
       })();
+
+    if (version < 34) migrateUserInputs(database);
 
   } catch (error) {
     database.close();

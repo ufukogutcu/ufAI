@@ -798,7 +798,7 @@ export class MessagingService {
       )
       .all(taskId) as any[];
     const privateInputs = this.db.prepare(`SELECT id AS userInputId,id,'user_input' AS kind,
-      json_object('requestId',id,'state',state,'secretId',secretId) AS content,'user' AS senderName,
+      CASE WHEN kind='secret' THEN json_object('requestId',id,'state',state,'secretId',secretId) ELSE json_object('requestId',id,'name',name,'purpose',purpose,'state',state,'answer',json(answer)) END AS content,kind!='secret' AS ordinaryUserInput,'user' AS senderName,
       NULL AS senderAgentId,NULL AS requestId,'[]' AS attachments,updatedAt AS createdAt,returnEnvelope
       FROM user_input_requests WHERE taskId=? AND state!='pending' AND deliveredTurnId IS NULL ORDER BY updatedAt,id LIMIT 32`).all(taskId);
     const batch: any[] = [];
@@ -806,6 +806,7 @@ export class MessagingService {
       files = 0,
       characters = 0;
     let route = activeEnvelope ? this.resultRoute(activeEnvelope) : null;
+    let userBatch: boolean | undefined;
     for (const item of [...messages, ...checkins, ...privateInputs].sort((a, b) =>
       a.createdAt.localeCompare(b.createdAt),
     )) {
@@ -816,6 +817,8 @@ export class MessagingService {
       const destination = this.resultRoute(item.returnEnvelope);
       route ??= destination;
       if (destination !== route) continue;
+      const isUser = !!item.ordinaryUserInput;
+      if (userBatch !== undefined && isUser !== userBatch) continue;
       const size = Buffer.byteLength(JSON.stringify(item)) + 1024;
       const count = (JSON.parse(item.attachments) as string[]).length;
       const contentLength =
@@ -824,6 +827,7 @@ export class MessagingService {
       if (bytes + size > byteBudget || files + count > 10 || batch.length >= 10)
         break;
       batch.push(item);
+      userBatch = isUser;
       bytes += size;
       files += count;
       characters += contentLength;
@@ -854,6 +858,8 @@ export class MessagingService {
           )
           .run(turnId, inputMessageId, item.id);
     }
+    const turn = this.db.prepare("SELECT taskId FROM agent_turns WHERE id=?").get(turnId) as { taskId: string } | undefined;
+    if (turn?.taskId) this.refreshPending(turn.taskId);
   }
   // Called only after a completed host tool exchange, never while an action is in flight.
   consumeInputs(owner: ToolOwner, byteBudget = 60000) {
@@ -881,7 +887,7 @@ export class MessagingService {
             owner.turnId,
             this.inputContent(item),
             now(),
-            item.checkinId || item.userInputId ? "system" : "agent",
+            item.ordinaryUserInput ? "user" : item.checkinId || item.userInputId ? "system" : "agent",
             item.senderAgentId,
           );
         (JSON.parse(item.attachments) as string[]).forEach(
@@ -899,7 +905,7 @@ export class MessagingService {
         messageId: item.id,
         requestId: item.requestId,
         kind: item.kind,
-        authorType: item.checkinId || item.userInputId ? "system" : "agent",
+        authorType: item.ordinaryUserInput ? "user" : item.checkinId || item.userInputId ? "system" : "agent",
         authorId: item.senderAgentId,
         authorName: item.senderName,
         content: item.content,
@@ -952,7 +958,7 @@ export class MessagingService {
     // and are answered explicitly with agent_message, independently of the task's final result.
     const envelope: MessageEnvelope = {
       ...base,
-      source: first.checkinId || first.userInputId ? "system" : "agent",
+      source: first.ordinaryUserInput ? "user" : first.checkinId || first.userInputId ? "system" : "agent",
       senderId: first.senderAgentId ?? undefined,
       causationId: first.id,
       continuation: true,
@@ -1127,7 +1133,7 @@ export class MessagingService {
     if (!item) fail("Inbox message not found.", 404);
     if (!item.taskId || !item.agentId)
       fail("The originating task is no longer available.");
-    if (item.userInputRequestId) fail("Use the private input card to answer this request.", 400);
+    if (item.userInputRequestId) fail("Use the input request card to answer this request.", 400);
     const text = this.text(body.content);
     if (
       typeof body.requestId !== "string" ||
@@ -1751,7 +1757,7 @@ export function registerMessaging(
           .get(req.params.id) as any;
         if (!item?.agentId || !item?.taskId)
           fail("The originating task is no longer available.", 404);
-        if (item.userInputRequestId) fail("Use the private input card to answer this request.", 400);
+        if (item.userInputRequestId) fail("Use the input request card to answer this request.", 400);
         return reply.code(202).send(
           await incoming.receive(req, item.agentId, item.taskId, {
             source: "user",

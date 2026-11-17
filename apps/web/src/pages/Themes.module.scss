@@ -576,6 +576,7 @@
   gap: 12px;
   > span { display: inline-flex; align-items: center; gap: 6px; }
 }
+.issueInput,
 .issueWarning,
 .issueError {
   display: inline-grid;
@@ -814,3 +815,5 @@
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
+
+.issueInput { background: var(--agent-input-background); color: var(--agent-input-text); }

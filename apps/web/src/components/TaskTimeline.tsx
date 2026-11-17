@@ -1,4 +1,4 @@
-import { PrivateInputCard } from "./PrivateInputCard";
+import { UserInputCard } from "./UserInputCard";
 import { BusyButton, Feedback, LoadingState } from "./Feedback";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
@@ -223,7 +223,7 @@ function TimelineRow({
           className={open ? styles.chevronOpen : styles.chevron}
         />
       </button>
-      {item.userInput && <PrivateInputCard requestId={item.userInput.id} item={item.userInput} onChange={onChange} />}
+      {item.userInput && <UserInputCard requestId={item.userInput.id} item={item.userInput} onChange={onChange} />}
       {item.process && (
         <p className={styles.processState}>
           {item.name === "process_output" ? "Underlying command" : "Process"} {item.process.state}
@@ -306,7 +306,7 @@ function TimelineRow({
               </div>
             </>
           )}
-          {item.userInput && <PrivateInputCard requestId={item.userInput.id} item={item.userInput} onChange={onChange} />}
+          {item.userInput && <UserInputCard requestId={item.userInput.id} item={item.userInput} onChange={onChange} />}
       {item.process && (
             <ProcessActivity process={item.process} onChange={onChange} />
           )}

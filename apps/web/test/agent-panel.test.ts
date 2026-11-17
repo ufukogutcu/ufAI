@@ -16,7 +16,7 @@ const agent: Agent = {
   id: "one", workspaceId: "workspace", name: "Ava", instructions: "", presetId: null,
   appearance: { kind: "pebble", color: "sage", accessories: [] },
   x: 0, y: 0, revision: 1, createdAt: "now", updatedAt: "now", state: "idle",
-  queuedCount: 0, runningTaskCount: 0, issueCounts: { warning: 0, error: 0 },
+  queuedCount: 0, runningTaskCount: 0, pendingUserInputCount: 0, issueCounts: { warning: 0, error: 0 },
 };
 
 async function setup(t: TestContext) {

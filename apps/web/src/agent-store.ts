@@ -224,6 +224,7 @@ export function createAgentStore() {
             queuedCount: agent.queuedCount,
             runningTaskCount: agent.runningTaskCount,
             issueCounts: agent.issueCounts,
+            pendingUserInputCount: agent.pendingUserInputCount,
           }
         : agent;
       if (sequence !== undefined) {
@@ -234,6 +235,7 @@ export function createAgentStore() {
             queuedCount: existing.queuedCount,
             runningTaskCount: existing.runningTaskCount,
             issueCounts: existing.issueCounts,
+            pendingUserInputCount: existing.pendingUserInputCount,
           };
         } else {
           activitySequences.set(agent.id, sequence);

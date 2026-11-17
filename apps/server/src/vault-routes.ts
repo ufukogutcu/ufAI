@@ -1,3 +1,4 @@
+import { UserInputConflict } from "./user-inputs.js";
 import type { EventEmitter } from "node:events";
 import type { FastifyInstance } from "fastify";
 import { guard } from "./connections.js";
@@ -41,12 +42,16 @@ export function registerVault(app: FastifyInstance, vault: Vault, events: EventE
       return reply.code(204).send();
     });
     scoped.post<{ Params: { id: string } }>("/api/vault/secrets/:id/reveal", req => ({ value: vault.value(req.params.id) }));
-    scoped.get<{ Querystring: { taskId?: string; limit?: string; offset?: string } }>("/api/user-input-requests", req => {
+    scoped.get<{ Querystring: { taskId?: string; limit?: string; offset?: string; agentId?: string; workspaceId?: string; kind?: string; state?: string } }>("/api/user-input-requests", req => {
       const p = pagination(req.query);
-      return vault.requests(req.query.taskId, p.offset, p.limit);
+      const { agentId, workspaceId, kind, state } = req.query;
+      return vault.requests(req.query.taskId, p.offset, p.limit, { agentId, workspaceId, kind, state });
     });
     scoped.get<{ Params: { id: string } }>("/api/user-input-requests/:id", req => vault.requestDetail(req.params.id));
-    scoped.post<{ Params: { id: string } }>("/api/user-input-requests/:id/resolve", req => vault.resolve(req.params.id, req.body));
+    scoped.post<{ Params: { id: string } }>("/api/user-input-requests/:id/resolve", (req, reply) => {
+      try { return vault.resolve(req.params.id, req.body); }
+      catch (error) { if (error instanceof UserInputConflict) return reply.code(409).send({ error: error.message, request: error.request }); throw error; }
+    });
     scoped.post<{ Params: { id: string } }>("/api/user-input-requests/:id/cancel", req => {
       const r = vault.cancel(req.params.id); vault.messaging?.inputsChanged(r.taskId); return r;
     });

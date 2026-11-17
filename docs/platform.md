@@ -20,7 +20,7 @@ One local installation holds one shared setup across browser sessions. There are
 ### saved-data
 
 - **Status:** implemented
-- **Purpose:** Keep saved agents, task transcripts, memories, workspaces, Agent Presets, Providers, Vault secrets and private input requests, MCP servers and switches, custom themes, and application preferences on this local installation.
+- **Purpose:** Keep saved agents, task transcripts, memories, workspaces, Agent Presets, Providers, Vault secrets and user input requests, MCP servers and switches, custom themes, and application preferences on this local installation.
 - **Behavior:** Saved records survive closing the browser and restarting ufAI. The selected workspace, active theme, and completed canvas pan/zoom positions are shared across browser sessions. Unsaved forms, open dialogs, and navigation history are temporary.
 - **Limitations:** Saving and viewing data requires the local application to be reachable. There is no built-in full-installation backup, import, or export tool. Connection credentials and the rest of the saved installation data must be kept together when making a manual backup. Deleting saved records requires confirmation and has no in-app undo.
 
@@ -49,8 +49,18 @@ One local installation holds one shared setup across browser sessions. There are
 - **Purpose:** Let agents ask for secret input privately while keeping the value out of conversation messages.
 - **Behavior:** A request appears as a private card in its originating Chat or Task and in the workspace Inbox. Pending requests also appear in Vault. Enter a new value, select a saved secret, or Decline. New values are saved in the shared Vault for all agents. Use the card rather than the ordinary message composer. Only the outcome and secret reference return to the agent. The agent can continue independent work and yield until an answer resumes its task.
 - **Recovery:** Pending requests survive restarting ufAI. Repeated submissions do not create duplicate secrets. Conflicting replacements preserve the input and require explicitly choosing the latest saved revision before retrying. Cancelling or deleting the originating task closes pending requests; deleting an agent or workspace removes its requests while preserving shared Vault secrets.
-- **Limitations:** Only secret inputs are available. General text questions and multiple-choice request cards remain planned. A task can have at most ten pending private requests. Host access and receiving-site limitations are the same as for the shared Vault.
+- **Limitations:** Secret values use this private flow; ordinary questions use [user input requests](#user-input-requests). A task can have at most ten pending requests across all input types. Host access and receiving-site limitations are the same as for the shared Vault.
 - **Related references:** [Shared Vault](#shared-vault), [Dashboard navigation](#dashboard-navigation).
+
+### user-input-requests
+
+- **Status:** implemented
+- **Purpose:** Let agents collect information, clarification, choices and decisions in answerable cards while continuing independent work.
+- **Behavior:** Requests appear in the originating Chat or Task and Workspace Inbox. Answer directly in any of those places. Text cards accept a written answer; single-choice cards select one option; multi-select cards select several. Agents can offer an Other answer alongside predefined choices. Forms group required and optional text, choice, Yes/No, number, email, URL, date and date-time fields. Check the displayed time zone when entering a time. Submit Answer sends the whole form together; Decline tells the agent you are not answering. Submitted answers remain readable in the conversation and Inbox.
+- **Agent bubble:** A small input-count bubble beside an agent's warning/error bubbles shows its pending requests across Chat and Tasks, including while it works on something else. Click or activate it with the keyboard to open an answer dialog with task titles. The dialog stays open with No pending requests after its last request is answered.
+- **Resumption and recovery:** Each answer or decline can resume the originating task automatically; other requests stay open. Answers arriving during work are delivered when the task can handle them. Requests and accepted answers survive backend restarts. Failed or blocked tasks retain answers until repaired. Cancelling or deleting the source task closes its pending requests. Answering from another view replaces stale controls; failed submissions preserve drafts. Normal drafts remain temporary and navigation prompts protect unsaved changes.
+- **Privacy and limits:** Ordinary answers are saved locally and shared with the agent. Use the separate private card for secrets; only secret requests appear in Vault. A task supports ten pending requests, forms support twenty fields, and choices support fifty predefined options. Complete answers have an 8 KiB size limit. Agents are instructed to use cards whenever they need a user answer; this guidance does not guarantee model compliance. File uploads, nested/conditional forms, native Codex prompts and MCP elicitation are not part of these cards.
+- **Related references:** [Private input requests](#private-user-input), [Workspace Inbox](#workspace-inbox), [Agent issues](#agent-issues).
 
 ### dashboard-feedback
 
@@ -337,7 +347,7 @@ One local installation holds one shared setup across browser sessions. There are
 
 - **Status:** implemented
 - **Purpose:** Receive deliberate agent notifications without mixing them with normal task answers.
-- **Behavior:** Open the workspace Inbox beside Published Files. Home’s navigation icon shows the total unread count across all workspaces. Messages show their source, files, time, and saved read/unread state. Open the source task or reply with text and files through the ordinary single-Send composer. Replies go to that task, and its answer returns to the Inbox. This does not change the return route of a separate pending agent request.
+- **Behavior:** Open the workspace Inbox beside Published Files. Home’s navigation icon shows the total unread count across all workspaces. Messages show their source, files, time, and saved read/unread state. Answer input-request cards directly in Inbox. For ordinary notifications, open the source task or reply with text and files through the ordinary single-Send composer. Replies go to that task, and its answer returns to the Inbox. This does not change the return route of a separate pending agent request.
 - **Limitations:** Ordinary helper results do not create Inbox notifications automatically. If the source task or agent was deleted, its retained message remains readable but cannot receive a reply. External notifications through Telegram, Discord, or other Interfaces remain planned.
 
 ### inbox-notifications

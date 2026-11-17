@@ -1603,6 +1603,30 @@
       "region": "feedback",
       "light": "#ffffff",
       "dark": "#300909"
+    },
+    "agent-input-background": {
+      "cssVariable": "--agent-input-background",
+      "label": "Agent input bubble background",
+      "description": "Count bubbles for requests awaiting a user answer.",
+      "components": [
+        "Agent input bubbles"
+      ],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#d7e6fb",
+      "dark": "#2c476e"
+    },
+    "agent-input-text": {
+      "cssVariable": "--agent-input-text",
+      "label": "Agent input bubble text",
+      "description": "Count text on pending user input bubbles.",
+      "components": [
+        "Agent input bubbles"
+      ],
+      "group": "Feedback",
+      "region": "feedback",
+      "light": "#18375e",
+      "dark": "#e4efff"
     }
   }
 }

@@ -220,6 +220,7 @@ function ThemePreview({
                   <Feedback tone="loading" title="Reconnecting to live updates…" role="presentation">ufAI will reconnect automatically.</Feedback>
                   <p className={styles.warningSample}>Unsaved changes</p>
                   <div className={styles.issueSamples}>
+                    <span><span className={styles.issueInput}>1</span> Awaiting your input</span>
                     <span><span className={styles.issueWarning}>2</span> Agent warnings</span>
                     <span><span className={styles.issueError}>3</span> Agent errors</span>
                   </div>

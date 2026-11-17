@@ -1,3 +1,4 @@
+import { UserInputs, type InputFilters } from "./user-inputs.js";
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { ConnectionSecrets } from "./connection-secrets.js";
@@ -8,7 +9,6 @@ import type { UserInputRequest, VaultSecret } from "./vault-types.js";
 import { ConnectionError } from "./model-providers.js";
 
 const columns = "id,name,description,revision,createdAt,updatedAt";
-const inputColumns = "id,kind,workspaceId,agentId,taskId,name,purpose,secretId,expectedRevision,state,createdAt,updatedAt";
 const stamp = () => new Date().toISOString();
 function fail(message: string, status = 400): never { throw new ConnectionError(message, status); }
 function text(value: unknown, label: string, max: number, empty = false): string {
@@ -38,13 +38,14 @@ export function redactSecrets<T>(value: T, secrets: Iterable<string>): T {
 }
 
 export class Vault {
+  readonly inputs: UserInputs;
   messaging?: MessagingService;
   browser?: BrowserService;
   private active = 0;
   private stopped = false;
   private controllers = new Set<AbortController>();
   constructor(readonly db: Database.Database, private crypto: ConnectionSecrets,
-    private changed: (workspaceId: string) => void, private fetcher: typeof fetch = fetch) {}
+    private changed: (workspaceId: string) => void, private fetcher: typeof fetch = fetch) { this.inputs = new UserInputs(db, this, changed); }
   list(query = "", offset = 0, limit = 100) {
     const where = "WHERE instr(lower(name || ' ' || description),lower(?))>0";
     return { items: this.db.prepare("SELECT " + columns + " FROM vault_secrets " + where + " ORDER BY createdAt,id LIMIT ? OFFSET ?").all(query, limit, offset) as VaultSecret[],
@@ -104,72 +105,11 @@ export class Vault {
     })();
     this.changedAll();
   }
-  requestDetail(id: string): UserInputRequest {
-    const request = this.db.prepare("SELECT " + inputColumns + " FROM user_input_requests WHERE id=?").get(id) as UserInputRequest | undefined;
-    if (!request) fail("Input request no longer exists.", 404);
-    return request;
-  }
-  requests(taskId?: string, offset = 0, limit = 100) {
-    const where = taskId ? "WHERE taskId=?" : "WHERE state='pending'";
-    const args = taskId ? [taskId] : [];
-    return { items: this.db.prepare("SELECT " + inputColumns + " FROM user_input_requests " + where + " ORDER BY createdAt,id LIMIT ? OFFSET ?").all(...args, limit, offset) as UserInputRequest[],
-      total: (this.db.prepare("SELECT count(*) n FROM user_input_requests " + where).get(...args) as { n: number }).n };
-  }
-  request(owner: ToolOwner, args: Record<string, any>, callId: string) {
-    this.messaging!.assertOwner(owner);
-    if (args.kind !== "secret") fail("Only secret input is supported.");
-    const old = this.db.prepare("SELECT id FROM user_input_requests WHERE turnId=? AND callId=?").get(owner.turnId, callId) as { id: string } | undefined;
-    if (old) return this.requestDetail(old.id);
-    if ((this.db.prepare("SELECT count(*) n FROM user_input_requests WHERE taskId=? AND state='pending'").get(owner.taskId) as { n: number }).n >= 10) fail("Resolve existing private input requests first.", 429);
-    const name = text(args.name, "a secret name", 160).trim(), purpose = text(args.purpose, "a purpose", 2000);
-    const secret = args.secretId ? this.detail(args.secretId) : null;
-    const turn = this.db.prepare("SELECT envelope FROM agent_turns WHERE id=?").get(owner.turnId) as { envelope: string };
-    const agent = this.db.prepare("SELECT name FROM agents WHERE id=?").get(owner.agentId) as { name: string };
-    const id = randomUUID(), now = stamp();
-    this.db.transaction(() => {
-      this.db.prepare("INSERT INTO user_input_requests(id,kind,workspaceId,agentId,taskId,turnId,callId,name,purpose,secretId,expectedRevision,returnEnvelope,createdAt,updatedAt) VALUES(?,'secret',?,?,?,?,?,?,?,?,?,?,?,?)")
-        .run(id, owner.workspaceId, owner.agentId, owner.taskId, owner.turnId, callId, name, purpose, secret?.id ?? null, secret?.revision ?? null, turn.envelope, now, now);
-      this.db.prepare("INSERT INTO workspace_inbox(id,workspaceId,agentId,agentName,taskId,content,attachments,createdAt,userInputRequestId) VALUES(?,?,?,?,?,?,'[]',?,?)")
-        .run(randomUUID(), owner.workspaceId, owner.agentId, agent.name, owner.taskId, "Private input requested: " + name, now, id);
-    })();
-    this.changed(owner.workspaceId);
-    return this.requestDetail(id);
-  }
-  cancel(id: string, owner?: ToolOwner) {
-    const r = this.requestDetail(id);
-    if (owner && (r.taskId !== owner.taskId || r.agentId !== owner.agentId)) fail("Input request is outside this task.", 403);
-    this.db.prepare("UPDATE user_input_requests SET state='cancelled',updatedAt=? WHERE id=? AND state='pending'").run(stamp(), id);
-    if (owner) this.db.prepare("UPDATE user_input_requests SET deliveredTurnId=? WHERE id=? AND state='cancelled'").run(owner.turnId, id);
-    this.messaging?.inputsChanged(r.taskId);
-    this.changed(r.workspaceId);
-    return this.requestDetail(id);
-  }
-  resolve(id: string, input: unknown) {
-    const b = vaultObject(input, ["value", "secretId", "decline", "expectedRevision"]);
-    const result = this.db.transaction(() => {
-      const r = this.requestDetail(id);
-      if (r.state !== "pending") return r;
-      const task = this.db.prepare("SELECT status FROM agent_tasks WHERE id=?").get(r.taskId) as { status: string };
-      if (["cancelled", "completed"].includes(task.status)) fail("The source task has ended. Cancel this request.", 409);
-      let secretId: string | null = null;
-      if (b.decline === true) {
-        if (Object.hasOwn(b, "value") || b.secretId) fail("Decline cannot include a secret.");
-      } else if (typeof b.secretId === "string" && !Object.hasOwn(b, "value")) secretId = this.detail(b.secretId).id;
-      else if (Object.hasOwn(b, "value") && !b.secretId) {
-        if (r.expectedRevision !== null && !r.secretId) fail("The secret was deleted. Create a new request.", 409);
-        const saved = this.save({ ...(!r.secretId ? { name: r.name } : {}), value: b.value,
-          ...(r.secretId ? { expectedRevision: b.expectedRevision ?? r.expectedRevision } : {}) }, r.secretId ?? undefined);
-        secretId = saved.id;
-      } else fail("Enter a value, select an existing secret, or decline.");
-      this.db.prepare("UPDATE user_input_requests SET state=?,secretId=?,updatedAt=? WHERE id=? AND state='pending'")
-        .run(b.decline === true ? "declined" : "fulfilled", secretId, stamp(), id);
-      this.db.prepare("UPDATE workspace_inbox SET readAt=? WHERE userInputRequestId=?").run(stamp(), id);
-      return this.requestDetail(id);
-    })();
-    this.changed(result.workspaceId);
-    this.messaging?.inputsChanged(result.taskId);
-    return result;
-  }
+  requestDetail(id: string): UserInputRequest { return this.inputs.detail(id); }
+  requests(taskId?: string, offset = 0, limit = 100, filters: InputFilters = {}) { return this.inputs.list(taskId, offset, limit, filters); }
+  request(owner: ToolOwner, args: Record<string, any>, callId: string) { return this.inputs.request(owner, args, callId); }
+  cancel(id: string, owner?: ToolOwner) { return this.inputs.cancel(id, owner); }
+  resolve(id: string, input: unknown) { return this.inputs.resolve(id, input); }
   async execute(owner: ToolOwner, name: string, args: Record<string, any>, signal: AbortSignal, callId: string) {
     this.messaging!.assertOwner(owner);
     if (name === "vault_list") return this.list(args.query ?? "", args.offset ?? 0, args.limit ?? 50);
