@@ -1517,7 +1517,7 @@ for (const early of [false, true])
     legacy.pragma("user_version=30");
     legacy.close();
     await s.reopen();
-    assert.equal(s.db.pragma("user_version", { simple: true }), 37);
+    assert.equal(s.db.pragma("user_version", { simple: true }), 38);
     assert.ok(
       (s.db.pragma("table_info(agent_triggers)") as { name: string }[]).some(
         (c) => c.name === "dispatchFailures",

@@ -79,6 +79,7 @@ class CodexClient {
       signal: AbortSignal;
       toolChain?: Promise<void>;
       yielding?: boolean;
+      successfulToolReplies: number;
       text: string;
       onDelta?: (delta: string) => void;
       items: Map<string, string>;
@@ -269,6 +270,7 @@ class CodexClient {
                   success: result.ok,
                 },
               });
+              if (result.ok) textTurn.successfulToolReplies++;
               if (textTurn.yielding)
                 textTurn.resolve({
                   text: "",
@@ -360,21 +362,22 @@ class CodexClient {
         }
         if (message.method === "turn/completed") {
           if (textTurn.yielding) continue;
-          if (
-            object(params.turn).status === "completed" &&
-            textTurn.text.trim()
-          )
-            textTurn.resolve({
-              text: textTurn.text,
-              finishReason: "stop",
-              usage: textTurn.usage,
-            });
-          else
-            textTurn.reject(
-              new ConnectionError(
+          const completed = object(params.turn).status === "completed";
+          void (textTurn.toolChain ?? Promise.resolve()).then(() => {
+            if (textTurn.yielding || textTurn.signal.aborted) return;
+            if (completed && (textTurn.text.trim() ||
+              (textTurn.task && textTurn.successfulToolReplies > 0))) {
+              textTurn.resolve({
+                text: textTurn.text,
+                finishReason: "stop",
+                usage: textTurn.usage,
+              });
+            } else {
+              textTurn.reject(new ConnectionError(
                 "Codex did not complete a text reply. Retry explicitly.",
-              ),
-            );
+              ));
+            }
+          }).catch(error => textTurn.reject(error));
         }
       }
 
@@ -900,6 +903,7 @@ class CodexClient {
     void completed.catch(() => {});
     const turn: NonNullable<ReturnType<typeof this.textTurns.get>> = {
       text: "",
+      successfulToolReplies: 0,
       task,
       signal: request.signal,
       resolve,

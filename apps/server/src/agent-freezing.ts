@@ -64,6 +64,18 @@ export function migrateFreezeCutoffs(db: Database.Database) {
   db.prepare("UPDATE agent_freezes SET occurrenceCutoff=coalesce((SELECT max(sequence) FROM trigger_occurrences),0) WHERE state='resuming'").run();
 }
 
+/** Repair early version-36/37 databases without replacing saved execution state. */
+export function migrateExecutionState(db: Database.Database) {
+  db.exec(`CREATE TABLE IF NOT EXISTS execution_deliveries (
+    turnId TEXT NOT NULL REFERENCES agent_turns(id) ON DELETE CASCADE,
+    round INTEGER NOT NULL, position INTEGER NOT NULL, callId TEXT NOT NULL, result TEXT NOT NULL,
+    PRIMARY KEY(turnId,round,position)
+  )`);
+  if (!(db.pragma("table_info(execution_checkpoints)") as {name:string}[])
+    .some(column => column.name === "maintenanceBaseline"))
+    db.exec("ALTER TABLE execution_checkpoints ADD COLUMN maintenanceBaseline TEXT");
+}
+
 function controlInput(input: {requestId:string;expectedRevision:number;policy?:FreezePolicy}) {
   return JSON.stringify({requestId:input.requestId,expectedRevision:input.expectedRevision,...(input.policy === undefined ? {} : {policy:input.policy})});
 }

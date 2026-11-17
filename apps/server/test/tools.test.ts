@@ -509,7 +509,7 @@ test("populated v11 upgrade retains task content and managed paths", async (t) =
   removeToolTables(s.db);
   s.db.pragma("user_version=11");
   const upgraded = openDatabase(s.path);
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 37);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 38);
   assert.equal(
     (
       upgraded
@@ -1066,11 +1066,11 @@ test("a turn can execute more than 32 rounds and 128 validated tools", async t =
   assert.equal((s.db.prepare("SELECT count(*) n FROM tool_invocations WHERE turnId=?").get(s.owner.turnId) as any).n, 130);
 });
 
-for (const successful of [true,false]) test(`completion classifier receives ${successful ? "successful" : "failed"} file evidence despite a terse final answer`,async t=>{
+for (const finalText of ["DONE_TOKEN", ""]) for (const successful of [true,false]) test(`completion classifier receives ${successful ? "successful" : "failed"} file evidence with ${finalText ? "terse" : "silent"} output`,async t=>{
   const s=await setup(t);
   let inspected=false;
   s.connections.toolRound=async (_snapshot,request)=>({
-    text:request.continuation?.length ? "DONE_TOKEN" : "",
+    text:request.continuation?.length ? finalText : "",
     calls:request.continuation?.length ? [] : [{id:"write-evidence",name:"files_write",arguments:{path:"completion.txt",text:"EXACT_CONTENT",expectedSha256:successful ? null : "0".repeat(64)}}],
     continuation:[],usage:null,
   });
@@ -1079,7 +1079,7 @@ for (const successful of [true,false]) test(`completion classifier receives ${su
     assert.match(request.instructions,/Committed successful tool results/);
     assert.match(request.instructions,/cannot establish preferences/);
     const data=JSON.parse(request.messages[0]!.content);
-    assert.equal(data.messages[1].content,"DONE_TOKEN");
+    assert.equal(data.messages[1].content,finalText);
     assert.equal(data.toolEvidence.tools.length,1);
     const evidence=data.toolEvidence.tools[0];
     assert.equal(evidence.name,"files_write");

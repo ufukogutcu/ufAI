@@ -30,6 +30,8 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
     turns.set(threadId, turnId);
     result({ turn: { id: turnId } });
     const text = r.params.input[0].text;
+    if (text.includes("empty-reply"))
+      return send({method:"turn/completed",params:{threadId,turn:{id:turnId,status:"completed"}}});
     if (text.includes("large-reply")) {
       for (let i=0;i<80;i++) send({ method: "item/agentMessage/delta", params: {threadId,turnId,itemId:"final",delta:"x".repeat(4096)} });
       return send({method:"turn/completed",params:{threadId,turn:{id:turnId,status:"completed"}}});

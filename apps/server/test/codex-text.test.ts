@@ -88,6 +88,12 @@ test("Codex rejects tool activity without killing an unrelated text thread", asy
   );
   assert.equal((await r.executeText("connection", base)).text, "Hello world");
 });
+test("Codex text-only generation still rejects a completed empty reply", async t => {
+  const r = await runtime(t);
+  await assert.rejects(r.executeText("connection", {
+    ...base, messages: [{ role: "user", content: "empty-reply" }],
+  }), /did not complete a text reply/);
+});
 test("a model test can finish without terminating a concurrent ordinary turn", async (t) => {
   const r = await runtime(t),
     controller = new AbortController();
@@ -127,6 +133,68 @@ test("Codex transports initial connection awareness and replacement observations
     onTool: async () => ({ ok: false, error: "The connection was removed.", connectedAgents: { capturedAt: new Date().toISOString(), items: [] } }),
   });
   assert.equal(result.text, "Final answer.");
+});
+
+test("Codex accepts silent completed tool turns only after a successful reply is delivered", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "ufai-codex-silent-"));
+  const runtime = new CodexRuntime(directory, () => spawn(process.execPath,
+    [fileURLToPath(new URL("./fixtures/codex-tools-process.cjs", import.meta.url))],
+    { stdio: ["pipe", "pipe", "pipe"] }), 1000, 1000);
+  t.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }); });
+  const comments: string[] = [];
+  const request = {
+    ...base, tools: taskTools,
+    messages: [{ role: "user" as const, content: "silent-success" }],
+    onTool: async () => ({ ok: true }),
+    onCommentary: (text: string) => comments.push(text),
+  };
+  const answer = await runtime.executeTask("connection", request);
+  assert.equal(answer.text, "");
+  assert.equal(answer.finishReason, "stop");
+  assert.deepEqual(comments, ["Reading the file.", "Checking the result."]);
+  for (const mode of ["silent-no-tool", "silent-failed-turn", "silent-interrupted-turn", "silent-failed-tool"]) {
+    await assert.rejects(runtime.executeTask("connection", {
+      ...request, messages: [{ role: "user", content: mode }],
+      onTool: async () => ({ ok: mode !== "silent-failed-tool" }),
+    }), /did not complete a text reply/);
+  }
+  await assert.rejects(runtime.executeTask("connection", {
+    ...request, onTool: async () => { throw new Error("Synthetic tool callback failure"); },
+  }), /Synthetic tool callback failure/);
+});
+
+test("Codex silent completion waits for pending tool callbacks and respects cancellation", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "ufai-codex-silent-gate-"));
+  const runtime = new CodexRuntime(directory, () => spawn(process.execPath,
+    [fileURLToPath(new URL("./fixtures/codex-tools-process.cjs", import.meta.url))],
+    { stdio: ["pipe", "pipe", "pipe"] }), 1000, 1000);
+  let release = () => {};
+  t.after(async () => { release(); await runtime.close(); await rm(directory, { recursive: true, force: true }); });
+  for (const cancelled of [false, true]) {
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered = false, finished = false;
+    const controller = new AbortController();
+    const answer = runtime.executeTask("connection", {
+      ...base, signal: controller.signal, tools: taskTools,
+      messages: [{ role: "user", content: "silent-early-complete" }],
+      onTool: async () => { entered = true; return { ok: true }; },
+      beforeToolReply: () => gate,
+    }).then(result => { finished = true; return result; });
+    void answer.catch(() => {});
+    for (let i = 0; i < 200 && !entered; i++) await delay(5);
+    assert.equal(entered, true);
+    await delay(10);
+    assert.equal(finished, false);
+    if (cancelled) controller.abort();
+    release();
+    if (cancelled) {
+      await assert.rejects(answer, /cancelled/);
+      assert.equal(finished, false);
+    } else {
+      assert.equal((await answer).text, "");
+      assert.equal(finished, true);
+    }
+  }
 });
 
 test("Codex dynamic tools use ufAI callbacks, isolate commentary, and preserve cancellation", async (t) => {
