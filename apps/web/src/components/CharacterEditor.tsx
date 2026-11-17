@@ -1,3 +1,4 @@
+import { Feedback, BusyButton } from "./Feedback";
 import { createPortal } from "react-dom";
 import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import { Check, Shuffle } from "lucide-react";
@@ -60,9 +61,9 @@ export function CharacterEditor({ initial, onSave, onClose, creating = false }: 
           <option value="">None</option>{accessories.filter(item => item.slot === slot.id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select></label>)}</div><div className={styles.wardrobeActions}><button type="button" className="button secondary" onClick={shuffle}><Shuffle size={15} aria-hidden />Shuffle accessories</button><button type="button" className="button secondary" disabled={!draft.accessories.length} onClick={clearAccessories}>Clear accessories</button></div></fieldset>
         <p className="fieldHint">{creating ? "Use this look when you create the agent." : "Changes apply when you save."}</p>
-        {error && <p role="alert" className="errorBanner">{error}</p>}
+        {error && <Feedback role="alert">{error}</Feedback>}
       </div>
-      <div className={styles.actions}><button type="button" className="button secondary" disabled={busy} onClick={onClose}>Cancel</button><button className="button primary" disabled={busy}>{busy ? "Saving…" : creating ? "Use character" : "Save character"}</button></div>
+      <div className={styles.actions}><button type="button" className="button secondary" disabled={busy} onClick={onClose}>Cancel</button><BusyButton busy={busy} className="button primary" disabled={busy}>{busy ? "Saving…" : creating ? "Use character" : "Save character"}</BusyButton></div>
     </form>
   </Dialog>, document.body);
 }

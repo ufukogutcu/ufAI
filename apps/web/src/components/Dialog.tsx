@@ -7,6 +7,7 @@ import { Tooltip } from "./Tooltip";
 import { GlassMaterial } from "./GlassMaterial";
 import { Appearance } from "./Appearance";
 import styles from "./Dialog.module.scss";
+import { FeedbackHost } from "./FeedbackProvider";
 
 function isBackdropEvent(event: MouseEvent<HTMLDialogElement>) {
   // Native backdrops target the dialog itself, as do its padding and scrollbars.
@@ -117,6 +118,7 @@ export function Dialog({
             </Tooltip>
           </div>
           {children}
+          <FeedbackHost busy={busy} />
         </div>
       </dialog>
     </Appearance>

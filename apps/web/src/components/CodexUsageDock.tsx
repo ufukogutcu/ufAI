@@ -1,5 +1,6 @@
+import { BusyButton, Feedback, LoadingIndicator, LoadingState } from "./Feedback";
 import { memo, useContext, useEffect, useRef, useState } from "react";
-import { AlertCircle, Info, LoaderCircle, LogIn } from "lucide-react";
+import { AlertCircle, Info, LogIn } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { ConnectionContext, useConnections } from "../connection-store";
 import { CodexUsageContext, useCodexUsage, type UsageEntry } from "../codex-usage-store";
@@ -58,7 +59,7 @@ const UsageButton = memo(function UsageButton({ provider, onOpen }: { provider: 
     <button className={styles.usageButton} type="button" aria-label={`${provider.name}: ${summary || (entry?.disconnected ? "Sign in to view usage" : entry?.loading ? "Loading usage" : "Usage unavailable")}. Open usage details`} aria-haspopup="dialog" onClick={() => onOpen(provider.id)}>
       {windows.length ? windows.map((window) => <span key={entry?.snapshot?.defaultLimit?.primary === window ? "primary" : "secondary"} className={styles.compactWindow}>
         <span>{durationLabel(window.windowDurationMins)}</span><CodexUsageBar remaining={remainingPercent(window.usedPercent)} />
-      </span>) : entry?.disconnected ? <LogIn size={18} aria-hidden="true" /> : entry?.loading ? <LoaderCircle size={18} aria-hidden="true" /> : <span aria-hidden="true">—</span>}
+      </span>) : entry?.disconnected ? <LogIn size={18} aria-hidden="true" /> : entry?.loading ? <LoadingIndicator /> : <span aria-hidden="true">—</span>}
       {entry?.error && !!windows.length && <AlertCircle className={styles.staleMark} size={10} aria-hidden="true" />}
     </button>
   </Tooltip>;
@@ -148,9 +149,9 @@ function UsageModal({ provider, onClose }: { provider: ProviderConnection; onClo
   }
   return <><Dialog title={`${provider.name} usage`} onClose={onClose} busy={busy} contentClassName={styles.dialogContent}>
     <div className={styles.modalBody}>
-      <div className={styles.summary}><div className={styles.accountDetails}><span>Plan: {snapshot?.planType ?? "Unknown"}</span>{snapshot && <span className={styles.updated}>Updated {dateTime(Date.parse(snapshot.fetchedAt) / 1000)}</span>}</div><button type="button" className="button secondary" disabled={entry?.loading || entry?.redeeming} onClick={() => void refresh(provider.id, true, true)}>{entry?.loading ? "Refreshing…" : "Refresh"}</button></div>
-      {entry?.error && <div className={`${styles.warning} ${styles.error}`} role="alert"><AlertCircle size={16} aria-hidden="true" /><span>{snapshot ? "Stale usage · " : ""}{entry.error}</span></div>}
-      {!snapshot && <p className={styles.emptyState}>{usageState(entry)}</p>}
+      <div className={styles.summary}><div className={styles.accountDetails}><span>Plan: {snapshot?.planType ?? "Unknown"}</span>{snapshot && <span className={styles.updated}>Updated {dateTime(Date.parse(snapshot.fetchedAt) / 1000)}</span>}</div><BusyButton busy={entry?.loading} type="button" className="button secondary" disabled={entry?.loading || entry?.redeeming} onClick={() => void refresh(provider.id, true, true)}>{entry?.loading ? "Refreshing…" : "Refresh"}</BusyButton></div>
+      {entry?.error && <Feedback role="alert">{snapshot ? "Stale usage · " : ""}{entry.error}</Feedback>}
+      {!snapshot && (entry?.loading ? <LoadingState>Loading usage…</LoadingState> : <p className={styles.emptyState}>{usageState(entry)}</p>)}
       {snapshot && <>
         {snapshot.ordinaryUsageAllowed === false && <p className={styles.notice}>Included usage is currently unavailable according to Codex.</p>}
         {!snapshot.limits.length && <p className={styles.emptyState}>Usage windows unavailable.</p>}
@@ -180,7 +181,7 @@ function UsageModal({ provider, onClose }: { provider: ProviderConnection; onClo
         <strong>{confirmation.title}</strong>
         <p>This consumes one earned reset if an eligible usage window can be reset.</p>
         {confirmationReason && !busy && <p role="status">{confirmationReason}</p>}
-        <div className={styles.actions}><button type="button" className="button secondary" data-cancel-reset disabled={busy} onClick={closeConfirmation}>Cancel</button><button type="button" className="button" disabled={!canReset || !!confirmationReason} onClick={() => void confirm()}>{busy ? "Using reset…" : "Use reset"}</button></div>
+        <div className={styles.actions}><button type="button" className="button secondary" data-cancel-reset disabled={busy} onClick={closeConfirmation}>Cancel</button><BusyButton busy={busy} type="button" className="button" disabled={!canReset || !!confirmationReason} onClick={() => void confirm()}>{busy ? "Using reset…" : "Use reset"}</BusyButton></div>
       </div>
     </Dialog>}
   </>;

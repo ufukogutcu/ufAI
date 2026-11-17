@@ -33,7 +33,7 @@ import Presets from "./pages/Presets";
 import styles from "./App.module.scss";
 import { CodexUsageDock } from "./components/CodexUsageDock";
 import { CodexUsageContext, createCodexUsageStore } from "./codex-usage-store";
-import { Appearance } from "./components/Appearance";
+import { FeedbackProvider, useNotice } from "./components/FeedbackProvider";
 import { RichTextProvider } from "./components/RichText";
 
 const pages = [
@@ -53,7 +53,10 @@ function readPage(): PageId {
 function Shell() {
   const [page, setPage] = useState(readPage);
   const settingsError = useSettings((state) => state.error);
+  const settingsErrorDetails = useSettings((state) => state.errorDetails);
   const retrySettings = useSettings((state) => state.retry);
+  useNotice(settingsError ? { id: "settings", title: "Settings could not sync", message: settingsError, details: settingsErrorDetails,
+    actionLabel: "Retry settings", action: retrySettings } : null, "settings");
   const attempt = useNavigationGuard();
   const pageRef = useRef(page);
   const historyIndex = useRef<number>(window.history.state?.ufaiIndex ?? 0);
@@ -188,19 +191,6 @@ function Shell() {
       </div>
       <div className={styles.mainColumn}>
         <main id="main-content" tabIndex={-1} className={styles.main}>
-          {settingsError && (
-            <Appearance kind="fade">
-            <div className="errorBanner" role="alert">
-              {settingsError}{" "}
-              <button
-                className="textButton"
-                onClick={() => void retrySettings()}
-              >
-                Retry
-              </button>
-            </div>
-            </Appearance>
-          )}
           {page === "home" ? (
             <Home />
           ) : page === "agent-presets" ? (
@@ -233,9 +223,9 @@ export default function App({ initial }: { initial: SettingsResponse }) {
         <ConnectionContext.Provider value={connections}>
           <CodexUsageContext.Provider value={usage}>
           <DashboardProvider>
-            <UnsavedChangesProvider>
+            <FeedbackProvider><UnsavedChangesProvider>
               <RichTextProvider><Shell /></RichTextProvider>
-            </UnsavedChangesProvider>
+            </UnsavedChangesProvider></FeedbackProvider>
           </DashboardProvider>
           </CodexUsageContext.Provider>
         </ConnectionContext.Provider>

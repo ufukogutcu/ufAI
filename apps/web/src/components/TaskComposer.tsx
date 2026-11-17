@@ -1,3 +1,4 @@
+import { Feedback } from "./Feedback";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { LoaderCircle, Paperclip, Send, X } from "lucide-react";
 import { useAgents, useAgentStore, emptyList } from "../agent-store";
@@ -372,9 +373,9 @@ export function TaskComposer({
             />
           )}
           {error && (
-            <p role="alert" className="errorBanner">
+            <Feedback role="alert">
               {error}
-            </p>
+            </Feedback>
           )}
         </div>
       )}

@@ -1,3 +1,5 @@
+import { Feedback, BusyButton, LoadingState } from "../components/Feedback";
+import { useNotice } from "../components/FeedbackProvider";
 import { useSettings } from "../settings-store";
 import {
   useEffect,
@@ -212,9 +214,8 @@ function ThemePreview({
               {region.id === "feedback" && (
                 <div className={styles.feedbackSample}>
                   <span className={styles.localSample}>● Local instance</span>
-                  <p className={styles.errorSample}>
-                    Example: the change could not be saved.
-                  </p>
+                  <Feedback title="Change could not save" role="presentation">Try again when the connection is available.</Feedback>
+                  <Feedback tone="loading" title="Reconnecting to live updates…" role="presentation">ufAI will reconnect automatically.</Feedback>
                   <p className={styles.warningSample}>Unsaved changes</p>
                   <div className={styles.issueSamples}>
                     <span><span className={styles.issueWarning}>2</span> Agent warnings</span>
@@ -725,20 +726,20 @@ function ThemeEditor({
       </fieldset>
       <div className={styles.editorActions}>
         {error && (
-          <Appearance kind="fade"><p className="error" role="alert">
+          <Appearance kind="fade"><Feedback role="alert">
             {error}
-          </p></Appearance>
+          </Feedback></Appearance>
         )}
         <div className={styles.actions} data-appearance-content>
           {!locked && (
             <>
-              <button
+              <BusyButton busy={busy}
                 className="button primary"
                 type="submit"
                 disabled={busy || (!dirty && !!record)}
               >
                 {busy ? "Saving…" : "Save theme"}
-              </button>
+              </BusyButton>
               <button
                 className="button secondary"
                 type="button"
@@ -802,6 +803,8 @@ export default function Themes() {
   const loading = useTheme((state) => state.loading);
   const error = useTheme((state) => state.error);
   const load = useTheme((state) => state.load);
+  useNotice(error && themes.length ? { id: "themes", title: "Themes could not refresh", message: error,
+    actionLabel: "Reload themes", action: () => load() } : null, "themes");
   const updateSettings = useSettings((state) => state.update);
   const remove = useTheme((state) => state.remove);
   const attempt = useNavigationGuard();
@@ -923,14 +926,14 @@ export default function Themes() {
       </header>
       <div className={`${styles.content} ${editing ? styles.editingContent : ""}`}>
         {!editing && <>
-        {error && (
+        {error && !themes.length && (
           <Appearance kind="fade">
-          <div className={styles.notice} role="alert">
+          <Feedback className={styles.notice} role="alert">
             {error}
             <button className="textButton" onClick={() => void load()}>
               Retry loading
             </button>
-          </div>
+          </Feedback>
           </Appearance>
         )}
         <div className={styles.library} aria-label="Theme library">
@@ -1003,9 +1006,9 @@ export default function Themes() {
           ))}
         </div>
         {loading && (
-          <Appearance kind="fade"><p className={styles.help} role="status">
+          <Appearance kind="fade"><LoadingState className={styles.help} role="status">
             Loading themes…
-          </p></Appearance>
+          </LoadingState></Appearance>
         )}
         {!loading && offset < total && !error && (
           <button className="button secondary" onClick={handleLoadMore}>
@@ -1073,9 +1076,9 @@ export default function Themes() {
               : ""}
           </p>
           {deleteError && (
-            <Appearance kind="fade"><p className="error" role="alert">
+            <Appearance kind="fade"><Feedback role="alert">
               {deleteError}
-            </p></Appearance>
+            </Feedback></Appearance>
           )}
           <div className="dialogActions">
             <button
@@ -1085,13 +1088,13 @@ export default function Themes() {
             >
               Cancel
             </button>
-            <button
+            <BusyButton busy={deleteBusy}
               className="button danger"
               onClick={() => void handleConfirmDelete()}
               disabled={deleteBusy}
             >
               {deleteBusy ? "Deleting…" : "Delete theme"}
-            </button>
+            </BusyButton>
           </div>
         </Dialog>
       )}

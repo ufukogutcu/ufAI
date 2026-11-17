@@ -1,3 +1,4 @@
+import { Feedback, BusyButton, LoadingIndicator } from "./Feedback";
 import { useEffect, useState, useCallback } from "react";
 import type {
   LocationKind,
@@ -103,6 +104,7 @@ export function FolderLocation({
           </button>
         )}
         <span role="status">
+          {!copied && (!location || location.state === "pending") && !error && <LoadingIndicator />}
           {copied
             ? "Path copied."
             : location?.state === "pending"
@@ -114,17 +116,17 @@ export function FolderLocation({
       </div>
       {(location?.state === "error" || error) && (
         <div>
-          <p role="alert" className="error">
+          <Feedback role="alert">
             {error || location?.error}
-          </p>
-          <button
+          </Feedback>
+          <BusyButton busy={busy}
             type="button"
             className="textButton"
             disabled={busy}
             onClick={() => void repair()}
           >
             {busy ? "Retrying…" : "Retry folder setup"}
-          </button>
+          </BusyButton>
         </div>
       )}
     </div>

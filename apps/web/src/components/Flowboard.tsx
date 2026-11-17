@@ -38,6 +38,9 @@ import { Tooltip } from "./Tooltip";
 import styles from "./Flowboard.module.scss";
 import { GlassMaterial } from "./GlassMaterial";
 import { Appearance } from "./Appearance";
+import { Feedback, LoadingState } from "./Feedback";
+import { useNotice } from "./FeedbackProvider";
+import { WorkspaceFeedback } from "./WorkspaceFeedback";
 
 const edgeTypes = { communication: CommunicationEdge };
 const nodeTypes = { agent: AgentNode };
@@ -160,6 +163,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
     if (!dragging.current && !canvasInteracting) setNodes(savedNodes);
   }, [savedNodes, setNodes, canvasInteracting]);
   useEffect(() => {
+    agentStore.setState({ connected: false, connectionWorkspaceId: workspaceId });
     void agentStore.getState().loadWorkspace(workspaceId);
     let closed = false,
       timer: ReturnType<typeof setTimeout> | undefined,
@@ -203,12 +207,13 @@ function Board({ workspaceId }: { workspaceId: string }) {
     events.addEventListener("change", changed);
     events.addEventListener("resync", resync);
     events.onopen = () => {
+      if (closed) return;
       agentStore.setState({ connected: true });
       invalidateTimeline();
       refreshTransits();
       refresh();
     };
-    events.onerror = () => agentStore.setState({ connected: false });
+    events.onerror = () => { if (!closed) agentStore.setState({ connected: false }); };
     const unfocus = refreshOnFocus(async () => {
       invalidateTimeline();
       refreshTransits();
@@ -218,6 +223,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
       closed = true;
       clearTimeout(timer);
       events.close();
+      agentStore.setState({ connected: false, connectionWorkspaceId: null });
       transitStore.getState().clear();
       unfocus();
     };
@@ -391,6 +397,9 @@ export function Flowboard({ workspaceId }: { workspaceId: string }) {
   const error = useDashboard((state) => state.viewportErrors[workspaceId]);
   const load = useDashboard((state) => state.loadViewport);
   const retry = useDashboard((state) => state.retryViewport);
+  const sourceId = `viewport:${workspaceId}`;
+  useNotice(error && viewport ? { id: sourceId, title: "Canvas view could not sync", message: error,
+    actionLabel: "Retry canvas sync", action: () => retry(workspaceId) } : null, sourceId);
   useEffect(() => {
     void load(workspaceId);
   }, [load, workspaceId]);
@@ -399,26 +408,19 @@ export function Flowboard({ workspaceId }: { workspaceId: string }) {
   }
   return (
     <>
-      {error && (
-        <Appearance kind="fade">
-          <div className="errorBanner" role="alert">
-            {error}{" "}
-            <button className="textButton" onClick={handleRetry}>
-              Retry
-            </button>
-          </div>
-        </Appearance>
-      )}
       {viewport ? (
         <ReactFlowProvider key={workspaceId}>
           <ConnectionRingsProvider workspaceId={workspaceId}>
             <Board workspaceId={workspaceId} />
+            <WorkspaceFeedback workspaceId={workspaceId} />
           </ConnectionRingsProvider>
         </ReactFlowProvider>
       ) : (
         <Appearance>
-          <div className="centerState" role="status">
-            {error ? "Canvas could not load." : "Loading canvas…"}
+          <div className="centerState">
+            {error ? <Feedback title="Canvas could not load">{error}
+              <button type="button" className="textButton" onClick={handleRetry}>Retry canvas loading</button>
+            </Feedback> : <LoadingState>Loading canvas…</LoadingState>}
           </div>
         </Appearance>
       )}

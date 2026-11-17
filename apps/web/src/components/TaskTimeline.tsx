@@ -1,3 +1,4 @@
+import { BusyButton, Feedback, LoadingState } from "./Feedback";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 import {
@@ -79,22 +80,22 @@ function CheckIn({
       </p>
       {(item.state === "scheduled" ||
         (item.state === "fired" && !item.deliveredTurnId)) && (
-        <button
+        <BusyButton busy={busy}
           type="button"
           className="textButton"
           disabled={busy}
           onClick={() => void cancel()}
         >
           {busy ? "Cancelling…" : "Cancel check-in"}
-        </button>
+        </BusyButton>
       )}
       <p ref={feedback} tabIndex={-1} role="status" className={styles.meta}>
         {notice}
       </p>
       {error && (
-        <p role="alert" className="error">
+        <Feedback role="alert">
           {error}
-        </p>
+        </Feedback>
       )}
     </div>
   );
@@ -502,14 +503,14 @@ function TimelineContent({
       >
         <div ref={content}>
         {before && (
-          <button
+          <BusyButton busy={loading}
             type="button"
             className="textButton"
             disabled={loading}
             onClick={loadEarlier}
           >
             {loading ? "Loading…" : "Load earlier conversation"}
-          </button>
+          </BusyButton>
         )}
         {!items.length && !loading && !error && (
           <p className={styles.meta}>Your conversation appears here.</p>
@@ -520,7 +521,7 @@ function TimelineContent({
           </div>
         ))}
         {error && (
-          <p className="errorBanner" role="alert">
+          <Feedback role="alert">
             {error}
             <button
               type="button"
@@ -529,10 +530,10 @@ function TimelineContent({
             >
               Retry
             </button>
-          </p>
+          </Feedback>
         )}
         {loading && !items.length && (
-          <p className={styles.meta}>Loading conversation…</p>
+          <LoadingState className={styles.meta}>Loading conversation…</LoadingState>
         )}
         </div>
       </div>

@@ -1,3 +1,4 @@
+import { Feedback } from "./Feedback";
 import { useNavigationGuard } from "../navigation-guard";
 import {
   useCallback,
@@ -47,7 +48,7 @@ function ConnectionAngles({ link, sourceName, targetName }: { link: Communicatio
           onChange={event => { setPatch(previous => ({ ...previous, [key]: event.target.value })); setSaved(false); }} />
       </label>)}
     <button type="submit" className="button secondary" disabled={busy || link.state !== "active" || !Object.keys(patch).length}>Apply connection points</button>
-    {error && <p role="alert" className="error">{error}</p>}
+    {error && <Feedback role="alert">{error}</Feedback>}
     {saved && <p role="status">Connection points saved.</p>}
   </form>;
 }
@@ -341,9 +342,9 @@ export function PermissionEditor({ workspaceId }: { workspaceId: string }) {
           </form>
         )}
         {error && (
-          <p className="error" role="alert">
+          <Feedback role="alert">
             {error}
-          </p>
+          </Feedback>
         )}
       </div>
     </Dialog>
@@ -503,9 +504,9 @@ export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
               </button>
             )}
             {(error || data?.error) && (
-              <p className="error" role="alert">
+              <Feedback role="alert">
                 {error || data?.error}
-              </p>
+              </Feedback>
             )}
           </div>
         </Dialog>

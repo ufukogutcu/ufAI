@@ -120,6 +120,11 @@ interface AgentState {
   timelineVersion: number;
   error: string;
   connected: boolean;
+  errorWorkspaceId: string | null;
+  errorSource: string | null;
+  errorActionLabel: string;
+  retryError: (() => Promise<void>) | null;
+  connectionWorkspaceId: string | null;
   loadWorkspace: (id: string) => Promise<void>;
   refreshAgent: (id: string) => Promise<void>;
   loadMessages: (
@@ -631,6 +636,11 @@ export function createAgentStore() {
       timelineVersion: 0,
       error: "",
       connected: true,
+      errorWorkspaceId: null,
+      errorSource: null,
+      errorActionLabel: "Reload agents",
+      retryError: null,
+      connectionWorkspaceId: null,
       async loadWorkspace(id) {
         return refresh(`workspace:${id}`, async () => {
           try {
@@ -694,12 +704,13 @@ export function createAgentStore() {
                   state.selected[id] && !agents[state.selected[id]!]
                     ? { ...state.selected, [id]: null }
                     : state.selected,
-                error: "",
+                ...(state.errorSource === `workspace:${id}` ? { error: "", errorWorkspaceId: null, errorSource: null, retryError: null } : {}),
               };
             });
             forgetPanelTabs(removedIds);
           } catch (e) {
-            set({ error: errorMessage(e) });
+            set({ error: errorMessage(e), errorWorkspaceId: id, errorSource: `workspace:${id}`,
+              errorActionLabel: "Reload agents", retryError: () => get().loadWorkspace(id) });
           }
         });
       },
@@ -724,8 +735,11 @@ export function createAgentStore() {
                 : s.details,
             }));
             await Promise.all([get().loadTasks(id), get().loadMemories(id)]);
+            if (get().errorSource === `agent:${id}`)
+              set({ error: "", errorWorkspaceId: null, errorSource: null, retryError: null });
           } catch (e) {
-            set({ error: errorMessage(e) });
+            set({ error: errorMessage(e), errorWorkspaceId: get().agents[id]?.workspaceId ?? null, errorSource: `agent:${id}`,
+              errorActionLabel: "Reload agent details", retryError: () => get().refreshAgent(id) });
           }
         });
       },
@@ -918,9 +932,19 @@ export function createAgentStore() {
               }>(path, "POST", { content: value, requestId });
         const accepted = await send();
         await get().refreshAgent(id);
-        await get()
-          .loadMessages(id, !taskId && !newTask ? null : accepted.taskId)
-          .catch((e) => set({ error: errorMessage(e) }));
+        const conversationId = !taskId && !newTask ? null : accepted.taskId;
+        const source = `messages:${id}:${conversationId ?? "chat"}`;
+        async function reloadMessages() {
+          try {
+            await get().loadMessages(id, conversationId);
+            if (get().errorSource === source)
+              set({ error: "", errorWorkspaceId: null, errorSource: null, retryError: null });
+          } catch (e) {
+            set({ error: errorMessage(e), errorWorkspaceId: get().agents[id]?.workspaceId ?? null, errorSource: source,
+              errorActionLabel: "Reload conversation", retryError: reloadMessages });
+          }
+        }
+        await reloadMessages();
         return accepted.taskId;
       },
     };

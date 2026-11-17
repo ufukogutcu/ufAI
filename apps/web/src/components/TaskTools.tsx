@@ -1,3 +1,4 @@
+import { BusyButton, Feedback, LoadingState } from "./Feedback";
 import { ImagePreview } from "./MessageAttachments";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -351,7 +352,7 @@ export function ProcessActivity({
           Output
         </button>
         {active && (
-          <button
+          <BusyButton busy={stopping}
             type="button"
             className="textButton"
             disabled={stopping}
@@ -359,7 +360,7 @@ export function ProcessActivity({
           >
             <Square size={13} aria-hidden="true" />
             {stopping ? "Stopping…" : "Stop process"}
-          </button>
+          </BusyButton>
         )}
       </div>
       {open && (
@@ -368,27 +369,27 @@ export function ProcessActivity({
             <code className={styles.command}>{owned.command}</code>
             <TerminalSession process={owned} onError={setError} />
             {active && (
-              <button
+              <BusyButton busy={stopping}
                 type="button"
                 className="button"
                 disabled={stopping}
                 onClick={() => void stop()}
               >
                 {stopping ? "Stopping…" : "Stop process"}
-              </button>
+              </BusyButton>
             )}
             {error && (
-              <p className="errorBanner" role="alert">
+              <Feedback role="alert">
                 {error}
-              </p>
+              </Feedback>
             )}
           </div>
         </Dialog>
       )}
       {error && !open && (
-        <p className="errorBanner" role="alert">
+        <Feedback role="alert">
           {error}
-        </p>
+        </Feedback>
       )}
     </>
   );
@@ -456,7 +457,7 @@ export function PublishedFiles({
             <Folder size={16} aria-hidden="true" /> No published files yet.
           </p>
         )}
-        {busy && <p role="status">Loading…</p>}
+        {busy && <LoadingState role="status">Loading…</LoadingState>}
         {items.length < total && (
           <button
             className="button"
@@ -467,9 +468,9 @@ export function PublishedFiles({
           </button>
         )}
         {error && (
-          <p className="errorBanner" role="alert">
+          <Feedback role="alert">
             {error}
-          </p>
+          </Feedback>
         )}
       </div>
     </Dialog>

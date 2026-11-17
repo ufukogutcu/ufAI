@@ -1,3 +1,4 @@
+import { Feedback, BusyButton, LoadingState } from "./Feedback";
 import {
   useCallback,
   useEffect,
@@ -250,9 +251,9 @@ function SkillEditor({
           )}
         </Field>
         {error && (
-          <p className="errorBanner" role="alert">
+          <Feedback role="alert">
             {error}
-          </p>
+          </Feedback>
         )}
       </div>
       <div className={styles.footer}>
@@ -264,9 +265,9 @@ function SkillEditor({
         >
           Cancel
         </button>
-        <button className="button primary" disabled={busy}>
+        <BusyButton busy={busy} className="button primary" disabled={busy}>
           {busy ? "Saving…" : "Save Skill"}
-        </button>
+        </BusyButton>
       </div>
     </form>
   );
@@ -686,9 +687,9 @@ export function AgentSkills({ agentId }: { agentId: string }) {
         </div>
       </div>
       {!installing && !removing && error && (
-        <p role="alert" className="errorBanner">
+        <Feedback role="alert">
           {error}
-        </p>
+        </Feedback>
       )}
       <p role="status" className={styles.feedback}>
         {notice}
@@ -696,7 +697,7 @@ export function AgentSkills({ agentId }: { agentId: string }) {
       {selected ? (
         <div className={styles.content} ref={scroll}>
           {!detail ? (
-            <p className={styles.muted}>Loading skill…</p>
+            <LoadingState className={styles.muted}>Loading skill…</LoadingState>
           ) : (
             <>
               <div className={styles.detailHeading}>
@@ -719,9 +720,9 @@ export function AgentSkills({ agentId }: { agentId: string }) {
                   : "Custom · Shared across all agents"}
               </p>
               {detail.error && (
-                <p className="errorBanner" role="alert">
+                <Feedback role="alert">
                   {detail.error}
-                </p>
+                </Feedback>
               )}
               <dl className={styles.metadata}>
                 <dt>Source</dt>
@@ -863,7 +864,7 @@ export function AgentSkills({ agentId }: { agentId: string }) {
               Installed skills are shared. Switches apply only to this agent.
             </p>
             {!page && loading ? (
-              <p className={styles.muted}>Loading skills…</p>
+              <LoadingState className={styles.muted}>Loading skills…</LoadingState>
             ) : !page?.ids.length ? (
               <p className={styles.muted}>No skills match these filters.</p>
             ) : (
@@ -886,14 +887,14 @@ export function AgentSkills({ agentId }: { agentId: string }) {
                   {page.ids.length} of {page.total} skills
                 </span>
                 {page.ids.length < page.total && (
-                  <button
+                  <BusyButton busy={loading}
                     type="button"
                     className="textButton"
                     disabled={loading}
                     onClick={() => void load(true)}
                   >
                     {loading ? "Loading…" : "Load more"}
-                  </button>
+                  </BusyButton>
                 )}
               </div>
             )}
@@ -968,7 +969,7 @@ export function AgentSkills({ agentId }: { agentId: string }) {
                           details and choose Replace Package.
                         </p>
                       )}
-                    <button
+                    <BusyButton busy={busy}
                       type="button"
                       className="button"
                       disabled={
@@ -987,16 +988,16 @@ export function AgentSkills({ agentId }: { agentId: string }) {
                         : candidate.identical
                           ? "Use Installed Skill"
                           : "Install"}
-                    </button>
+                    </BusyButton>
                   </li>
                 ))}
               </ul>
             </>
           )}
           {error && (
-            <p className="errorBanner" role="alert">
+            <Feedback role="alert">
               {error}
-            </p>
+            </Feedback>
           )}
           <div className={styles.footer}>
             <button
@@ -1032,9 +1033,9 @@ export function AgentSkills({ agentId }: { agentId: string }) {
             ))}
           </ul>
           {error && (
-            <p className="errorBanner" role="alert">
+            <Feedback role="alert">
               {error}
-            </p>
+            </Feedback>
           )}
           <div className={styles.footer}>
             <button
@@ -1046,14 +1047,14 @@ export function AgentSkills({ agentId }: { agentId: string }) {
             >
               Cancel
             </button>
-            <button
+            <BusyButton busy={busy}
               type="button"
               className="button"
               disabled={busy}
               onClick={() => void remove()}
             >
               {busy ? "Removing…" : "Remove Skill Everywhere"}
-            </button>
+            </BusyButton>
           </div>
         </Dialog>
       )}

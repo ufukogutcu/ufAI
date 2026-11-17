@@ -25,6 +25,8 @@ import styles from "./Home.module.scss";
 import { GlassMaterial } from "../components/GlassMaterial";
 import { Appearance } from "../components/Appearance";
 import { AddAgentButton } from "../components/AddAgentButton";
+import { useNotice } from "../components/FeedbackProvider";
+import { Feedback, BusyButton, LoadingState } from "../components/Feedback";
 
 type WorkspaceAction =
   | { kind: "create" }
@@ -143,15 +145,15 @@ function WorkspaceDialog({
           />
         )}
         {busy && action.kind === "delete" && (
-          <p role="status">
+          <LoadingState>
             Deleting managed files… Cleanup continues if this page closes.
-          </p>
+          </LoadingState>
         )}
         {error && (
           <Appearance kind="fade">
-            <p className="error" role="alert">
+            <Feedback role="alert">
               {error}
-            </p>
+            </Feedback>
           </Appearance>
         )}
         <div className="dialogActions">
@@ -163,12 +165,12 @@ function WorkspaceDialog({
           >
             Cancel
           </button>
-          <button
+          <BusyButton busy={busy}
             className={`button ${action.kind === "delete" ? "danger" : "primary"}`}
             disabled={busy}
           >
             {busy ? "Saving…" : action.kind === "edit" ? "Save changes" : title}
-          </button>
+          </BusyButton>
         </div>
       </form>
     </Dialog>
@@ -179,8 +181,7 @@ export default function Home() {
   const [publishedIn, setPublishedIn] = useState<string | null>(null);
   const guard = useNavigationGuard();
   const agentStore = useAgentStore();
-  const agentError = useAgents((s) => s.positionError || s.error);
-  const agentConnected = useAgents((s) => s.connected);
+  const positionError = useAgents((s) => s.positionError);
   const workspaces = useDashboard((state) => state.workspaces);
   const activeId = useSettings(
     (state) => state.snapshot.settings.activeWorkspaceId,
@@ -199,6 +200,10 @@ export default function Home() {
   const chrome = useRef<HTMLDivElement>(null);
   const tabList = useRef<HTMLDivElement>(null);
   const active = selectedWorkspace;
+  useNotice(positionError ? { id: "layout-save", title: "Layout could not save", message: positionError,
+    actionLabel: "Retry layout save", action: () => agentStore.getState().retryPositions() } : null, "layout-save");
+  useNotice(error && (!!active || workspaces.length > 0) ? { id: "workspaces", title: "Workspaces could not refresh", message: error,
+    actionLabel: "Reload workspaces", action: () => load(!!workspaces.length) } : null, "workspaces");
   const tabs =
     active && !workspaces.some((workspace) => workspace.id === active.id)
       ? [...workspaces, active]
@@ -228,7 +233,7 @@ export default function Home() {
       observer.disconnect();
       container.style.removeProperty("--workspace-chrome-bottom");
     };
-  }, [active?.id, active?.name, active?.description, agentError, agentConnected, error]);
+  }, [active?.id, active?.name, active?.description]);
   useEffect(() => {
     const list = tabList.current;
     if (!list) return;
@@ -364,30 +369,6 @@ export default function Home() {
           </Tooltip>
         </div>
         {active && <DeletionProgress workspaceId={active.id} />}
-        {agentError && (
-          <div className="errorBanner" role="alert">
-            {agentError}{" "}
-            <button
-              className="textButton"
-              onClick={() => void agentStore.getState().retryPositions()}
-            >
-              Retry saves
-            </button>
-          </div>
-        )}
-        {!agentConnected && (
-          <p role="status">Live updates disconnected. Reconnecting…</p>
-        )}
-        {error && (
-          <Appearance kind="fade">
-            <div className="errorBanner" role="alert">
-              {error}
-              <button className="textButton" onClick={handleRetry}>
-                Retry
-              </button>
-            </div>
-          </Appearance>
-        )}
         {active && (
           <header className={`pageHeader ${styles.workspaceHeader}`}>
             <div className={styles.workspaceHeadingRow}>
@@ -450,12 +431,14 @@ export default function Home() {
             <Flowboard key={active.id} workspaceId={active.id} />
           ) : status === "loading" || status === "idle" ? (
             <Appearance>
-              <div className="centerState" role="status">
+              <LoadingState className="centerState">
                 Loading workspaces…
-              </div>
+              </LoadingState>
             </Appearance>
           ) : (
-            status !== "error" && (
+            status === "error" ? <div className="centerState"><Feedback title="Workspaces could not load">{error}
+              <button type="button" className="textButton" onClick={handleRetry}>Reload workspaces</button>
+            </Feedback></div> : (
               <Appearance>
                 <div className="centerState">
                   <div className="emptyIcon">

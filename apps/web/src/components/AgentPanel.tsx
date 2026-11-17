@@ -1,3 +1,5 @@
+import { Feedback, LoadingState, LoadingIndicator, BusyButton } from "./Feedback";
+import { FeedbackHost } from "./FeedbackProvider";
 import { useTriggerStore } from "../trigger-store";
 import { AgentBrowser } from "./AgentBrowser";
 import { useStore } from "zustand";
@@ -199,9 +201,9 @@ export function AgentForm({
   return (
     <form onSubmit={submit} className={styles.form}>
       {!agent && <div className={styles.creationCharacter}>
-        <div className={styles.creationCharacterPreview}>{appearance ? <AgentCharacter appearance={appearance} paused={paused} /> : <span role="status">{appearanceError ? "Choose a character" : "Choosing character…"}</span>}</div>
+        <div className={styles.creationCharacterPreview}>{appearance ? <AgentCharacter appearance={appearance} paused={paused} /> : <span role="status">{!appearanceError && <LoadingIndicator />}{appearanceError ? "Choose a character" : "Choosing character…"}</span>}</div>
         <button type="button" className="button secondary" disabled={busy} onClick={() => setEditingCharacter(true)}><Pencil size={14} aria-hidden /> Edit character</button>
-        {appearanceError && <p role="alert" className="errorBanner">{appearanceError}<button type="button" className="textButton" disabled={busy} onClick={() => setAppearanceAttempt(value => value + 1)}>Retry character</button></p>}
+        {appearanceError && <Feedback role="alert">{appearanceError}<button type="button" className="textButton" disabled={busy} onClick={() => setAppearanceAttempt(value => value + 1)}>Retry character</button></Feedback>}
       </div>}
       {editingCharacter && <CharacterEditor initial={appearance ?? defaultAppearance} creating onClose={() => setEditingCharacter(false)} onSave={async value => { appearanceTouched.current = true; setAppearance(value); setAppearanceError(""); }} />}
 
@@ -226,10 +228,10 @@ export function AgentForm({
           />
         )}
       </Field>
-      {nameSuggestionError && <p role="alert" className="errorBanner">
+      {nameSuggestionError && <Feedback role="alert">
         Could not suggest a name: {nameSuggestionError} Enter a name or try again.
         <button type="button" className="textButton" disabled={busy} onClick={() => setNameAttempt(value => value + 1)}>Retry name</button>
-      </p>}
+      </Feedback>}
       <Field
         label="Agent Preset (optional)"
         hint="You can leave this empty and choose later. A complete preset and known context window are required to run tasks."
@@ -265,14 +267,14 @@ export function AgentForm({
       {agent && <Field label="Instructions" hint="Define this agent’s role and lasting guidance. You can also ask it to update these in Chat. Saved changes apply to subsequent turns; running turns keep their starting instructions.">
         {p => <textarea {...p} name="instructions" autoComplete="off" rows={6} maxLength={8000} disabled={busy} value={draft.instructions} onChange={e => setDraft({ ...draft, instructions: e.target.value })} />}
       </Field>}
-      {stale && <p className="errorBanner" role="alert">Saved details changed while you were editing. Your draft has been kept. Copy any changes you want to keep, then reload before saving.
+      {stale && <Feedback role="alert">Saved details changed while you were editing. Your draft has been kept. Copy any changes you want to keep, then reload before saving.
         <button type="button" className="textButton" disabled={busy} onClick={reloadDetails}>Reload saved details</button>
-      </p>}
+      </Feedback>}
       {!defaultReady && !defaultError && (
-        <p role="status">Loading default preset…</p>
+        <LoadingState role="status">Loading default preset…</LoadingState>
       )}
       {defaultError && (
-        <p role="alert" className="errorBanner">
+        <Feedback role="alert">
           {defaultError}
           <button
             type="button"
@@ -281,7 +283,7 @@ export function AgentForm({
           >
             Retry
           </button>
-        </p>
+        </Feedback>
       )}
       {presets.length < presetTotal && (
         <button
@@ -293,14 +295,14 @@ export function AgentForm({
         </button>
       )}
       {error && (
-        <p role="alert" className="errorBanner">
+        <Feedback role="alert">
           {error}
-        </p>
+        </Feedback>
       )}
       <div className={styles.actions}>
-        <button className="button primary" disabled={busy || stale || !defaultReady || (!agent && !appearance)}>
+        <BusyButton busy={busy} className="button primary" disabled={busy || stale || !defaultReady || (!agent && !appearance)}>
           {busy ? "Saving…" : agent ? "Save Agent" : "Create Agent"}
-        </button>
+        </BusyButton>
       </div>
     </form>
   );
@@ -453,9 +455,9 @@ function MemoryCard({
         </Dialog>
       )}
       {error && (
-        <p role="alert" className="errorBanner">
+        <Feedback role="alert">
           {error}
-        </p>
+        </Feedback>
       )}
     </article>
   );
@@ -630,10 +632,11 @@ export function AgentPanel({
           </button>
         ))}
       </nav>
+      <FeedbackHost kind="panel" />
       {error && (
-        <p role="alert" className="errorBanner">
+        <Feedback role="alert">
           {error}
-        </p>
+        </Feedback>
       )}
       {tab === "Chat" && (
         <>
@@ -643,7 +646,7 @@ export function AgentPanel({
               {(["running", "waiting", "queued", "blocked", "failed"].includes(chat.task.status) || chatHasProcesses) && <button className="textButton" onClick={() => void action("cancel", chat.task!.id)}><Square size={13} aria-hidden />Stop</button>}
               {["failed", "blocked"].includes(chat.task.status) && <button className="textButton" onClick={() => void action("retry", chat.task!.id)}><RotateCcw size={13} aria-hidden />Retry</button>}
             </div>
-            {chat.task.error && <p className="errorBanner" role="alert">{chat.task.error} <a href="#/providers">Providers</a> · <a href="#/agent-presets">Presets</a></p>}
+            {chat.task.error && <Feedback role="alert">{chat.task.error} <a href="#/providers">Providers</a> · <a href="#/agent-presets">Presets</a></Feedback>}
             {chat.turns[0]?.status === "completed" && chat.turns[0].error && !chat.task.error && <p className={styles.muted}>{chat.turns[0].error}</p>}
           </div>}
           <Transcript key={`chat:${agent.id}`} agentId={agent.id} taskId={null} />
@@ -717,10 +720,10 @@ export function AgentPanel({
                 )}
               </div>
               {current?.error && (
-                <p className="errorBanner" role="alert">
+                <Feedback role="alert">
                   {current.error} <a href="#/providers">Providers</a> ·{" "}
                   <a href="#/agent-presets">Presets</a>
-                </p>
+                </Feedback>
               )}
               {details?.turns[0]?.status === "completed" &&
                 details.turns[0].error &&
@@ -832,14 +835,14 @@ export function AgentPanel({
             This cannot be undone.
           </p>
           {error && (
-            <p role="alert" className="error">
+            <Feedback role="alert">
               {error}
-            </p>
+            </Feedback>
           )}
           {deleteBusy && (
-            <p role="status">
+            <LoadingState>
               Cleaning up files… This continues if the page closes.
-            </p>
+            </LoadingState>
           )}
           <div className={styles.actions}>
             <button
@@ -849,7 +852,7 @@ export function AgentPanel({
             >
               Keep Agent
             </button>
-            <button
+            <BusyButton busy={deleteBusy}
               className="button danger"
               disabled={deleteBusy}
               onClick={() => {
@@ -862,7 +865,7 @@ export function AgentPanel({
               }}
             >
               {deleteBusy ? "Deleting files…" : "Delete Agent and files"}
-            </button>
+            </BusyButton>
           </div>
         </Dialog>
       )}

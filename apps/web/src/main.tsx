@@ -6,6 +6,7 @@ import { request, errorMessage } from "./api";
 import type { SettingsResponse } from "../../server/src/contracts";
 import "@xyflow/react/dist/style.css";
 import "./styles.scss";
+import { Feedback, LoadingState } from "./components/Feedback";
 
 applyTheme(defaultThemes[0]!);
 
@@ -37,13 +38,13 @@ function Startup() {
     <div className="centerState">
       {error ? (
         <>
-          <p role="alert">{error}</p>
+          <Feedback title="Your setup could not load">{error}</Feedback>
           <button className="button primary" onClick={handleRetry}>
             Retry
           </button>
         </>
       ) : (
-        <p role="status">Loading your setup…</p>
+        <LoadingState>Loading your setup…</LoadingState>
       )}
     </div>
   );

@@ -1,3 +1,5 @@
+import { BusyButton, Feedback, LoadingIndicator, LoadingState } from "../components/Feedback";
+import { useNotice } from "../components/FeedbackProvider";
 import {
   useCallback,
   useEffect,
@@ -189,12 +191,12 @@ function ModelContextWarning({
         <TriangleAlert size={14} aria-hidden="true" />
         <span>Fetched context differs: {difference.automatic.toLocaleString()} tokens. Your manual value: {difference.manual.toLocaleString()} tokens.</span>
       </p>
-      <button type="button" className="textButton" disabled={busy}
+      <BusyButton busy={busy} type="button" className="textButton" disabled={busy}
         aria-label={`Use automatic context for ${model.name}`} aria-describedby={descriptionId}
         aria-busy={busy} onClick={applyAutomaticContext}>
         {busy ? "Saving…" : "Use automatic context"}
-      </button>
-      {error && <p className="fieldError" role="alert">{error}</p>}
+      </BusyButton>
+      {error && <Feedback>{error}</Feedback>}
     </div>
   );
 }
@@ -298,9 +300,9 @@ function ModelEditor({
               : "Discard unsaved model changes?"}
           </p>
           {error && (
-            <Appearance kind="fade"><p className="error" role="alert">
+            <Appearance kind="fade"><Feedback role="alert">
               {error}
-            </p></Appearance>
+            </Feedback></Appearance>
           )}
           <div className="dialogActions">
             <button
@@ -384,9 +386,9 @@ function ModelEditor({
             </button>
           </fieldset>
           {error && (
-            <Appearance kind="fade"><p className="error" role="alert">
+            <Appearance kind="fade"><Feedback role="alert">
               {error}
-            </p></Appearance>
+            </Feedback></Appearance>
           )}
           <div className="dialogActions">
             {model && (
@@ -407,9 +409,9 @@ function ModelEditor({
             >
               Cancel
             </button>
-            <button className="button primary" disabled={busy}>
+            <BusyButton busy={busy} className="button primary" disabled={busy}>
               {busy ? "Saving…" : "Save model"}
-            </button>
+            </BusyButton>
           </div>
         </form>
       )}
@@ -995,6 +997,7 @@ function ProviderEditor({
             {provider === "codex" && (
               <Appearance><div className={shared.loginArea}>
                 <Appearance kind="fade"><p role="status">
+                  {login.status === "pending" && <LoadingIndicator />}
                   {login.status === "connected"
                     ? "Connected to ChatGPT."
                     : login.status === "pending"
@@ -1083,11 +1086,11 @@ function ProviderEditor({
               </button>
             </div>
             <div className={styles.selectionToolbar}>
-              <span role="status">{selectionLoading ? "Loading model selections…" : `${enabledCount.toLocaleString()} of ${selectionDraft.saved.size.toLocaleString()} selected`}</span>
+              <span role="status">{selectionLoading && <LoadingIndicator />}{selectionLoading ? "Loading model selections…" : `${enabledCount.toLocaleString()} of ${selectionDraft.saved.size.toLocaleString()} selected`}</span>
               <button type="button" className="textButton" disabled={!id || selectionLoading || !!selectionLoadError} onClick={() => void selectMatching(true)}>Select all{query ? " matching" : ""}</button>
               <button type="button" className="textButton" disabled={!id || selectionLoading || !!selectionLoadError} onClick={() => void selectMatching(false)}>Unselect all{query ? " matching" : ""}</button>
             </div>
-            {selectionLoadError && <p className="fieldError" role="alert">{selectionLoadError}{" "}<button type="button" className="textButton" onClick={refreshLocal}>Retry model selections</button></p>}
+            {selectionLoadError && <Feedback>{selectionLoadError}{" "}<button type="button" className="textButton" onClick={refreshLocal}>Retry model selections</button></Feedback>}
             {fields.models && (
               <Appearance kind="fade"><p id={selectionErrorId} className="fieldError" role="alert" tabIndex={-1}>
                 {fields.models}
@@ -1189,9 +1192,9 @@ function ProviderEditor({
               </p>
             )}
             {catalogLoading && !catalog.items.length && (
-              <Appearance kind="fade"><p className={shared.listMessage} role="status">
+              <Appearance kind="fade"><LoadingState className={shared.listMessage} role="status">
                 Loading saved models…
-              </p></Appearance>
+              </LoadingState></Appearance>
             )}
             {!catalogLoading && !catalog.items.length && (
               <Appearance kind="fade">
@@ -1231,7 +1234,7 @@ function ProviderEditor({
         </fieldset>
         <footer className={shared.editorFooter}>
           {error && (
-            <Appearance kind="fade"><p className="error" role="alert">
+            <Appearance kind="fade"><Feedback role="alert">
               {error}{" "}
               <button
                 type="button"
@@ -1241,15 +1244,15 @@ function ProviderEditor({
               >
                 Retry discovery
               </button>
-            </p></Appearance>
+            </Feedback></Appearance>
           )}
           {testing && (
-            <Appearance kind="fade"><p className={styles.status} role="status">
+            <Appearance kind="fade"><Feedback tone="loading">
               Testing {testing}…{" "}
               <button type="button" className="textButton" onClick={cancelTest}>
                 Cancel test
               </button>
-            </p></Appearance>
+            </Feedback></Appearance>
           )}
           <div className={shared.footerActions}>
             {id && (
@@ -1289,7 +1292,7 @@ function ProviderEditor({
           {selectionImpact.total > selectionImpact.presets.length && <p>And {(selectionImpact.total - selectionImpact.presets.length).toLocaleString()} more.</p>}
           <div className="dialogActions">
             <button type="button" className="button secondary" disabled={busy} onClick={() => setSelectionImpact(null)}>Cancel</button>
-            <button type="button" className="button primary" disabled={busy} onClick={() => void saveProvider(selectionImpact.confirmationToken)}>{busy ? "Saving…" : "Save & clear model choices"}</button>
+            <BusyButton busy={busy} type="button" className="button primary" disabled={busy} onClick={() => void saveProvider(selectionImpact.confirmationToken)}>{busy ? "Saving…" : "Save & clear model choices"}</BusyButton>
           </div>
         </Dialog>
       )}
@@ -1314,9 +1317,9 @@ function ProviderEditor({
             cleared.
           </p>
           {error && (
-            <Appearance kind="fade"><p className="error" role="alert">
+            <Appearance kind="fade"><Feedback role="alert">
               {error}
-            </p></Appearance>
+            </Feedback></Appearance>
           )}
           <div className="dialogActions">
             <button
@@ -1340,6 +1343,8 @@ export default function Providers() {
   const load = useConnections((state) => state.load);
   const status = useConnections((state) => state.status);
   const error = useConnections((state) => state.error);
+  useNotice(error && connections.length ? { id: "providers", title: "Providers could not refresh", message: error,
+    actionLabel: "Reload Providers", action: () => load() } : null, "providers");
   const lastOpenedId = useConnections((state) => state.lastOpenedId);
   const rememberOpened = useConnections((state) => state.rememberOpened);
   const [snapshot, setSnapshot] = useState<ProviderConnection | undefined>();
@@ -1416,14 +1421,14 @@ export default function Providers() {
           New Provider
         </button>
       </header>
-      {error && (
+      {error && !connections.length && (
         <Appearance kind="fade">
-        <div className="errorBanner" role="alert">
+        <Feedback role="alert">
           {error}
           <button className="textButton" onClick={() => void load()}>
             Retry
           </button>
-        </div>
+        </Feedback>
         </Appearance>
       )}
       <div
@@ -1431,9 +1436,9 @@ export default function Providers() {
       >
         <aside className={shared.library} aria-label="Provider library">
           {status === "loading" && !connections.length && (
-            <Appearance kind="fade"><p className={shared.listMessage} role="status">
+            <Appearance kind="fade"><LoadingState className={shared.listMessage} role="status">
               Loading Providers…
-            </p></Appearance>
+            </LoadingState></Appearance>
           )}
           {status === "ready" && !connections.length && (
             <Appearance kind="fade">

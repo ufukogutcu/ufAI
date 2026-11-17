@@ -1,3 +1,5 @@
+import { Feedback, BusyButton, LoadingState } from "../components/Feedback";
+import { useNotice } from "../components/FeedbackProvider";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ArrowLeft, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import { useDashboard } from "../store";
@@ -265,9 +267,9 @@ function PresetEditor({
       </fieldset>
       <footer className={styles.editorFooter}>
         {error && (
-          <Appearance kind="fade"><p role="alert" className="error">
+          <Appearance kind="fade"><Feedback role="alert">
             {error}
-          </p></Appearance>
+          </Feedback></Appearance>
         )}
         <div className={styles.footerActions}>
           <div />
@@ -279,9 +281,9 @@ function PresetEditor({
           >
             Cancel
           </button>
-          <button className="button primary" disabled={busy}>
+          <BusyButton busy={busy} className="button primary" disabled={busy}>
             {busy ? "Saving…" : "Save preset"}
-          </button>
+          </BusyButton>
         </div>
       </footer>
     </form>
@@ -295,6 +297,8 @@ export default function Presets() {
   const offset = useDashboard((state) => state.presetOffset);
   const error = useDashboard((state) => state.presetError);
   const load = useDashboard((state) => state.loadPresets);
+  useNotice(error && presets.length ? { id: "presets", title: "Presets could not refresh", message: error,
+    actionLabel: "Reload presets", action: () => load() } : null, "presets");
   const remove = useDashboard((state) => state.deletePreset);
   const lastOpenedId = useDashboard((state) => state.lastOpenedPresetId);
   const rememberOpened = useDashboard((state) => state.rememberOpenedPreset);
@@ -397,14 +401,14 @@ export default function Presets() {
           New preset
         </button>
       </header>
-      {error && (
+      {error && !presets.length && (
         <Appearance kind="fade">
-        <div className="errorBanner" role="alert">
+        <Feedback role="alert">
           {error}
           <button className="textButton" onClick={() => void load()}>
             Retry
           </button>
-        </div>
+        </Feedback>
         </Appearance>
       )}
       <div
@@ -412,9 +416,9 @@ export default function Presets() {
       >
         <aside className={styles.library} aria-label="Preset library">
           {status === "loading" && !presets.length && (
-            <Appearance kind="fade"><p className={styles.listMessage} role="status">
+            <Appearance kind="fade"><LoadingState className={styles.listMessage} role="status">
               Loading presets…
-            </p></Appearance>
+            </LoadingState></Appearance>
           )}
           {!presets.length && status === "ready" && (
             <Appearance kind="fade">
@@ -508,9 +512,9 @@ export default function Presets() {
             Permanently delete <strong>{deleting.name}</strong>?
           </p>
           {deleteError && (
-            <Appearance kind="fade"><p className="error" role="alert">
+            <Appearance kind="fade"><Feedback role="alert">
               {deleteError}
-            </p></Appearance>
+            </Feedback></Appearance>
           )}
           <div className="dialogActions">
             <button

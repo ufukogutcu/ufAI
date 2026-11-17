@@ -1,3 +1,4 @@
+import { Feedback, BusyButton, LoadingIndicator, LoadingState } from "./Feedback";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { ArrowUp, ChevronRight, Copy, Download, File, Folder, FolderOpen, RefreshCw, Trash2 } from "lucide-react";
 import { request, errorMessage } from "../api";
@@ -191,13 +192,13 @@ export function AgentFiles({ agentId }: { agentId: string }) {
         </nav>}
       </div>
       <div ref={content} className={styles.content} aria-busy={busy}>
-        <p className={styles.status} role="status">{busy ? "Loading files…" : location?.state === "pending" ? "Creating folder…" : action === "open" ? "Opening folder…" : status}</p>
-        {actionError && <p className="error" role="alert">{actionError}</p>}
+        <p className={styles.status} role="status">{(busy || location?.state === "pending" || action === "open") && <LoadingIndicator />}{busy ? "Loading files…" : location?.state === "pending" ? "Creating folder…" : action === "open" ? "Opening folder…" : status}</p>
+        {actionError && <Feedback role="alert">{actionError}</Feedback>}
         {copyFallback && <code className={styles.path} tabIndex={0}>{copyFallback}</code>}
         {(error || location?.state === "error") && <div className={styles.feedback}>
-          <p className="error" role="alert">{error || location?.error || "The agent's files folder is unavailable."}</p>
+          <Feedback role="alert">{error || location?.error || "The agent's files folder is unavailable."}</Feedback>
           <button type="button" className="textButton" disabled={busy} onClick={() => void refresh()}>Retry</button>
-          {(location?.state === "error" || (location && !path)) && <button type="button" className="textButton" disabled={busy || !!action} onClick={() => void run("repair")}>{action === "repair" ? "Retrying…" : "Retry folder setup"}</button>}
+          {(location?.state === "error" || (location && !path)) && <BusyButton busy={action === "repair"} type="button" className="textButton" disabled={busy || !!action} onClick={() => void run("repair")}>{action === "repair" ? "Retrying…" : "Retry folder setup"}</BusyButton>}
         </div>}
         {!error && ready && listing && <>
           {!listing.total ? <p className={styles.empty}>This folder is empty.</p> : <ul className={styles.entries} aria-label="Files and folders">
@@ -241,11 +242,11 @@ export function AgentFiles({ agentId }: { agentId: string }) {
         busy={deleteBusy} initialFocusSelector="[data-cancel-delete]" onClose={() => setDeleting(null)}>
         <p className={styles.confirmation}>Permanently delete <strong>{deleting.name}</strong>{deleting.kind === "directory" ? " and all its contents" : ""}? This cannot be undone.</p>
         <p>Published files are kept.</p>
-        {deleteError && <p className="error" role="alert">{deleteError}{deleting.kind === "directory" && " Folder deletion may have removed some contents. Refresh after cancelling to check what remains."}</p>}
-        {deleteBusy && <p role="status">Deleting{deleting.kind === "directory" ? " folder and contents" : " file"}…</p>}
+        {deleteError && <Feedback role="alert">{deleteError}{deleting.kind === "directory" && " Folder deletion may have removed some contents. Refresh after cancelling to check what remains."}</Feedback>}
+        {deleteBusy && <LoadingState>Deleting{deleting.kind === "directory" ? " folder and contents" : " file"}…</LoadingState>}
         <div className={styles.confirmationActions}>
           <button type="button" className="button" data-cancel-delete disabled={deleteBusy} onClick={() => setDeleting(null)}>Cancel</button>
-          <button type="button" className="button danger" disabled={deleteBusy} onClick={() => void deleteEntry()}>{deleteBusy ? "Deleting…" : "Delete permanently"}</button>
+          <BusyButton busy={deleteBusy} type="button" className="button danger" disabled={deleteBusy} onClick={() => void deleteEntry()}>{deleteBusy ? "Deleting…" : "Delete permanently"}</BusyButton>
         </div>
       </Dialog>}
     </section>

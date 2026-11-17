@@ -13,13 +13,6 @@
   align-items: flex-start;
   gap: 24px;
   pointer-events: none;
-  > :global(.errorBanner) {
-    width: 100%;
-    max-height: 25vh;
-    overflow: auto;
-    border-radius: var(--radius-control);
-    pointer-events: auto;
-  }
 }
 .workspaceBar {
   position: relative;
@@ -163,8 +156,7 @@
     pointer-events: none;
     z-index: 1;
   }
-  > :global(.centerState),
-  > :global(.errorBanner) {
+  > :global(.centerState) {
     position: relative;
     z-index: 2;
   }

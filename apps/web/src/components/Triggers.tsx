@@ -1,3 +1,4 @@
+import { Feedback, BusyButton, LoadingState } from "./Feedback";
 import {
   memo,
   useCallback,
@@ -223,7 +224,7 @@ function TriggerEditor({
       total: 0,
     }),
     [offset, setOffset] = useState(0);
-  const errorRef = useRef<HTMLParagraphElement>(null),
+  const errorRef = useRef<HTMLDivElement>(null),
     store = useTriggerStore(),
     agents = useAgentStore(),
     guard = useNavigationGuard();
@@ -434,12 +435,12 @@ function TriggerEditor({
       </div>
       <div className={styles.fields}>
         {error && (
-          <p className="errorBanner" role="alert" tabIndex={-1} ref={errorRef}>
+          <Feedback role="alert" tabIndex={-1} ref={errorRef}>
             {error}
-          </p>
+          </Feedback>
         )}
         {conflict && (
-          <p className="errorBanner" role="alert">
+          <Feedback role="alert">
             This trigger changed elsewhere. Your draft is preserved.{" "}
             <button
               type="button"
@@ -455,7 +456,7 @@ function TriggerEditor({
             >
               Reload saved version
             </button>
-          </p>
+          </Feedback>
         )}
         {current && (
           <>
@@ -465,9 +466,9 @@ function TriggerEditor({
               {date(latest?.nextAt ?? current.nextAt)}
             </p>
             {(latest?.blocker ?? current.blocker) && (
-              <p className="errorBanner">
+              <Feedback>
                 {latest?.blocker ?? current.blocker}
-              </p>
+              </Feedback>
             )}
             <div className={styles.actions}>
               <button
@@ -895,9 +896,9 @@ function TriggerEditor({
         >
           Cancel
         </button>
-        <button className="button" disabled={busy || conflict}>
+        <BusyButton busy={busy} className="button" disabled={busy || conflict}>
           {busy ? "Saving…" : "Save"}
-        </button>
+        </BusyButton>
         {!current && (
           <button
             type="submit"
@@ -1135,9 +1136,9 @@ export function TriggersView({
             </nav>
           )}
           {error && (
-            <p className={`errorBanner ${styles.feedback}`} role="alert">
+            <Feedback className={`${styles.feedback}`} role="alert">
               {error}
-            </p>
+            </Feedback>
           )}
           {section === "sources" ? (
             <EventSources workspaceId={workspaceId} />
@@ -1264,7 +1265,7 @@ export function TriggersView({
                         handled.
                       </p>
                     )}
-                    {!page && !error && <p role="status">Loading triggers…</p>}
+                    {!page && !error && <LoadingState role="status">Loading triggers…</LoadingState>}
                   </>
                 )}
                 <Pagination
@@ -1415,9 +1416,9 @@ function EventSources({ workspaceId }: { workspaceId: string }) {
   return (
     <div className={styles.content}>
       {error && (
-        <p className="errorBanner" role="alert">
+        <Feedback role="alert">
           {error}
-        </p>
+        </Feedback>
       )}
       <form onSubmit={create} className={styles.actions}>
         <Field label="New event source name">
@@ -1698,15 +1699,15 @@ export function SkillAutomationsPanel({
     <section className={styles.section}>
       <h4>Automation</h4>
       {error && (
-        <p className="errorBanner" role="alert">
+        <Feedback role="alert">
           {error}
-        </p>
+        </Feedback>
       )}
       {message && <p role="status">{message}</p>}
       {info?.error && (
-        <p className="errorBanner">
+        <Feedback>
           {info.error} The instruction skill remains available.
-        </p>
+        </Feedback>
       )}
       {info && !info.templates.length && (
         <p className={styles.help}>
@@ -1887,9 +1888,9 @@ export function SkillAutomationsPanel({
             </Field>
           )}
           {error && (
-            <p className="errorBanner" role="alert">
+            <Feedback role="alert">
               {error}
-            </p>
+            </Feedback>
           )}
           {(template.when.kind === "cron" || template.when.kind === "at") && (
             <Field label="Timezone">

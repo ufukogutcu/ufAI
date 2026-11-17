@@ -6,6 +6,7 @@ import { DiagramContext } from "./RichTextContext";
 import { remarkPlugins, richTextRehypePlugins, safeRichTextUrl } from "../rich-text";
 import "katex/dist/katex.min.css";
 import styles from "./RichText.module.scss";
+import { Feedback, LoadingState } from "./Feedback";
 
 export function CopyCode({ source }: { source: string }) {
   const [feedback, setFeedback] = useState({ source: "", status: "" });
@@ -52,7 +53,8 @@ function Diagram({ source, streaming }: { source: string; streaming: boolean }) 
       {/* SVG is an isolated image, never injected into the application's DOM. */}
       <img src={result.url} alt="Mermaid diagram; its text description is available in Diagram source below." className={styles.diagramImage} />
     </div>}
-    {!streaming && !result.url && <p role="status" className={styles.feedback}>{result.error ? `Diagram preview unavailable: ${result.error}` : context ? "Rendering diagram…" : "Diagram preview unavailable."}</p>}
+    {!streaming && !result.url && (result.error ? <Feedback title="Diagram preview unavailable">{result.error} The source is available below.</Feedback>
+      : context ? <LoadingState>Rendering diagram…</LoadingState> : <Feedback tone="info">Diagram preview unavailable. The source is available below.</Feedback>)}
     {streaming || !result.url ? <pre tabIndex={0} className={styles.source}><code>{source}</code></pre> :
       <details><summary>Diagram source</summary><pre tabIndex={0} className={styles.source}><code>{source}</code></pre></details>}
   </div>;

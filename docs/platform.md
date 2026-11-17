@@ -33,6 +33,16 @@ One local installation holds one shared setup across browser sessions. There are
 - **Appearance:** Backgrounds and panel surfaces stay steady. Switching workspaces or editors adds a tiny settling movement to foreground content. Dialogs, tooltips, small feedback messages, and individually created list items use brief entrance effects. Initial lists and additional result pages appear immediately. Motion follows the device's reduced-motion preference and does not delay interaction or dismissal.
 - **Limitations:** Settings contains a heading only. Use [Theme](#dashboard-themes) for appearance changes. If a preference cannot be saved, the last confirmed setting remains in use and Retry is available.
 
+### dashboard-feedback
+
+- **Status:** implemented
+- **Purpose:** Understand connection problems, failed actions and operations that are still running.
+- **Behavior:** Background problems appear as compact notices at the bottom-right. When an agent panel or dialog is open, notices appear inside it so forms and the message composer remain usable. Each notice names the problem and offers a relevant retry when available. Repeated failures update the existing notice. View more notices expands the list when more than three are present.
+- **Loading and recovery:** Spinners accompany active loading, saving and retrying. A sustained live-update interruption shows a connection notice while ufAI reconnects automatically. A brief restored message appears after a displayed interruption. Connection warnings do not mean that saved data has been lost.
+- **Errors:** Form validation stays beside the affected field. Panel and dialog action failures remain near the action, and task/tool failures remain in their histories. Error notices stay until resolved or dismissed; optional Technical details provide additional request information. Dismissing a notice does not retry or fix the problem.
+- **Limitations:** Notices are temporary and are not Inbox messages or a saved error history. Refreshing the browser clears their presentation state; unresolved problems may reappear when checked again. Reduced motion stops spinner rotation while retaining the loading text and icon.
+- **Related references:** [Saved data](#saved-data), [Dashboard navigation](#dashboard-navigation).
+
 ### dashboard-themes
 
 - **Status:** implemented

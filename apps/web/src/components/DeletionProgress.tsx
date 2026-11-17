@@ -1,3 +1,4 @@
+import { Feedback, BusyButton } from "./Feedback";
 import { useEffect, useState } from "react";
 import { useAgents, useAgentStore, emptyList } from "../agent-store";
 import { useSettings } from "../settings-store";
@@ -70,26 +71,24 @@ export function DeletionProgress({ workspaceId }: { workspaceId: string }) {
   return (
     <div aria-live="polite">
       {operations.map((op) => (
-        <div className={styles.progress} key={op.id}>
-          {op.kind === "workspace"
-            ? "Workspace"
-            : "Agent"}{" "}
-          file deletion: {op.state === "failed" ? op.error : "Cleaning up…"}
+        <Feedback className={styles.progress} key={op.id} tone={op.state === "failed" ? "error" : "loading"}
+          title={`${op.kind === "workspace" ? "Workspace" : "Agent"} file deletion`}>
+          {op.state === "failed" ? op.error : "Cleaning up managed files…"}
           {op.state === "failed" && (
-            <button
+            <BusyButton busy={busy}
               className="textButton"
               disabled={busy}
               onClick={() => void retry(op.id)}
             >
               Retry deletion
-            </button>
+            </BusyButton>
           )}
-        </div>
+        </Feedback>
       ))}
       {error && (
-        <p className="error" role="alert">
+        <Feedback role="alert">
           {error}
-        </p>
+        </Feedback>
       )}
     </div>
   );

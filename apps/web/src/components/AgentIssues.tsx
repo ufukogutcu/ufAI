@@ -1,3 +1,4 @@
+import { LoadingState, Feedback } from "./Feedback";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useStoreApi as useFlowStoreApi } from "@xyflow/react";
@@ -69,8 +70,8 @@ function IssueList({ agentId, severity, count }: { agentId: string; severity: Ag
       {!busy && !error && !page.items.length && <p>No current {severity === "warning" ? "warnings" : "errors"}.</p>}
     </div>
     <div className={styles.feedback} role="status" aria-live="polite">
-      {busy && <p>Loading issues…</p>}
-      {error && <p className="error">{error}</p>}
+      {busy && <LoadingState>Loading issues…</LoadingState>}
+      {error && <Feedback>{error}</Feedback>}
     </div>
     {error ? <button type="button" className={`button secondary ${styles.action}`} onClick={tryAgain}>Retry</button>
       : page.items.length < page.total && <button type="button" className={`button secondary ${styles.action}`} disabled={busy} onClick={more}>Load more</button>}

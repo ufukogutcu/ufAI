@@ -1,3 +1,4 @@
+import { BusyButton, Feedback, LoadingIndicator, LoadingState } from "./Feedback";
 import {
   memo,
   cloneElement,
@@ -279,19 +280,19 @@ function Capabilities({
             </option>
           ))}
         </select>
-        <button
+        <BusyButton busy={busy}
           type="button"
           className="button"
           disabled={busy || !server.enabled}
           onClick={() => void load()}
         >
           {busy ? "Loading…" : started ? "Refresh" : "Load"}
-        </button>
+        </BusyButton>
       </div>
       {error && (
-        <p className="errorBanner" role="alert">
+        <Feedback role="alert">
           {error}
-        </p>
+        </Feedback>
       )}
       {!server.enabled && (
         <p className={styles.help}>
@@ -613,13 +614,13 @@ function ServerEditor({
         )}
       </div>
       {error && !removing && (
-        <p className={`errorBanner ${styles.feedback}`} role="alert">
+        <Feedback className={`${styles.feedback}`} role="alert">
           {error}
-        </p>
+        </Feedback>
       )}
       {loading ? (
         <div className={styles.content}>
-          <p role="status">Loading MCP server…</p>
+          <LoadingState role="status">Loading MCP server…</LoadingState>
           {error && (
             <button className="button" onClick={() => void refresh()}>
               Retry
@@ -656,12 +657,14 @@ function ServerEditor({
                   label="Enabled for this agent"
                 />
                 <p className={styles.help} role="status">
+                  {saved.status === "connecting" && <LoadingIndicator />}
                   {statuses[saved.status]}
                   {saved.authenticated ? " · OAuth signed in" : ""}
                 </p>
-                {saved.error && saved.error !== error && <p className="errorBanner" role="alert">{saved.error}</p>}
+                {saved.error && saved.error !== error && <Feedback role="alert">{saved.error}</Feedback>}
                 {saved.authPending && !saved.authenticated && (
                   <p className={styles.help} role="status">
+                    <LoadingIndicator />
                     {auth?.authorizationUrl
                       ? "Waiting for sign-in to complete."
                       : "Waiting for sign-in. Use Sign In to retrieve the current link if you started from chat."}
@@ -984,14 +987,14 @@ function ServerEditor({
                 >
                   Cancel
                 </button>
-                <button
+                <BusyButton busy={busy}
                   type="submit"
                   form={`${prefix}-form`}
                   className="button primary"
                   disabled={busy}
                 >
                   {busy ? "Saving…" : "Save Server"}
-                </button>
+                </BusyButton>
               </>
             ) : (
               <button
@@ -1021,9 +1024,9 @@ function ServerEditor({
             {saved.enabledAgents.map((a) => a.name).join(", ") || "None"}.
           </p>
           {error && (
-            <p className="errorBanner" role="alert">
+            <Feedback role="alert">
               {error}
-            </p>
+            </Feedback>
           )}
           <div className={styles.actions}>
             <button
@@ -1034,13 +1037,13 @@ function ServerEditor({
             >
               Cancel
             </button>
-            <button
+            <BusyButton busy={busy}
               className="button danger"
               disabled={busy}
               onClick={() => void remove()}
             >
               {busy ? "Removing…" : "Remove for All Agents"}
-            </button>
+            </BusyButton>
           </div>
         </Dialog>
       )}
@@ -1150,9 +1153,9 @@ function ImportServers({
           agent.
         </p>
         {error && !replacement && (
-          <p className="errorBanner" role="alert">
+          <Feedback role="alert">
             {error}
-          </p>
+          </Feedback>
         )}
         {!preview ? (
           <form
@@ -1192,7 +1195,7 @@ function ImportServers({
                       : "Invalid configuration"}
                 </p>
                 {c.error ? (
-                  <p className="errorBanner">{c.error}</p>
+                  <Feedback>{c.error}</Feedback>
                 ) : (
                   <button
                     className="button"
@@ -1240,9 +1243,9 @@ function ImportServers({
             enable switches are preserved.
           </p>
           {error && (
-            <p role="alert" className="errorBanner">
+            <Feedback role="alert">
               {error}
-            </p>
+            </Feedback>
           )}
           <div className={styles.actions}>
             <button
@@ -1414,16 +1417,16 @@ export function AgentMcp({ agentId }: { agentId: string }) {
         </Field>
       </div>
       {error && (
-        <p role="alert" className={`errorBanner ${styles.feedback}`}>
+        <Feedback role="alert" className={`${styles.feedback}`}>
           {error}
-        </p>
+        </Feedback>
       )}
       <div className={styles.content} ref={scroll} aria-busy={loading}>
         <p className={styles.help}>
           Servers and credentials are shared. Switches grant this agent access
           to all capabilities on each enabled server.
         </p>
-        {loading && !items.length && <p role="status">Loading MCP servers…</p>}
+        {loading && !items.length && <LoadingState role="status">Loading MCP servers…</LoadingState>}
         {!loading && !items.length && (
           <p className={styles.help}>
             {query

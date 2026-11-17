@@ -330,16 +330,6 @@ input[type="number"] {
   line-height: 1.6;
   margin: 0 0 12px;
 }
-.errorBanner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 26px;
-  background: var(--error-background);
-  border-bottom: 1px solid var(--error-border);
-  color: var(--error-text);
-  font-size: 12px;
-}
 .dialogActions {
   display: flex;
   flex-wrap: wrap;

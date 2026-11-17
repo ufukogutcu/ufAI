@@ -599,13 +599,6 @@
   margin-block: 12px;
   > span { display: flex; align-items: center; gap: 8px; }
 }
-.errorSample {
-  background: var(--error-background);
-  border-bottom: 1px solid var(--error-border);
-  color: var(--error-text);
-  padding: 8px;
-  line-height: 1.6;
-}
 .warningSample {
   color: var(--warning);
 }

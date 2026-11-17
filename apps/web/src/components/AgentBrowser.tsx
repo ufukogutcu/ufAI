@@ -1,3 +1,4 @@
+import { Feedback, LoadingIndicator, LoadingState } from "./Feedback";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ClipboardEvent, type PointerEvent, type CSSProperties } from "react";
 import { ArrowLeft, ArrowRight, RotateCw, Plus, X, Maximize2, Minimize2, Hand, Play } from "lucide-react";
 import type { BrowserAction, BrowserState, BrowserServerMessage } from "../../../server/src/browser-types";
@@ -196,12 +197,12 @@ export function AgentBrowser({ agentId, onDisabled }: { agentId: string; onDisab
       <button type="submit" className="button secondary" disabled={!control}>Go</button>
     </form>
     <div className={styles.controls}>
-      <span role="status">{!connected ? "Connecting…" : control ? "You have control" : state?.controller ? "Another viewer has control" : "Agent has control"}</span>
+      <span role="status">{!connected && !error && <LoadingIndicator />}{!connected ? error ? "Browser unavailable" : "Connecting…" : control ? "You have control" : state?.controller ? "Another viewer has control" : "Agent has control"}</span>
       <button type="button" className="button secondary" disabled={!ready || (!!state?.controller && !control)} onClick={changeControl}>{control ? <Play size={14} aria-hidden /> : <Hand size={14} aria-hidden />}{control ? "Hand back" : "Take control"}</button>
       <label className={styles.zoom}>View<select aria-label="Browser view zoom" value={zoom} onChange={event => setZoom(event.target.value)}><option value="fit">Fit</option><option value="1">100%</option><option value="1.5">150%</option></select></label>
       <button type="button" className="iconButton" aria-label={expanded ? "Collapse browser" : "Expand browser"} onClick={toggleExpanded}>{expanded ? <Minimize2 size={16} aria-hidden /> : <Maximize2 size={16} aria-hidden />}</button>
     </div>
-    {(error || state?.error) && <p className="errorBanner" role="alert">{error || state?.error} <button type="button" className="textButton" onClick={() => { setError(""); setAttempt(n => n + 1); }}>Retry browser</button></p>}
+    {(error || state?.error) && <Feedback role="alert">{error || state?.error} <button type="button" className="textButton" onClick={() => { setError(""); setAttempt(n => n + 1); }}>Retry browser</button></Feedback>}
     {state?.dialog && <div className={styles.websiteDialog} role="group" aria-label="Website dialog">
       <p>{state.dialog.message}</p>
       {state.dialog.type === "prompt" && <input aria-label="Website dialog response" value={prompt} onChange={e => setPrompt(e.target.value)} disabled={!control} />}
@@ -210,10 +211,10 @@ export function AgentBrowser({ agentId, onDisabled }: { agentId: string; onDisab
     </div>}
     {state?.fileChooser && <div className={styles.fileChooser}>
       <label>Choose website upload<input ref={fileInput} type="file" multiple={state.fileChooser.multiple} disabled={!control || uploading} onChange={e => void upload(e.target.files)} /></label>
-      {uploading && <span role="status">Uploading…</span>}
+      {uploading && <LoadingState>Uploading…</LoadingState>}
     </div>}
     <div className={styles.page} data-zoomed={zoom !== "fit" || undefined} style={{ "--browser-view-width": zoom === "fit" ? "100%" : `${1280 * Number(zoom)}px` } as CSSProperties}>
-      {!hasFrame && <p role="status">{state?.status === "ready" ? "Waiting for browser view…" : "Starting browser…"}</p>}
+      {!hasFrame && !error && <LoadingState>{state?.status === "ready" ? "Waiting for browser view…" : "Starting browser…"}</LoadingState>}
       <canvas ref={bindCanvas} className={control ? styles.interactive : undefined} width={1280} height={800} tabIndex={control ? 0 : -1} aria-label="Live browser page. Take control to interact. Press Escape to leave page input." onKeyDown={key} onPaste={paste} onPointerDown={pointerDown} onPointerUp={pointerUp} onPointerCancel={() => { pointer.current = null; }} onContextMenu={e => e.preventDefault()} />
     </div>
     {control && <div className={styles.textEntry}>

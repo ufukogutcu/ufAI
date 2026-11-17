@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 import { createStore, useStore } from "zustand";
 import type { AppSettings, SettingsResponse } from "../../server/src/contracts";
-import { errorMessage, request } from "./api";
+import { errorMessage, request, RequestError } from "./api";
 import { resolveTheme } from "./themes";
 
 function resolveSnapshot(snapshot: SettingsResponse): SettingsResponse {
@@ -15,6 +15,7 @@ type Retry = () => Promise<unknown>;
 interface SettingsState {
   snapshot: SettingsResponse;
   error: string;
+  errorDetails?: string;
   retry: Retry;
   refresh: () => Promise<void>;
   update: (patch: Partial<AppSettings>) => Promise<void>;
@@ -39,7 +40,7 @@ export function createSettingsStore(initial: SettingsResponse) {
             set({ snapshot: resolveSnapshot(snapshot), error: "" });
         } catch (error) {
           if (started === revision)
-            set({ error: errorMessage(error), retry: refresh });
+            set({ error: errorMessage(error), errorDetails: error instanceof RequestError ? error.details : undefined, retry: refresh });
         }
       })();
       try {
@@ -71,7 +72,7 @@ export function createSettingsStore(initial: SettingsResponse) {
           set({ snapshot: resolveSnapshot(snapshot), error: "" });
         });
       } catch (error) {
-        set({ error: errorMessage(error), retry: () => update(patch) });
+        set({ error: errorMessage(error), errorDetails: error instanceof RequestError ? error.details : undefined, retry: () => update(patch) });
       }
     }
     async function mutate<T>(action: () => Promise<T>): Promise<T> {
@@ -82,7 +83,7 @@ export function createSettingsStore(initial: SettingsResponse) {
           const snapshot = await request<SettingsResponse>("/settings");
           set({ snapshot: resolveSnapshot(snapshot), error: "" });
         } catch (error) {
-          set({ error: errorMessage(error), retry: refresh });
+          set({ error: errorMessage(error), errorDetails: error instanceof RequestError ? error.details : undefined, retry: refresh });
         }
         return result;
       });
