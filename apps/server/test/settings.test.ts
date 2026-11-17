@@ -307,7 +307,7 @@ test("version 2 migration preserves data; all settings survive reopening by inde
   await deleteOwner(otherClient, `/api/workspaces/${workspace.id}`);
   await server.close();
   const storage = new Database(databasePath);
-  assert.equal(storage.pragma("user_version", { simple: true }), 35);
+  assert.equal(storage.pragma("user_version", { simple: true }), 37);
   assert.equal(
     (
       storage

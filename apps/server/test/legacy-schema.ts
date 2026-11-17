@@ -201,6 +201,7 @@ export function removeVault(database: Database.Database) {
 }
 
 export function removeTriggers(database: Database.Database) {
+  database.exec("DROP TABLE IF EXISTS execution_deliveries; DROP TABLE IF EXISTS execution_generations; DROP TABLE IF EXISTS execution_results; DROP TABLE IF EXISTS execution_rounds; DROP TABLE IF EXISTS execution_checkpoints; DROP TABLE IF EXISTS agent_resume_blockers; DROP TABLE IF EXISTS agent_freeze_requests; DROP TABLE IF EXISTS agent_freezes");
   removeVault(database);
   database.exec(`DROP TRIGGER IF EXISTS trigger_task_event; DROP TRIGGER IF EXISTS trigger_artifact_event; DROP TRIGGER IF EXISTS trigger_occurrence_task_state;
     DROP INDEX IF EXISTS trigger_turn_start;

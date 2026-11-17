@@ -145,6 +145,7 @@ interface AgentState {
       y?: number;
     },
   ) => Promise<Agent>;
+  freezeControl: (id: string, action: "freeze" | "resume", policy?: import("../../server/src/contracts").FreezePolicy) => Promise<void>;
   update: (id: string, input: Partial<Agent> & { expectedRevision?: number }) => Promise<Agent>;
   remove: (id: string) => Promise<void>;
   position: (
@@ -220,6 +221,7 @@ export function createAgentStore() {
       let next = existing && (preserveSaved || existing.revision > agent.revision)
         ? {
             ...existing,
+            executionControl: agent.executionControl,
             state: agent.state,
             queuedCount: agent.queuedCount,
             runningTaskCount: agent.runningTaskCount,
@@ -232,6 +234,7 @@ export function createAgentStore() {
         if (existing && sequence < (activitySequences.get(agent.id) ?? 0)) {
           next = {
             ...next,
+            executionControl: existing.executionControl,
             state: existing.state,
             queuedCount: existing.queuedCount,
             runningTaskCount: existing.runningTaskCount,
@@ -243,6 +246,8 @@ export function createAgentStore() {
           activitySequences.set(agent.id, sequence);
         }
       }
+      if (existing?.executionControl && (!next.executionControl || existing.executionControl.revision > next.executionControl.revision))
+        next = {...next,executionControl:existing.executionControl};
       if (existing && preserveLayout)
         next = {
           ...next,
@@ -820,6 +825,16 @@ export function createAgentStore() {
         forgetAppearanceSuggestion(workspaceId);
         void get().loadAppearanceSuggestion(workspaceId).catch(() => {});
         return a;
+      },
+      async freezeControl(id, action, policy) {
+        const sequence = ++snapshotSequence;
+        const current = get().agents[id];
+        if (!current) return;
+        const a = await request<Agent>(`/agents/${id}/${action}`,"POST",{
+          requestId: crypto.randomUUID(), expectedRevision: current.executionControl?.revision ?? 1,
+          ...(action === "resume" ? {policy: policy ?? "all"} : {}),
+        });
+        put(a,sequence,get().canvasInteracting || layoutPending(id));
       },
       async update(id, input) {
         const sequence = ++snapshotSequence;

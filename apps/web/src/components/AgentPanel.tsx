@@ -1,3 +1,6 @@
+import { Tooltip } from "./Tooltip";
+import { FrozenIndicator, freezeLabel, useAgentFreeze } from "./AgentFreeze";
+import freezeStyles from "./AgentFreeze.module.scss";
 import { Feedback, LoadingState, LoadingIndicator, BusyButton } from "./Feedback";
 import { FeedbackHost } from "./FeedbackProvider";
 import { useTriggerStore } from "../trigger-store";
@@ -26,6 +29,8 @@ import {
 import { createPortal } from "react-dom";
 import {
   Pencil,
+  Snowflake,
+  Play,
   ArrowLeft,
   Plus,
   Send,
@@ -309,9 +314,10 @@ export function AgentForm({
   );
 }
 function Transcript({ agentId, taskId }: { agentId: string; taskId: string | null }) {
+  const frozen = useAgents(s => ["frozen","resuming"].includes(s.agents[agentId]?.executionControl?.state ?? "active"));
   const executionId = useAgents(s => taskId ?? s.chats[agentId]?.task?.id);
   return executionId ? (
-    <TaskTimeline key={executionId} taskId={executionId} />
+    <TaskTimeline frozen={frozen} key={executionId} taskId={executionId} />
   ) : (
     <div className={styles.transcript}>
       <p className={styles.muted}>
@@ -471,6 +477,7 @@ export function AgentPanel({
   agent: Agent;
   onClose: () => void;
 }) {
+  const freeze = useAgentFreeze(agent);
   const store = useAgentStore(),
     guard = useNavigationGuard();
   const [editingCharacter, setEditingCharacter] = useState(false);
@@ -600,19 +607,20 @@ export function AgentPanel({
         </div>
         <div className={styles.agentIdentity}>
           <h2 ref={heading} tabIndex={-1} id="agent-panel-heading" title={agent.name}>
-            {agent.name}
+            <FrozenIndicator agent={agent} />{agent.name}
           </h2>
           <p>
-            {agent.state === "running"
+            {freezeLabel(agent) || (agent.state === "running"
               ? "Working"
               : agent.state === "queued"
                 ? "Work queued"
                 : agent.state === "waiting"
                   ? "Waiting"
-                  : "Ready"}{" "}
+                  : "Ready")}{" "}
             · {agent.queuedCount} queued
           </p>
         </div>
+        <Tooltip content={freeze.label}><button className="iconButton" aria-label={freeze.label} onClick={freeze.activate} disabled={freeze.pending}>{agent.executionControl?.state === "frozen" ? <Play size={18} aria-hidden /> : <Snowflake size={18} aria-hidden />}</button></Tooltip>
         <button
           className="iconButton"
           aria-label="Close agent panel"
@@ -632,6 +640,8 @@ export function AgentPanel({
           </button>
         ))}
       </nav>
+      {freeze.dialog}
+      {agent.executionControl?.state !== undefined && agent.executionControl.state !== "active" && <p className={freezeStyles.waiting} role="status">{freezeLabel(agent)} · New messages will wait until the agent resumes. Background commands continue.</p>}
       <FeedbackHost kind="panel" />
       {error && (
         <Feedback role="alert">

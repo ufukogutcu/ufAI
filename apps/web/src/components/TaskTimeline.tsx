@@ -102,11 +102,13 @@ function CheckIn({
   );
 }
 function TimelineRow({
+  frozen = false,
   item,
   taskId,
   onChange,
   onInspect,
 }: {
+  frozen?: boolean;
   item: TimelineEntry;
   taskId: string;
   onChange: () => void;
@@ -134,7 +136,7 @@ function TimelineRow({
                 ? "System"
                 : (m.authorName ?? "Collaborator")}
             {m.state === "streaming" && (
-              <span className={styles.meta}> · Writing…</span>
+              <span className={styles.meta}> · {frozen ? "Frozen" : "Writing…"}</span>
             )}
             {m.state === "incomplete" && (
               <span className={styles.failure}> · Incomplete reply</span>
@@ -142,7 +144,7 @@ function TimelineRow({
           </div>
         )}
         {own && <span className={styles.srOnly}>You: </span>}
-        {m.content && <RichText content={m.content} instanceId={`timeline-${taskId}-${item.id}`} streaming={m.state === "streaming"} />}
+        {m.content && <RichText content={m.content} instanceId={`timeline-${taskId}-${item.id}`} streaming={m.state === "streaming" && !frozen} />}
         <MessageAttachments parts={m.parts} />
       </article>
     );
@@ -198,7 +200,7 @@ function TimelineRow({
           size={15}
           aria-hidden="true"
           className={
-            active && item.status === "running" ? styles.spinner : undefined
+            active && !frozen && item.status === "running" ? styles.spinner : undefined
           }
         />
         <span className={styles.actionLabel} title={label}>
@@ -214,7 +216,7 @@ function TimelineRow({
           <span
             className={`${styles.state} ${item.status === "failed" || item.status === "interrupted" ? styles.failure : ""}`}
           >
-            {item.name === "process_output" && item.status === "failed" ? "Output read failed" : statusLabels[item.status]}
+            {item.name === "process_output" && item.status === "failed" ? "Output read failed" : frozen && active ? "Frozen" : statusLabels[item.status]}
           </span>
         )}
         <ChevronRight
@@ -336,9 +338,11 @@ function TimelineRow({
 }
 
 function TimelineContent({
+  frozen = false,
   store,
   taskId,
 }: {
+  frozen?: boolean;
   store: ReturnType<typeof createTimelineStore>;
   taskId: string;
 }) {
@@ -485,7 +489,7 @@ function TimelineContent({
     (i) => i.status === "running" || i.status === "waiting",
   );
   const streaming = items.some((i) => i.message?.state === "streaming");
-  const announcement = live.length
+  const announcement = frozen ? "Agent is frozen. New work will wait." : live.length
     ? `${live.length} ${live.length === 1 ? "action" : "actions"} in progress. ${actionLabel(live.at(-1)!)}`
     : streaming
       ? "Agent is responding."
@@ -520,7 +524,7 @@ function TimelineContent({
         )}
         {items.map((item) => (
           <div key={item.id} data-timeline-id={item.id} tabIndex={-1}>
-            <TimelineRow item={item} taskId={taskId} onChange={refresh} onInspect={inspect} />
+            <TimelineRow frozen={frozen} item={item} taskId={taskId} onChange={refresh} onInspect={inspect} />
           </div>
         ))}
         {error && (
@@ -559,7 +563,7 @@ function TimelineContent({
     </div>
   );
 }
-export function TaskTimeline({ taskId }: { taskId: string }) {
+export function TaskTimeline({ taskId, frozen = false }: { taskId: string; frozen?: boolean }) {
   const [store, setStore] = useState<ReturnType<
     typeof createTimelineStore
   > | null>(null);
@@ -568,5 +572,5 @@ export function TaskTimeline({ taskId }: { taskId: string }) {
     setStore(instance);
     return () => instance.getState().dispose();
   }, [taskId]);
-  return store ? <TimelineContent key={taskId} store={store} taskId={taskId} /> : null;
+  return store ? <TimelineContent frozen={frozen} key={taskId} store={store} taskId={taskId} /> : null;
 }

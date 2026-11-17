@@ -13,8 +13,8 @@ function Body({ kind }: { kind: CharacterKind }) {
   }
 }
 
-export const AgentCharacter = memo(function AgentCharacter({ appearance, activity = "idle", paused = false, decorative = false, portrait = false, className = "" }: {
-  appearance: Appearance; activity?: Activity; paused?: boolean; decorative?: boolean; portrait?: boolean; className?: string;
+export const AgentCharacter = memo(function AgentCharacter({ appearance, activity = "idle", frozen = false, paused = false, decorative = false, portrait = false, className = "" }: {
+  appearance: Appearance; frozen?: boolean; activity?: Activity; paused?: boolean; decorative?: boolean; portrait?: boolean; className?: string;
 }) {
   const { kind, color, accessories: items } = appearance;
   const hidden = useContext(CharacterVisibilityContext);
@@ -31,14 +31,14 @@ export const AgentCharacter = memo(function AgentCharacter({ appearance, activit
   const reading = activity === "studying" || activity === "studying-hard";
   return <svg ref={element} viewBox={portrait ? "50 26 140 140" : "0 0 240 240"} className={`${styles.character} ${portrait ? styles.portrait : ""} ${className}`}
     style={{ "--character-body": colors.find(item => item.id === color)!.variable } as CSSProperties}
-    data-activity={activity} data-paused={portrait || paused || hidden || !visible} data-kind={kind}
+    data-frozen={frozen} data-activity={activity} data-paused={portrait || paused || hidden || !visible} data-kind={kind}
     role={decorative ? undefined : "img"} aria-hidden={decorative || undefined}
     aria-label={decorative ? undefined : `${characterNames[kind]}, ${color}, ${activities.find(a => a.id === activity)!.name}${items.length ? `, wearing ${items.map(id => accessories.find(a => a.id === id)!.name).join(" and ")}` : ""}`}>
     <ellipse className={styles.shadow} cx="120" cy="207" rx="49" ry="7" />
     <g className={styles.actor}>
       <WardrobeLayers items={items} kind={kind} layer="back" />
       <g className={styles.feet}><rect x="88" y="178" width="22" height="17" rx="8" /><rect x="134" y="178" width="22" height="17" rx="8" /></g>
-      <g className={styles.body}><Body kind={kind} /></g>
+      <g className={styles.body}><Body kind={kind} />{frozen && <g className={styles.frost}><Body kind={kind} /></g>}</g>
       <WardrobeLayers items={items} kind={kind} layer="body" />
       <g className={styles.face}>
         {activity === "dreaming" ? <g className={styles.closedEyes}><path d="M98 124Q104 130 110 124M131 124Q137 130 143 124" /></g> :
@@ -67,6 +67,7 @@ export const AgentCharacter = memo(function AgentCharacter({ appearance, activit
         <g className={styles.focusMarks}><path d="M53 93L45 86M51 105H40M184 93L192 85" /></g>
       </>}
     </g>
+    {frozen && <g className={styles.snowflakes} aria-hidden="true"><path d="M48 73V97M38 79L58 91M38 91L58 79M185 145V165M177 150L193 160M177 160L193 150" /></g>}
     {activity === "dreaming" && <g className={styles.dream}><circle cx="166" cy="76" r="3" /><circle cx="178" cy="63" r="5" /><path className={styles.dreamCloud} d="M183 46C168 40 176 22 187 26C191 11 211 14 213 26C230 20 237 44 222 48Z" /><path className={styles.dreamStar} d="M204 23L207 30L214 31L209 36L210 42L204 39L198 42L199 35L194 31L201 30Z" /></g>}
     {activity === "thinking" && <g className={styles.thoughts}><circle cx="175" cy="73" r="4" /><circle cx="190" cy="55" r="5" /><circle cx="210" cy="43" r="6" /></g>}
   </svg>;

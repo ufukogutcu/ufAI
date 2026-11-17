@@ -264,7 +264,17 @@ export interface AgentAppearance {
   color: CharacterColor;
   accessories: CharacterAccessory[];
 }
+export type FreezePolicy = "all" | "skip" | "latest_per_trigger";
+export interface AgentExecutionControl {
+  state: "active" | "freezing" | "frozen" | "resuming";
+  revision: number;
+  requestedAt: string | null;
+  frozenAt: string | null;
+  queuedTriggerCount: number;
+  backlogPending: boolean;
+}
 export interface Agent {
+  executionControl: AgentExecutionControl;
   issueCounts: { warning: number; error: number };
   pendingUserInputCount: number;
   appearance: AgentAppearance;

@@ -1,7 +1,8 @@
+import { FrozenIndicator, useAgentFreeze } from "./AgentFreeze";
 import { AgentInputBubble } from "./AgentInputBubble";
 import { LiveAgentCharacter } from "./LiveAgentCharacter";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { FolderOpen, ListTodo, MessageSquare, Pencil, Settings2, Trash2 } from "lucide-react";
+import { FolderOpen, ListTodo, MessageSquare, Pencil, Settings2, Snowflake, Trash2 } from "lucide-react";
 import { AgentConnectionRing } from "./ConnectionRings";
 import ringStyles from "./ConnectionRings.module.scss";
 import { useStoreApi, type NodeProps } from "@xyflow/react";
@@ -28,6 +29,7 @@ export const AgentNode = memo(function AgentNode({
   const agent = useAgents((s) => s.agents[data.agentId]),
     store = useAgentStore(),
     guard = useNavigationGuard();
+  const freeze = useAgentFreeze(agent);
   const nameButton = useRef<HTMLButtonElement>(null);
   const flowStore = useStoreApi();
   const [menu, setMenu] = useState<ContextMenuAnchor | null>(null);
@@ -106,7 +108,7 @@ export const AgentNode = memo(function AgentNode({
             aria-expanded={!!menu || undefined}
             onClick={selectAgent}
           >
-            <span className={agentStyles.nodeNameText}>{agent.name}</span>
+            <FrozenIndicator agent={agent} /><span className={agentStyles.nodeNameText}>{agent.name}</span>
           </button>
         </Tooltip>
         <div className={agentStyles.nodeIssues}>
@@ -123,9 +125,11 @@ export const AgentNode = memo(function AgentNode({
         { id: "tasks", label: "Open Tasks", icon: <ListTodo size={16} />, onSelect: () => openTab("Tasks") },
         { id: "files", label: "Open Files", icon: <FolderOpen size={16} />, onSelect: () => openTab("Files") },
         { id: "character", label: "Edit character…", icon: <Pencil size={16} />, onSelect: () => guard(() => setEditingCharacter(true)) },
+        { id: "freeze", label: freeze.label, icon: <Snowflake size={16} />, disabled: freeze.pending, onSelect: freeze.activate },
         { id: "separator", separator: true },
         { id: "delete", label: "Delete Agent…", icon: <Trash2 size={16} />, destructive: true, onSelect: () => guard(() => setDeleting(true)) },
       ]} />}
+      {freeze.dialog}
       {editingCharacter && <CharacterEditor initial={agent.appearance} onClose={() => setEditingCharacter(false)}
         onSave={async appearance => { await store.getState().update(agent.id, { appearance }); }} />}
       {deleting && <AgentDeleteDialog agent={agent} onClose={() => setDeleting(false)} />}

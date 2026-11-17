@@ -82,3 +82,10 @@
 @media (prefers-reduced-motion: reduce) {
   .character, .character * { animation: none !important; }
 }
+
+.frost { fill: var(--agent-frozen-frost); stroke: var(--agent-frozen-ink); stroke-width: 1.5; }
+.snowflakes { fill: none; stroke: var(--agent-frozen-ink); stroke-width: 2.5; }
+.character[data-frozen="true"] .actor { animation: shiver 1.8s ease-in-out infinite; }
+.character[data-frozen="true"] .leftHand, .character[data-frozen="true"] .rightHand { animation: none; }
+@keyframes shiver { 0%, 45%, 65%, 100% { transform: translateX(0); } 49%, 57% { transform: translateX(-1px); } 53%, 61% { transform: translateX(1px); } }
+@media (prefers-reduced-motion: reduce) { .character[data-frozen="true"] .actor { animation: none; } }

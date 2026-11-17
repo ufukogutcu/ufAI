@@ -11,11 +11,12 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   const threadId=r.params.threadId,turnId='turn-'+threadId,id=100+thread;reply({turn:{id:turnId}});pending.set(id,{threadId,turnId,remaining:r.params.input[0].text.includes("many-tools")?130:1,awareness:r.params.input[0].text.includes("awareness-fixture")});
   send({method:'item/agentMessage/delta',params:{threadId,turnId,itemId:'comment',delta:'Reading the file.'}});
   send({method:'item/started',params:{threadId,turnId,item:{id:'tool',type:'dynamicToolCall'}}});
-  send({id,method:'item/tool/call',params:{threadId,turnId,callId:'call-'+thread,namespace:null,tool:r.params.input[0].text.includes('yield-fixture')?'task_yield':toolKinds.get(threadId)?'agent_send':'files_read',arguments:r.params.input[0].text.includes('yield-fixture')?{summary:'Waiting for messages'}:toolKinds.get(threadId)?{agentId:'helper',content:'Help'}:{path:'a.txt'}}});return;
+  send({id,method:'item/tool/call',params:{threadId,turnId,callId:'call-'+thread,namespace:null,tool:r.params.input[0].text.includes('yield-fixture')?'task_yield':toolKinds.get(threadId)?'agent_send':'files_read',arguments:r.params.input[0].text.includes('yield-fixture')?{summary:'Waiting for messages'}:toolKinds.get(threadId)?{agentId:'helper',content:'Help'}:{path:'a.txt'}}});
+  if(r.params.input[0].text.includes('parallel-freeze')){const p=pending.get(id);p.parallelRemaining=2;pending.set(id+10000,p);send({id:id+10000,method:'item/tool/call',params:{threadId,turnId,callId:'parallel-second',tool:'files_read',arguments:{path:'b.txt'}}});}return;
  }
  if(r.method==='turn/interrupt'){send({method:'item/agentMessage/delta',params:{threadId:r.params.threadId,delta:'late output'}});reply({});return send({method:'turn/completed',params:{threadId:r.params.threadId,turn:{id:r.params.turnId,status:'interrupted'}}});}
  if(r.method==='thread/unsubscribe'||r.method==='thread/archive')return reply({});
- if(r.id&&r.result&&pending.has(r.id)){const p=pending.get(r.id);
+ if(r.id&&r.result&&pending.has(r.id)){const p=pending.get(r.id);if(p.parallelRemaining && --p.parallelRemaining>0){pending.delete(r.id);return;}
  if (--p.remaining>0) {
    send({id:r.id,method:'item/tool/call',params:{...p,callId:'repeat-'+p.remaining,tool:'files_read',arguments:{path:'a.txt'}}});return;
  }

@@ -264,7 +264,7 @@ function ThemePreview({
                     </g>
                     <foreignObject x="21" y="0" width="176" height="224">
                       <div className={styles.agentSample}>
-                        <AgentCharacter appearance={defaultAppearance} paused decorative className={styles.agentSampleCharacter} />
+                        <AgentCharacter appearance={defaultAppearance} frozen paused decorative className={styles.agentSampleCharacter} />
                         <div className={styles.agentSampleCard}>
                           <span className={styles.agentSampleName}>Research assistant</span>
                           <span className={`${styles.agentSampleTask} ${taskBubbleStyles.bubble}`} aria-label="0 ongoing tasks">0</span>

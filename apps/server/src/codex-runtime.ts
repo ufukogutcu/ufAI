@@ -202,6 +202,7 @@ class CodexClient {
                 typeof entry[1] === "number",
             ),
           );
+          textTurn.task?.onUsage?.(textTurn.usage);
         }
         if (message.method === "turn/started")
           textTurn.turnId = object(params.turn).id as string;
@@ -211,6 +212,7 @@ class CodexClient {
           textTurn.task
         ) {
           const task = textTurn.task;
+          task.onToolQueued?.({id:String(params.callId),name:String(params.tool),arguments:object(params.arguments)});
           textTurn.toolChain = (textTurn.toolChain ?? Promise.resolve())
             .then(async () => {
               task.signal.throwIfAborted();
@@ -237,6 +239,7 @@ class CodexClient {
                 name: String(params.tool),
                 arguments: object(params.arguments),
               });
+              await task.beforeToolReply?.();
               if (task.shouldYield?.()) textTurn.yielding = true;
               task.signal.throwIfAborted();
               const opened = result.media?.length
@@ -245,6 +248,7 @@ class CodexClient {
               if (result.media?.length && !opened)
                 throw new ConnectionError("Media resolution unavailable.", 409);
               task.signal.throwIfAborted();
+              await task.beforeToolReply?.();
               this.send({
                 id: message.id,
                 result: {
@@ -921,6 +925,7 @@ class CodexClient {
     request.signal.addEventListener("abort", abort, { once: true });
     try {
       request.signal.throwIfAborted();
+      await request.beforeModelRequest?.();
       const started = object(
         await this.rpc("turn/start", {
           threadId,

@@ -22,6 +22,33 @@
     }
   ],
   "tokens": {
+    "agent-frozen-frost": {
+      "cssVariable": "--agent-frozen-frost",
+      "label": "Frozen character frost",
+      "description": "Translucent frost over a frozen agent character body.",
+      "components": [
+        "Frozen agent characters",
+        "Frozen agent preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#c4e8f680",
+      "dark": "#81bfd650"
+    },
+    "agent-frozen-ink": {
+      "cssVariable": "--agent-frozen-ink",
+      "label": "Frozen agent indicator",
+      "description": "Snowflake indicators and frost outlines for frozen agents.",
+      "components": [
+        "Agent snowflake indicators",
+        "Frozen agent characters",
+        "Frozen agent preview"
+      ],
+      "group": "Canvas",
+      "region": "canvas",
+      "light": "#34657b",
+      "dark": "#a6d8ed"
+    },
     "inbox-unread-background": {
       "cssVariable": "--inbox-unread-background",
       "label": "Inbox unread badge background",

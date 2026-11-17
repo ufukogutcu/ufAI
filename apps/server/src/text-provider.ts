@@ -152,6 +152,7 @@ export class TextProvider implements ModelProviderAdapter {
     }
     let response: Response;
     try {
+      await r.beforeModelRequest?.();
       response = await this.fetcher(this.endpoint + path, {
         method: "POST",
         headers: this.headers(),

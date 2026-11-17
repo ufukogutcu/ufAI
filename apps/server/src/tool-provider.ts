@@ -265,6 +265,7 @@ export class ToolProvider {
       );
     let response: Response;
     try {
+      await r.beforeModelRequest?.();
       response = await this.fetcher(this.endpoint + path, {
         method: "POST",
         headers,

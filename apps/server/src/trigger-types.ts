@@ -55,7 +55,8 @@ export interface TriggerOccurrence {
     | "completed"
     | "failed"
     | "cancelled"
-    | "suppressed";
+    | "suppressed"
+    | "skipped";
   taskId: string | null;
   turnId: string | null;
   eventId: string | null;

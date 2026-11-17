@@ -6,6 +6,7 @@ export interface TextMessage {
   content: string;
 }
 export interface TextRequest {
+  beforeModelRequest?: () => Promise<void>;
   modelId: string;
   instructions: string;
   messages: TextMessage[];
@@ -63,6 +64,9 @@ export interface TaskMessage extends TextMessage {
 }
 export interface TaskRequest extends TextRequest {
   shouldYield?: () => boolean;
+  beforeToolReply?: () => Promise<void>;
+  onToolQueued?: (call: ToolCall) => void;
+  onUsage?: (usage: Record<string,number>) => void;
   messages: TaskMessage[];
   resolveMedia?: (refs: MediaReference[]) => Promise<NativeMedia[]>;
   tools: ToolSpec[];

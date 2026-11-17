@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { CodexRuntime } from "../src/codex-runtime.js";
 import type { TextRequest } from "../src/execution-types.js";
+import { setTimeout as delay } from "node:timers/promises";
 const fixture = fileURLToPath(
   new URL("./fixtures/codex-text-process.cjs", import.meta.url),
 );
@@ -19,6 +20,28 @@ const base: TextRequest = {
 
   signal: new AbortController().signal,
 };
+
+test("Codex journals queued callbacks before execution and withholds replies until the freeze gate opens",async t=>{
+  const directory=await mkdtemp(join(tmpdir(),"ufai-codex-freeze-"));
+  const r=new CodexRuntime(directory,()=>spawn(process.execPath,[fileURLToPath(new URL("./fixtures/codex-tools-process.cjs",import.meta.url))],{stdio:["pipe","pipe","pipe"]}),1000,1000);
+  let release!:()=>void;
+  const gate=new Promise<void>(resolve=>release=resolve);
+  t.after(async()=>{release();await r.close();await rm(directory,{recursive:true,force:true});});
+  const queued:string[]=[],executed:string[]=[];
+  let finished=false;
+  const answer=r.executeTask("connection",{...base,messages:[{role:"user",content:"parallel-freeze"}],tools:taskTools,
+    onToolQueued:call=>{queued.push(call.id);},
+    onTool:async call=>{executed.push(call.id);return {ok:true,text:"Observed"};},
+    beforeToolReply:()=>gate,
+  }).then(result=>{finished=true;return result;});
+  for(let i=0;i<200 && queued.length<2;i++) await delay(5);
+  assert.equal(queued.length,2);
+  assert.equal(executed.length,1);
+  assert.equal(finished,false);
+  release();
+  assert.equal((await answer).text,"Final answer.");
+  assert.deepEqual(executed,queued);
+});
 async function runtime(t: any) {
   const dir = await mkdtemp(join(tmpdir(), "ufai-codex-text-"));
   const r = new CodexRuntime(

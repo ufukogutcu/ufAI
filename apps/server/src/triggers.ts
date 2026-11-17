@@ -910,12 +910,12 @@ export class Triggers {
   private collect() {
     const rows = this.db
       .prepare(
-        "SELECT r.* FROM trigger_revisions r JOIN agent_triggers t ON t.id=r.triggerId WHERE t.deleted=0 AND r.nextAt IS NOT NULL AND r.nextAt<=? AND (r.endedAt IS NULL OR r.nextAt<=r.endedAt) ORDER BY (r.sequence<=?),r.sequence LIMIT 16",
+        "SELECT r.*,max(?,coalesce(f.cutoff,'')) collectThrough FROM trigger_revisions r JOIN agent_triggers t ON t.id=r.triggerId LEFT JOIN agent_freezes f ON f.agentId=t.agentId AND f.state='resuming' AND r.sequence<=f.eventCutoff WHERE t.deleted=0 AND r.nextAt IS NOT NULL AND r.nextAt<=max(?,coalesce(f.cutoff,'')) AND (r.endedAt IS NULL OR r.nextAt<=r.endedAt) ORDER BY (r.sequence<=?),r.sequence LIMIT 16",
       )
-      .all(this.now(), this.revisionCursor) as any[];
+      .all(this.now(),this.now(), this.revisionCursor) as any[];
     for (const r of rows) {
       const input = parse<TriggerInput>(r.input),
-        through = r.endedAt && r.endedAt < this.now() ? r.endedAt : this.now();
+        through = r.endedAt && r.endedAt < r.collectThrough ? r.endedAt : r.collectThrough;
       const dates: string[] = [];
       let at: string | null = r.nextAt;
       for (let n = 0; n < 32 && at && at <= through; n++) {
@@ -1063,6 +1063,7 @@ export class Triggers {
     for (const r of rows) {
       if (this.stopped) return;
       this.dispatchCursor = r.id;
+      if (this.execution.freezing.blocked(r.agentId)) continue;
       this.pruneDependencies(r.id);
       const x = parse<TriggerInput>(r.input);
       const blocked = this.blocker(r);
@@ -1112,7 +1113,7 @@ export class Triggers {
           "SELECT * FROM trigger_occurrences WHERE triggerId=? AND state='queued' ORDER BY scheduledAt,sequence LIMIT 1",
         )
         .get(r.id) as any;
-      if (!o || (pending.at && pending.at < o.scheduledAt)) continue;
+      if (!o || (pending.at && pending.at < o.scheduledAt) || !this.execution.freezing.canDispatch(r.agentId,o.id)) continue;
       if (
         this.db
           .prepare(
@@ -1187,6 +1188,7 @@ export class Triggers {
             occurrence.state !== "queued" ||
             !current.enabled ||
             current.paused ||
+            !this.execution.freezing.canDispatch(r.agentId,o.id) ||
             this.blocker(this.row(r.id))
           )
             return;
@@ -1270,6 +1272,45 @@ export class Triggers {
       }
     }
   }
+  private prepareResumes() {
+    const controls = this.db.prepare("SELECT * FROM agent_freezes WHERE state='resuming' ORDER BY agentId LIMIT 16").all() as any[];
+    for (const c of controls) {
+      // Collection/fan-out stays bounded; do not decide until the cutoff is fully materialized.
+      const pending = this.db.prepare(`SELECT 1 FROM trigger_revisions r JOIN agent_triggers g ON g.id=r.triggerId
+        WHERE g.agentId=? AND g.deleted=0 AND r.sequence<=? AND r.nextAt<=? AND (r.endedAt IS NULL OR r.nextAt<=r.endedAt)
+        UNION ALL SELECT 1 FROM trigger_events e JOIN trigger_revisions r ON r.sequence<=e.sequence
+        AND (r.untilSequence IS NULL OR r.untilSequence>e.sequence) JOIN agent_triggers g ON g.id=r.triggerId
+        WHERE g.agentId=? AND g.deleted=0 AND e.sequence<=? AND e.processed=0 AND e.cursor<r.sequence LIMIT 1`)
+        .get(c.agentId,c.eventCutoff,c.cutoff,c.agentId,c.eventCutoff);
+      if (pending) continue;
+      const eligible = `g.agentId=? AND (o.state='queued' OR (o.state='submitted' AND NOT EXISTS
+        (SELECT 1 FROM agent_turns t WHERE t.taskId=o.taskId AND t.snapshot IS NOT NULL)))
+        AND ((o.kind='event' AND EXISTS(SELECT 1 FROM trigger_events e WHERE e.id=o.eventId AND e.sequence<=?))
+          OR (o.kind='schedule' AND o.scheduledAt<=? AND EXISTS(SELECT 1 FROM trigger_revisions r WHERE r.triggerId=o.triggerId AND r.revision=o.revision AND r.sequence<=?))
+          OR (o.kind='manual' AND o.sequence<=?))`;
+      const args = [c.agentId,c.eventCutoff,c.cutoff,c.eventCutoff,c.occurrenceCutoff];
+      const rows = this.db.prepare(`SELECT o.* FROM trigger_occurrences o JOIN agent_triggers g ON g.id=o.triggerId
+        WHERE ${eligible} AND (o.resumeBatch IS NULL OR o.resumeBatch!=?) ORDER BY o.scheduledAt,o.sequence LIMIT 32`).all(...args,c.batch) as any[];
+      this.db.transaction(() => {
+        for (const o of rows) {
+          let keep = c.policy === "all";
+          if (c.policy === "latest_per_trigger") {
+            const latest = this.db.prepare(`SELECT o.id FROM trigger_occurrences o JOIN agent_triggers g ON g.id=o.triggerId
+              WHERE ${eligible} AND o.triggerId=? ORDER BY o.scheduledAt DESC,o.sequence DESC LIMIT 1`).get(...args,o.triggerId) as any;
+            keep = latest?.id === o.id;
+          }
+          if (!keep && o.taskId) {
+            this.db.prepare("UPDATE agent_turns SET status='cancelled',generation=generation+1,error=NULL WHERE taskId=?").run(o.taskId);
+            this.db.prepare("UPDATE agent_tasks SET status='cancelled',error=NULL WHERE id=?").run(o.taskId);
+          }
+          this.db.prepare("UPDATE trigger_occurrences SET state=?,resumeBatch=?,error=? WHERE id=?")
+            .run(keep ? o.state : "skipped",c.batch,keep ? null : "Skipped by the agent's unfreeze queue choice.",o.id);
+        }
+        if (rows.length < 32) this.db.prepare("UPDATE agent_freezes SET state='active',revision=revision+1,replaying=1 WHERE agentId=? AND state='resuming'").run(c.agentId);
+      })();
+      this.execution.freezeChanged(c.agentId);
+    }
+  }
   start() {
     if (this.options.autoStart === false) return;
     this.timer = setInterval(() => {
@@ -1284,6 +1325,7 @@ export class Triggers {
       this.collect();
       this.reconcile();
       this.fanout();
+      this.prepareResumes();
       await this.automation?.tick();
       await this.dispatch();
     })().finally(() => {

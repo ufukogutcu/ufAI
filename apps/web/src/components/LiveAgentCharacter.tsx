@@ -5,5 +5,5 @@ import { AgentCharacter } from "./AgentCharacter";
 
 export function LiveAgentCharacter({ agent, className }: { agent: Agent; className?: string }) {
   const paused = useSettings(s => s.snapshot.settings.characterAnimationsPaused);
-  return <AgentCharacter appearance={agent.appearance} activity={agentActivity(agent.state)} paused={paused} className={className} decorative />;
+  return <AgentCharacter appearance={agent.appearance} frozen={agent.executionControl?.state === "frozen" || agent.executionControl?.state === "resuming"} activity={agentActivity(agent.state)} paused={paused} className={className} decorative />;
 }
