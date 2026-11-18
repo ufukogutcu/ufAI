@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Panel } from "@xyflow/react";
 import { Pause, Play } from "lucide-react";
 import type { FreezePolicy } from "../../../server/src/contracts";
@@ -19,12 +19,15 @@ export function useWorkspacePause(workspaceId: string) {
   const loadError = useAgents(s => s.workspaceControlErrors[workspaceId]);
   const [open,setOpen] = useState(false);
   const [busy,setBusy] = useState(false);
+  const [checkingWorkspace,setCheckingWorkspace] = useState<string | null>(null);
   const [error,setError] = useState("");
   const [policy,setPolicy] = useState<FreezePolicy>("all");
   const triggerRef = useRef<HTMLButtonElement>(null);
   const state = control?.state;
-  const pending = busy || !control || !!loadError || state === "freezing" || state === "resuming";
+  const checking = checkingWorkspace === workspaceId;
+  const pending = busy || checking || !control || !!loadError || state === "freezing" || state === "resuming";
   const label = loadError ? "Workspace pause state unavailable" : !control ? "Loading workspace controls…"
+    : checking ? "Checking queued triggers…"
     : state === "freezing" ? "Pausing workspace…" : state === "resuming" ? "Preparing resume…"
     : state === "frozen" ? "Resume workspace…" : "Pause workspace";
   const close = useCallback(() => { setOpen(false); setError(""); },[]);
@@ -34,21 +37,42 @@ export function useWorkspacePause(workspaceId: string) {
       await store.getState().controlWorkspace(workspaceId,action,selection);
       setOpen(false);
     } catch (failure) {
-      setError(errorMessage(failure)); setOpen(true);
+      setError(errorMessage(failure));
       await store.getState().loadWorkspaceControl(workspaceId).catch(() => {});
     } finally { setBusy(false); }
   },[store,workspaceId]);
+  useEffect(() => {
+    if (!checking) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    async function check() {
+      try {
+        await store.getState().loadWorkspaceControl(workspaceId);
+        if (cancelled) return;
+        const current = store.getState().workspaceControls[workspaceId];
+        if (current?.state === "frozen") {
+          if (current.queuedTriggerCount > 0) {
+            setPolicy("all"); setError(""); setOpen(true);
+          } else if (current.backlogPending) {
+            // An incomplete count of zero does not establish an empty queue.
+            timer = setTimeout(() => void check(),500);
+            return;
+          } else await submit("resume","all");
+        }
+      } catch (failure) {
+        if (!cancelled) setError(errorMessage(failure));
+      }
+      if (!cancelled) setCheckingWorkspace(null);
+    }
+    void check();
+    return () => { cancelled = true; clearTimeout(timer); };
+  },[checking,store,submit,workspaceId]);
   const activate = useCallback(() => {
     if (pending) return;
     if (state === "active") { void submit("pause"); return; }
-    setBusy(true);
-    void store.getState().loadWorkspaceControl(workspaceId).then(() => {
-      if (store.getState().workspaceControls[workspaceId]?.state === "frozen") {
-        setPolicy("all"); setError(""); setOpen(true);
-      }
-    }).catch(failure => { setError(errorMessage(failure)); setOpen(true); }).finally(() => setBusy(false));
-  },[pending,state,store,submit,workspaceId]);
-  const retryLoad = useCallback(() => { void store.getState().loadWorkspaceControl(workspaceId).catch(() => {}); },[store,workspaceId]);
+    setError(""); setCheckingWorkspace(workspaceId);
+  },[pending,state,submit,workspaceId]);
+  const retryLoad = useCallback(() => { setError(""); void store.getState().loadWorkspaceControl(workspaceId).catch(() => {}); },[store,workspaceId]);
   const dialog = open ? <Dialog title={state === "active" ? "Pause workspace" : "Resume workspace"} onClose={close} busy={busy} returnFocusFallbackRef={triggerRef}>
     <div className={freezeStyles.content}>
       {error && <Feedback>{error}</Feedback>}
@@ -71,14 +95,17 @@ export function useWorkspacePause(workspaceId: string) {
       </div>
     </div>
   </Dialog> : null;
-  return {activate,dialog,pending,label,state,loadError,retryLoad,triggerRef};
+  return {activate,dialog,pending,label,state,loadError,retryLoad,triggerRef,actionError:open ? "" : error};
 }
 
 export function WorkspaceControls({ workspaceId }: { workspaceId: string }) {
   const pause = useWorkspacePause(workspaceId);
   const sourceId = `workspace-control:${workspaceId}`;
   useNotice(pause.loadError ? {id:sourceId,title:"Workspace controls could not sync",message:pause.loadError,
-    actionLabel:"Retry workspace controls",action:pause.retryLoad} : null,sourceId);
+    actionLabel:"Retry workspace controls",action:pause.retryLoad} : pause.actionError ? {
+      id:sourceId,title:"Workspace control failed",message:pause.actionError,
+      actionLabel:"Try again",action:pause.activate,
+    } : null,sourceId);
   return <>
     <Panel position="bottom-center" className={`${styles.workspaceControls} glassSurface`} aria-label="Workspace controls" role="group">
       <GlassMaterial />
@@ -86,7 +113,7 @@ export function WorkspaceControls({ workspaceId }: { workspaceId: string }) {
         aria-pressed={pause.state === "frozen" || pause.state === "resuming"} disabled={pause.pending} onClick={pause.activate}>
         {pause.state === "frozen" || pause.state === "resuming" ? <Play size={16} aria-hidden="true" /> : <Pause size={16} aria-hidden="true" />}
       </button></Tooltip>
-      <span className={styles.controlStatus} role="status">{pause.state === "frozen" ? "Workspace paused" : pause.state === "freezing" || pause.state === "resuming" ? pause.label : ""}</span>
+      <span className={styles.controlStatus} role="status">{pause.pending ? pause.label : pause.state === "frozen" ? "Workspace paused" : ""}</span>
     </Panel>
     {pause.dialog}
   </>;
