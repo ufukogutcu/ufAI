@@ -1,98 +1,168 @@
-import { Feedback, BusyButton, LoadingState } from "./Feedback";
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { LockKeyhole } from "lucide-react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import type { UserInputRequest, VaultSecret } from "../../../server/src/vault-types";
 import type { Page } from "../../../server/src/contracts";
-import { errorMessage, request } from "../api";
+import { errorMessage, request, RequestError } from "../api";
 import { useUnsavedChanges } from "../navigation-guard";
-import styles from "./PrivateInputCard.module.scss";
+import { BusyButton, Feedback, LoadingState } from "./Feedback";
+import { RequestActions, RequestCard, type RequestAction } from "./RequestCard";
+import styles from "./UserInputCard.module.scss";
 
 /** Plaintext stays inside this form and its private submission request. */
-export function PrivateInputCard({ requestId, item, refreshKey, onChange }: {
-  requestId: string; item?: UserInputRequest; refreshKey?: unknown; onChange?: () => void;
+export function PrivateInputCard({ item, onSaved, onRefresh }: {
+  item: UserInputRequest;
+  onSaved: (result: UserInputRequest) => void;
+  onRefresh: () => Promise<void>;
 }) {
-  const [loaded, setLoaded] = useState<UserInputRequest | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [useSaved, setUseSaved] = useState(false);
   const [secrets, setSecrets] = useState<VaultSecret[]>([]);
-  const [value, setValue] = useState(""), [selected, setSelected] = useState("");
-  const [busy, setBusy] = useState(false), [error, setError] = useState("");
-  const [revision, setRevision] = useState<number | undefined>();
-  const fieldId = useId(), input = useRef<HTMLTextAreaElement>(null), generation = useRef(0);
-  const current = item && (!loaded || (item.updatedAt > loaded.updatedAt || (loaded.state === "pending" && item.state !== "pending"))) ? item : loaded ?? item;
-  const pending = current?.state === "pending";
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerError, setPickerError] = useState("");
+  const [pickerRetry, setPickerRetry] = useState(0);
+  const [value, setValue] = useState("");
+  const [selected, setSelected] = useState("");
+  const [pendingAction, setPendingAction] = useState<RequestAction>(null);
+  const [reloadingRevision, setReloadingRevision] = useState(false);
+  const [error, setError] = useState("");
+  const [fieldError, setFieldError] = useState("");
+  const [revision, setRevision] = useState<number>();
+  const [revisionConflict, setRevisionConflict] = useState(false);
+  const fieldId = useId();
+  const input = useRef<HTMLTextAreaElement>(null);
+  const picker = useRef<HTMLSelectElement>(null);
+  const methodButton = useRef<HTMLButtonElement>(null);
+  const focusReplacement = useRef(false);
+  const lock = useRef(false);
+  const pending = item.state === "pending";
+  const busy = pendingAction !== null;
+  const saving = busy || reloadingRevision;
+
   const discard = useCallback(() => { setValue(""); setSelected(""); }, []);
-  useUnsavedChanges(!!pending && (!!value || !!selected), discard);
-  const refresh = useCallback(async () => {
-    const serial = ++generation.current;
-    try {
-      const r = await request<UserInputRequest>(`/user-input-requests/${requestId}`);
-      if (serial !== generation.current) return;
-      setLoaded(r);
-      if (r.state !== "pending") { setValue(""); setSelected(""); }
-      setError("");
-    } catch (e) { if (serial === generation.current) setError(errorMessage(e)); }
-  }, [requestId]);
+  useUnsavedChanges(pending && (!!value || !!selected), discard);
+  useEffect(() => { if (!pending) discard(); }, [pending, discard]);
+
   useEffect(() => {
-    void refresh();
-    function visible() { if (document.visibilityState === "visible") void refresh(); }
-    window.addEventListener("focus", visible);
-    document.addEventListener("visibilitychange", visible);
-    window.addEventListener("ufai-private-input-updated", visible);
-    return () => {
-      generation.current++;
-      window.removeEventListener("focus", visible);
-      document.removeEventListener("visibilitychange", visible);
-      window.removeEventListener("ufai-private-input-updated", visible);
-    };
-  }, [refresh, refreshKey]);
-  useEffect(() => {
-    if (!pending) return;
-    let live = true;
-    // The vault is bounded to 256 entries; fetch all metadata for this picker.
-    void Promise.all([0, 100, 200].map(offset => request<Page<VaultSecret>>(`/vault/secrets?limit=100&offset=${offset}`)))
-      .then(pages => { if (live) setSecrets(pages.flatMap(p => p.items)); })
-      .catch(e => { if (live) setError(errorMessage(e)); });
-    return () => { live = false; };
-  }, [pending, requestId]);
+    if (!pending || !expanded || !useSaved) return;
+    const controller = new AbortController();
+    setPickerLoading(true);
+    setPickerError("");
+    // The Vault has at most 256 entries. The picker loads metadata only.
+    void Promise.all([0, 100, 200].map(offset =>
+      request<Page<VaultSecret>>(`/vault/secrets?limit=100&offset=${offset}`, "GET", undefined, controller.signal),
+    )).then(pages => {
+      if (controller.signal.aborted) return;
+      const available = pages.flatMap(page => page.items);
+      setSecrets(available);
+      setSelected(current => available.some(secret => secret.id === current) ? current : "");
+    }).catch(cause => {
+      if (!controller.signal.aborted) setPickerError(errorMessage(cause));
+    }).finally(() => {
+      if (!controller.signal.aborted) setPickerLoading(false);
+    });
+    return () => controller.abort();
+  }, [pending, expanded, useSaved, pickerRetry]);
+  useLayoutEffect(() => {
+    if (saving) return;
+    if (focusReplacement.current) {
+      focusReplacement.current = false;
+      input.current?.focus();
+    }
+    if (document.activeElement !== methodButton.current) return;
+    if (!useSaved) input.current?.focus();
+    else if (!pickerLoading && !pickerError) picker.current?.focus();
+  }, [saving, useSaved, pickerLoading, pickerError]);
+
   async function submit(event: FormEvent, decline = false) {
     event.preventDefault();
-    if (!decline && !selected && !value) { setError("Enter a value or select a saved secret."); input.current?.focus(); return; }
-    setBusy(true); setError("");
+    if (lock.current) return;
+    if (!decline && !(useSaved ? selected : value)) {
+      setFieldError(useSaved ? "Select a saved secret." : "Enter a secret value.");
+      (useSaved ? picker : input).current?.focus();
+      return;
+    }
+    lock.current = true;
+    setPendingAction(decline ? "decline" : "submit");
+    setError("");
+    setFieldError("");
     try {
-      const r = await request<UserInputRequest>(`/user-input-requests/${requestId}/resolve`, "POST",
-        decline ? { decline: true } : selected ? { secretId: selected } : { value, ...(revision === undefined ? {} : { expectedRevision: revision }) });
-      setLoaded(r); setValue(""); setSelected("");
-      window.dispatchEvent(new window.Event("ufai-private-input-updated")); onChange?.();
-    } catch (e) { setError(errorMessage(e)); }
-    finally { setBusy(false); }
+      const payload = decline ? { decline: true } : useSaved ? { secretId: selected }
+        : { value, ...(revision === undefined ? {} : { expectedRevision: revision }) };
+      const result = await request<UserInputRequest>(`/user-input-requests/${item.id}/resolve`, "POST", payload);
+      discard();
+      onSaved(result);
+    } catch (cause) {
+      setError(errorMessage(cause));
+      if (cause instanceof RequestError && cause.status === 409) {
+        if (!decline && !useSaved && item.secretId && cause.message.startsWith("Secret changed.")) setRevisionConflict(true);
+        else await onRefresh();
+      }
+    } finally {
+      lock.current = false;
+      setPendingAction(null);
+    }
   }
+
   async function reloadRevision() {
-    if (!current?.secretId) return;
+    if (!item.secretId || lock.current) return;
+    lock.current = true;
+    setReloadingRevision(true);
     try {
-      const secret = await request<VaultSecret>(`/vault/secrets/${current.secretId}`);
-      setRevision(secret.revision); setError("");
-    } catch (e) { setError(errorMessage(e)); }
+      const secret = await request<VaultSecret>(`/vault/secrets/${item.secretId}`);
+      setRevision(secret.revision);
+      setRevisionConflict(false);
+      setError("");
+      focusReplacement.current = true;
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      lock.current = false;
+      setReloadingRevision(false);
+    }
   }
-  return <section className={styles.card} aria-label="Private secret input" aria-busy={busy}>
-    <div className={styles.heading}><LockKeyhole size={16} aria-hidden="true" /><strong>{current?.name ?? "Private input"}</strong></div>
-    {current && <p>{current.purpose}</p>}
-    {pending && <form onSubmit={submit}>
-      <p className={styles.hint}>Saved encrypted in the shared Vault. All agents can use it; the value is kept out of chat and model context.</p>
-      <label htmlFor={fieldId}>Secret value{current.secretId ? " (replacement)" : ""}</label>
-      <textarea ref={input} id={fieldId} name="private-secret" value={value} onChange={e => setValue(e.target.value)}
-        disabled={busy || !!selected} autoComplete="off" spellCheck={false} maxLength={8192} rows={2} className={styles.secret} />
-      <label htmlFor={fieldId + "-existing"}>Or use a saved secret</label>
-      <select id={fieldId + "-existing"} name="saved-secret" value={selected} onChange={e => setSelected(e.target.value)} disabled={busy}>
-        <option value="">Enter a new value above</option>
-        {secrets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-      </select>
-      <div className={styles.actions}>
-        <BusyButton className="button primary" busy={busy}>{busy ? "Saving…" : selected ? "Use Secret" : "Save Secret"}</BusyButton>
-        <button type="button" className="button secondary" disabled={busy} onClick={e => void submit(e, true)}>Decline</button>
-        {current.secretId && <button type="button" className="textButton" disabled={busy} onClick={() => void reloadRevision()}>Use latest revision</button>}
+
+  function switchMethod() {
+    if (!useSaved) setPickerLoading(true);
+    setUseSaved(current => !current);
+    setFieldError("");
+    setError("");
+  }
+
+  return <RequestCard item={item} busy={saving} expanded={expanded} onToggle={() => setExpanded(open => !open)}>
+    {pending && <form className={styles.form} onSubmit={submit}>
+      <p className={styles.hint} id={fieldId + "-privacy"}>Secrets are encrypted in the shared Vault. The agent receives a reference.</p>
+      <div className={styles.field}>
+        {useSaved ? <>
+          <label htmlFor={fieldId}>Saved secret</label>
+          <select ref={picker} id={fieldId} name="saved-secret" value={selected} disabled={saving || pickerLoading || !!pickerError}
+            aria-invalid={!!fieldError} aria-describedby={fieldId + "-privacy" + (fieldError ? " " + fieldId + "-error" : "")}
+            onChange={event => { setSelected(event.target.value); setFieldError(""); }}>
+            <option value="">{pickerLoading ? "Loading secrets…" : "Select a secret"}</option>
+            {secrets.map(secret => <option key={secret.id} value={secret.id}>{secret.name}</option>)}
+          </select>
+          {pickerLoading && <LoadingState>Loading saved secrets…</LoadingState>}
+          {pickerError && <Feedback>{pickerError} <button type="button" className={`textButton ${styles.quietButton}`}
+            disabled={saving} onClick={() => setPickerRetry(count => count + 1)}>Retry</button></Feedback>}
+          {!pickerLoading && !pickerError && !secrets.length && <p className={styles.hint}>No saved secrets. Enter a new secret to continue.</p>}
+        </> : <>
+          <label htmlFor={fieldId}>{item.secretId ? "Replacement value" : "Secret value"}</label>
+          <textarea ref={input} id={fieldId} name="private-secret" value={value} onChange={event => { setValue(event.target.value); setFieldError(""); }}
+            disabled={saving} autoComplete="off" spellCheck={false} maxLength={8192} rows={2} className={styles.secret}
+            aria-invalid={!!fieldError} aria-describedby={fieldId + "-privacy" + (fieldError ? " " + fieldId + "-error" : "")} />
+        </>}
+        {fieldError && <p className={styles.error} id={fieldId + "-error"} role="alert">{fieldError}</p>}
+        <button ref={methodButton} type="button" className={`textButton ${styles.quietButton}`} disabled={saving} onClick={switchMethod}>
+          {useSaved ? "Enter a new secret" : "Use a saved secret"}
+        </button>
       </div>
+      {error && <Feedback>{error}</Feedback>}
+      {!useSaved && revisionConflict && <BusyButton type="button" className={`textButton ${styles.quietButton}`}
+        busy={reloadingRevision} disabled={busy} onClick={() => void reloadRevision()}>
+        {reloadingRevision ? "Loading revision…" : "Use latest revision"}
+      </BusyButton>}
+      <RequestActions label={useSaved ? "Use secret" : "Save secret"} busyLabel="Saving…" pendingAction={pendingAction}
+        disabled={reloadingRevision || (useSaved && (pickerLoading || !!pickerError))}
+        declineDisabled={reloadingRevision}
+        onDecline={event => void submit(event, true)} />
     </form>}
-    {current && !pending && <p role="status">{current.state === "fulfilled" ? "Secret saved. Only its reference was sent to the agent." : current.state === "declined" ? "Request declined." : "Request cancelled."}</p>}
-    {!current && !error && <LoadingState>Loading private request…</LoadingState>}
-    {error && <Feedback role="alert">{error} <button type="button" className="textButton" onClick={() => void refresh()}>Refresh request</button></Feedback>}
-  </section>;
+  </RequestCard>;
 }

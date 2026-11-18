@@ -18,6 +18,12 @@
   overflow-wrap: anywhere;
   min-width: 0;
 }
+.requestEntry {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 4px 0 8px;
+  border-bottom: 1px solid var(--border);
+}
 .meta {
   color: var(--muted);
   font-size: 12px;

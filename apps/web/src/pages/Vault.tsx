@@ -6,7 +6,7 @@ import type { Page } from "../../../server/src/contracts";
 import { errorMessage, request } from "../api";
 import { useNavigationGuard, useUnsavedChanges } from "../navigation-guard";
 import { Dialog } from "../components/Dialog";
-import { PrivateInputCard } from "../components/PrivateInputCard";
+import { UserInputCard } from "../components/UserInputCard";
 import shared from "./Presets.module.scss";
 import styles from "./Vault.module.scss";
 
@@ -153,7 +153,7 @@ export default function VaultPage() {
         {!loading && !secrets.length && <p className={shared.listMessage}>{query ? "No matching secrets." : "No secrets yet. Add one or answer an agent’s private request."}</p>}
         <div className={shared.presetList}>{secrets.map(secret => <button key={secret.id} className={`${shared.presetItem} ${selection === secret.id ? styles.selected : ""}`} aria-current={selection === secret.id ? "true" : undefined} onClick={() => choose(secret)}><LockKeyhole size={17} aria-hidden="true" /><span><strong>{secret.name}</strong><small>{secret.description || "Encrypted · Shared with all agents"}</small></span></button>)}</div>
         {secrets.length < total && <button className="button secondary" onClick={() => void more()}>Load More Secrets</button>}
-        {!!inputs.length && <section className={styles.requests} aria-label="Pending private inputs"><h2>Private Requests <span className="count">{inputTotal}</span></h2>{inputs.map(item => <PrivateInputCard key={item.id} requestId={item.id} item={item} onChange={load} />)}{inputs.length < inputTotal && <button className="button secondary" onClick={() => void moreInputs()}>Load More Requests</button>}</section>}
+        {!!inputs.length && <section className={styles.requests} aria-label="Pending private inputs"><h2>Private Requests <span className="count">{inputTotal}</span></h2>{inputs.map(item => <UserInputCard key={item.id} requestId={item.id} item={item} onChange={load} />)}{inputs.length < inputTotal && <button className="button secondary" onClick={() => void moreInputs()}>Load More Requests</button>}</section>}
       </aside>
       <div className={shared.detail}>
         {selection ? <><button className={`textButton ${shared.backButton}`} onClick={close}><ArrowLeft size={14} aria-hidden="true" />Secret library</button><SecretEditor key={selection + ":" + (snapshot?.revision ?? 0)} secret={snapshot} onSaved={saved} onClose={close} onDeleted={() => { setSelection(null); setSnapshot(undefined); void load(); }} onReload={() => void reload()} /></> : <div className="centerState"><LockKeyhole size={28} aria-hidden="true" /><h2>Choose a Secret</h2><p>Add and manage secrets shared across your agents.</p></div>}

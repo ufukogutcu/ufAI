@@ -14,6 +14,7 @@ async function input(p: any, selector: string, value: string) {
   await act(async () => { const e = p.document.querySelector(selector)!; const prototype = e.tagName === "TEXTAREA" ? p.window.HTMLTextAreaElement.prototype : p.window.HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(prototype, "value")!.set!.call(e, value); e.dispatchEvent(new p.window.Event("input", { bubbles: true })); });
 }
 async function submit(p: any) { await act(async () => { p.document.querySelector("form")!.dispatchEvent(new p.window.Event("submit", { bubbles: true, cancelable: true })); }); }
+function button(document: Document, label: string) { return [...document.querySelectorAll("button")].find(node => node.textContent === label)!; }
 
 test("text cards focus validation errors and preserve drafts on failure and background refresh", async t => {
   let current = base, fail = true, dirty = false; const writes: any[] = [];
@@ -25,9 +26,14 @@ test("text cards focus validation errors and preserve drafts on failure and back
   await submit(p); assert.equal(writes.length, 0); assert.equal(p.document.activeElement?.tagName, "TEXTAREA");
   await input(p, "textarea", "Keep this draft"); assert.equal(dirty, true); await submit(p);
   assert.equal(p.document.querySelector("textarea")!.value, "Keep this draft");
+  assert.equal(p.document.activeElement?.tagName, "TEXTAREA");
   await act(async () => { p.window.dispatchEvent(new p.window.Event("ufai-private-input-updated")); });
   assert.equal(p.document.querySelector("textarea")!.value, "Keep this draft"); fail = false; await submit(p);
   assert.equal(p.document.querySelector("form"), null); assert.equal(dirty, false); assert.match(p.document.body.textContent!, /Keep this draft/);
+  const outcome = p.document.querySelector("details")!;
+  assert.equal(outcome.open, false);
+  await p.click(outcome.querySelector("summary")!);
+  assert.equal(outcome.open, true);
 });
 for (const kind of ["single_choice", "multi_select"] as const) test(`${kind} supports custom answers alongside predefined options`, async t => {
   let current: UserInputRequest = { ...base, kind, definition: { options, allowOther: true } }, answer: any;
@@ -37,7 +43,7 @@ for (const kind of ["single_choice", "multi_select"] as const) test(`${kind} sup
   await p.click(p.document.querySelectorAll("fieldset input")[2]!); await input(p, "textarea", "My approach"); await submit(p);
   assert.deepEqual(answer, { selected: kind === "single_choice" ? [] : ["fast"], other: "My approach" }); assert.match(p.document.body.textContent!, /My approach/);
 });
-test("forms atomically submit every typed field, preserve false defaults, omit blanks and serialize timezone", async t => {
+test("forms preserve collapsed drafts and submit each typed field atomically", async t => {
   const fields: InputField[] = [
     { id: "text", type: "text", label: "Text", required: true, default: "Hello" },
     { id: "choice", type: "single_choice", label: "Choice", options, default: { selected: ["fast"] } },
@@ -47,11 +53,34 @@ test("forms atomically submit every typed field, preserve false defaults, omit b
     { id: "email", type: "email", label: "Email", default: "a@example.com" }, { id: "url", type: "url", label: "URL", default: "https://example.com/" },
     { id: "date", type: "date", label: "Date", default: "2028-02-29" }, { id: "time", type: "date_time", label: "Time", default: "2028-02-29T12:30:30Z" }, { id: "optional", type: "text", label: "Optional" },
   ];
-  let current: UserInputRequest = { ...base, kind: "form", definition: { fields } }, answer: any;
+  let current: UserInputRequest = { ...base, kind: "form", definition: { fields } }, answer: any, dirty = false;
   t.mock.method(globalThis, "fetch", async (_url: string, init?: RequestInit) => { if (init?.method === "POST") { answer = JSON.parse(String(init.body)).answer; current = { ...current, state: "fulfilled", answer }; } return Response.json(current); });
-  const p = await mountComponent(t, guard(h(UserInputCard, { requestId: "r" })));
+  const p = await mountComponent(t, guard(h(UserInputCard, { requestId: "r" }), value => { dirty = value; }));
+  assert.equal(p.document.querySelector("form"), null);
+  const disclosure = button(p.document, "Answer");
+  assert.equal(disclosure.getAttribute("aria-expanded"), "false");
+  await p.click(disclosure);
+  assert.equal(disclosure.getAttribute("aria-expanded"), "true");
+  await input(p, "textarea", "Updated answer");
+  await p.click(disclosure);
+  assert.equal(p.document.querySelector("form"), null);
+  assert.equal(dirty, true);
+  await p.click(disclosure);
+  assert.equal(p.document.querySelector("textarea")!.value, "Updated answer");
   assert.equal(p.document.querySelector<HTMLInputElement>("input[name='bool'][value='false']")!.checked, true); assert.match(p.document.body.textContent!, /Time zone:/); await submit(p);
-  assert.equal(answer.bool, false); assert.equal(answer.num, 1.5); assert.equal(answer.int, 2); assert.equal(answer.date, "2028-02-29"); assert.equal(answer.time, "2028-02-29T12:30:30.000Z"); assert.ok(!("optional" in answer));
+  assert.equal(answer.text, "Updated answer"); assert.equal(answer.bool, false); assert.equal(answer.num, 1.5); assert.equal(answer.int, 2); assert.equal(answer.date, "2028-02-29"); assert.equal(answer.time, "2028-02-29T12:30:30.000Z"); assert.ok(!("optional" in answer));
+});
+test("Other counts toward the inline choice limit", async t => {
+  const current: UserInputRequest = {
+    ...base, kind: "single_choice", definition: {
+      options: [...options, { id: "later", label: "Later" }, { id: "now", label: "Now" }], allowOther: true,
+    },
+  };
+  t.mock.method(globalThis, "fetch", async () => Response.json(current));
+  const p = await mountComponent(t, guard(h(UserInputCard, { requestId: "r" })));
+  assert.equal(p.document.querySelector("fieldset"), null);
+  await p.click(button(p.document, "Answer"));
+  assert.equal(p.document.querySelectorAll("fieldset input").length, 5);
 });
 test("external resolution replaces dirty drafts and decline needs no field answers", async t => {
   let current = base, body: any, dirty = false;
@@ -69,7 +98,9 @@ test("agent bubble opens an answer dialog, keeps the empty result and restores f
   function Probe() { const fallback = useRef<HTMLButtonElement>(null); return h("div", null, h("button", { ref: fallback }, "Agent name"), h(AgentInputBubble, { agentId: "a", agentName: "Agent", count, fallbackRef: fallback })); }
   const element = () => guard(h(AgentContext.Provider, { value: store }, h(Probe)));
   const p = await mountComponent(t, element()); await p.click(p.document.querySelector("button[aria-haspopup='dialog']")!); assert.ok(p.document.querySelector("dialog[open]"));
+  p.document.querySelector("textarea")!.focus();
   await input(p, "textarea", "Answer here"); await submit(p); await act(async () => { p.root.render(element()); });
   assert.equal(p.document.querySelector("button[aria-haspopup='dialog']"), null); assert.ok(p.document.querySelector("dialog[open]")); assert.match(p.document.body.textContent!, /No pending requests/);
+  assert.equal(p.document.activeElement, p.document.querySelector("[data-input-list]"));
   await p.click(p.document.querySelector("button[aria-label='Close dialog']")!); assert.equal(p.document.activeElement?.textContent, "Agent name");
 });

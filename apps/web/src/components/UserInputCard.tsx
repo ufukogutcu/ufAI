@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { MessageCircle } from "lucide-react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import type { InputField, InputValue, UserInputRequest } from "../../../server/src/vault-types";
 import { errorMessage, request, RequestError } from "../api";
 import { useUnsavedChanges } from "../navigation-guard";
-import { BusyButton, Feedback, LoadingState } from "./Feedback";
+import { Feedback, LoadingState } from "./Feedback";
 import { PrivateInputCard } from "./PrivateInputCard";
+import { RequestActions, RequestCard, type RequestAction } from "./RequestCard";
 import styles from "./UserInputCard.module.scss";
 
 type Props = { requestId: string; item?: UserInputRequest; refreshKey?: unknown; onChange?: () => void };
@@ -29,11 +29,11 @@ export function UserInputCard({ requestId, item, refreshKey, onChange }: Props) 
     return () => { generation.current++; window.removeEventListener("focus", visible); window.removeEventListener("ufai-private-input-updated", visible); document.removeEventListener("visibilitychange", visible); };
   }, [refresh, refreshKey]);
   function saved(result: UserInputRequest) { generation.current++; setLoaded(result); onChange?.(); window.dispatchEvent(new window.Event("ufai-private-input-updated")); }
-  return current ? current.kind === "secret" ? <PrivateInputCard requestId={requestId} item={current} refreshKey={refreshKey} onChange={onChange} />
+  return current ? current.kind === "secret" ? <PrivateInputCard key={requestId} item={current} onSaved={saved} onRefresh={refresh} />
     : <OrdinaryInputCard key={requestId} item={current} onSaved={saved} onRefresh={refresh} />
     : error ? <Feedback>{error} <button className="textButton" onClick={() => void refresh()}>Retry</button></Feedback> : <LoadingState>Loading request…</LoadingState>;
 }
-export function requestFields(item: UserInputRequest): InputField[] {
+function requestFields(item: UserInputRequest): InputField[] {
   return item.kind === "form" ? item.definition!.fields! : [{ ...item.definition, id: "answer", label: item.name, type: item.kind as InputField["type"], required: true }];
 }
 function localDateTime(value: string) {
@@ -43,7 +43,7 @@ function localDateTime(value: string) {
 function initialValues(fields: InputField[]) {
   return Object.fromEntries(fields.filter(f => f.default !== undefined).map(f => [f.id, f.type === "date_time" ? localDateTime(String(f.default)) : f.default]));
 }
-export function displayInputValue(field: InputField, value: InputValue | undefined) {
+function displayInputValue(field: InputField, value: InputValue | undefined) {
   if (value === undefined) return "Not answered";
   if (typeof value === "object") return [...value.selected.map(id => field.options?.find(o => o.id === id)?.label ?? id), ...(value.other === undefined ? [] : [value.other])].join(", ");
   if (typeof value === "boolean") return value ? "Yes" : "No";
@@ -52,20 +52,31 @@ export function displayInputValue(field: InputField, value: InputValue | undefin
 }
 function OrdinaryInputCard({ item, onSaved, onRefresh }: { item: UserInputRequest; onSaved: (r: UserInputRequest) => void; onRefresh: () => Promise<void> }) {
   const fields = requestFields(item);
+  const standalone = item.kind !== "form";
+  const collapsible = !standalone || (item.definition?.options?.length ?? 0) + Number(!!item.definition?.allowOther) > 4;
+  const [expanded, setExpanded] = useState(!collapsible);
   const [values, setValues] = useState<Record<string, any>>(() => initialValues(fields));
-  const [dirty, setDirty] = useState(false), [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [pendingAction, setPendingAction] = useState<RequestAction>(null);
   const [error, setError] = useState(""), [errors, setErrors] = useState<Record<string, string>>({});
   const lock = useRef(false), form = useRef<HTMLFormElement>(null), prefix = useId();
+  const focusTarget = useRef<string | null>(null);
   const pending = item.state === "pending";
+  const busy = pendingAction !== null;
   const discard = useCallback(() => { setValues({}); setDirty(false); }, []);
   useUnsavedChanges(pending && dirty, discard);
   useEffect(() => { if (!pending) discard(); }, [pending, discard]);
   function update(id: string, value: unknown) { setValues(previous => ({ ...previous, [id]: value })); setDirty(true); setErrors(previous => { const next = { ...previous }; delete next[id]; return next; }); }
-  function focusError(failures: Record<string, string>) {
-    const first = fields.find(f => failures[f.id]);
-    const element = first && document.getElementById(`${prefix}-${first.id}`);
-    (element?.querySelector<HTMLElement>("input,select,textarea") ?? element ?? form.current)?.focus();
+  function reportErrors(failures: Record<string, string>) {
+    focusTarget.current = fields.find(field => failures[field.id])?.id ?? "form";
+    setErrors(failures);
   }
+  useLayoutEffect(() => {
+    if (busy || !focusTarget.current) return;
+    const element = document.getElementById(`${prefix}-${focusTarget.current}`);
+    focusTarget.current = null;
+    (element?.querySelector<HTMLElement>("input,select,textarea") ?? element ?? form.current)?.focus();
+  }, [busy, errors, prefix]);
   async function submit(event: FormEvent, decline = false) {
     event.preventDefault();
     if (lock.current) return;
@@ -89,51 +100,71 @@ function OrdinaryInputCard({ item, onSaved, onRefresh }: { item: UserInputReques
       }
       answers[field.id] = value;
     }
-    if (Object.keys(failures).length) { setErrors(failures); focusError(failures); return; }
-    lock.current = true; setBusy(true); setErrors({}); setError("");
+    if (Object.keys(failures).length) { reportErrors(failures); return; }
+    lock.current = true; setPendingAction(decline ? "decline" : "submit"); setErrors({}); setError("");
     try {
       const answer = item.kind === "form" ? answers : answers.answer;
       const result = await request<UserInputRequest>(`/user-input-requests/${item.id}/resolve`, "POST", decline ? { decline: true } : { answer });
       discard(); onSaved(result);
     } catch (e) {
       setError(errorMessage(e));
-      if (e instanceof RequestError) { setErrors(e.fields); focusError(e.fields); if (e.status === 409) await onRefresh(); }
-    } finally { lock.current = false; setBusy(false); }
+      if (e instanceof RequestError) {
+        if (Object.keys(e.fields).length) reportErrors(e.fields);
+        if (e.status === 409) await onRefresh();
+      }
+    } finally { lock.current = false; setPendingAction(null); }
   }
-  return <section className={styles.card} aria-label="User input request" aria-busy={busy}>
-    <div className={styles.heading}><MessageCircle size={16} aria-hidden="true" /><strong>{item.name}</strong></div>
-    <p>{item.purpose}</p>
-    {pending ? <form ref={form} tabIndex={-1} onSubmit={submit} noValidate>
-      {fields.map(field => <InputControl key={field.id} field={field} id={`${prefix}-${field.id}`} value={values[field.id]} disabled={busy} error={errors[field.id]} onChange={update} />)}
+  return <RequestCard item={item} busy={busy} expanded={expanded} onToggle={collapsible ? () => setExpanded(open => !open) : undefined}>
+    {pending ? <form ref={form} className={styles.form} tabIndex={-1} onSubmit={submit} noValidate>
+      {fields.map(field => <InputControl key={field.id} field={field} id={`${prefix}-${field.id}`} standalone={standalone} value={values[field.id]} disabled={busy} error={errors[field.id]} onChange={update} />)}
       {errors.answer && !fields.some(f => f.id === "answer") && <Feedback>{errors.answer}</Feedback>}
       {error && <Feedback>{error}</Feedback>}
-      <div className={styles.actions}><BusyButton className="button primary" busy={busy}>{busy ? "Submitting…" : "Submit Answer"}</BusyButton><button type="button" className="button secondary" disabled={busy} onClick={e => void submit(e, true)}>Decline</button></div>
-    </form> : <div role="status" aria-live="polite">
-      {item.state === "fulfilled" ? <><p>Answer submitted.</p><dl className={styles.answers}>{fields.map(field => <div key={field.id}><dt>{field.label}</dt><dd>{displayInputValue(field, item.kind === "form" ? (item.answer as Record<string, InputValue>)?.[field.id] : item.answer as InputValue)}</dd></div>)}</dl></> : <p>{item.state === "declined" ? "Request declined." : "Request cancelled."}</p>}
-    </div>}
-  </section>;
+      <RequestActions label="Send answer" busyLabel="Sending…" pendingAction={pendingAction} onDecline={e => void submit(e, true)} />
+    </form> : item.state === "fulfilled" && <details className={styles.outcome}>
+      <summary>View answer</summary>
+      {standalone ? <p className={styles.answer}>{displayInputValue(fields[0]!, item.answer as InputValue)}</p>
+        : <dl className={styles.answers}>{fields.map(field => <div key={field.id}>
+          <dt>{field.label}</dt><dd className={styles.answer}>{displayInputValue(field, (item.answer as Record<string, InputValue>)?.[field.id])}</dd>
+        </div>)}</dl>}
+    </details>}
+  </RequestCard>;
 }
-function InputControl({ field: f, id, value, disabled, error, onChange }: { field: InputField; id: string; value: any; disabled: boolean; error?: string; onChange: (id: string, v: unknown) => void }) {
-  const describedBy = [f.description ? id + "-hint" : "", error ? id + "-error" : "", f.type === "date_time" ? id + "-zone" : ""].filter(Boolean).join(" ") || undefined;
+function InputControl({ field: f, id, standalone, value, disabled, error, onChange }: { field: InputField; id: string; standalone: boolean; value: any; disabled: boolean; error?: string; onChange: (id: string, v: unknown) => void }) {
+  const limit = f.type === "multi_select" ? selectionLimit(f) : "";
+  const showLimit = !standalone && !!limit;
+  const describedBy = [f.description ? id + "-hint" : "", error ? id + "-error" : "", f.type === "date_time" ? id + "-zone" : "", showLimit ? id + "-limit" : ""].filter(Boolean).join(" ") || undefined;
   const common = { id, name: f.id, disabled, "aria-invalid": !!error, "aria-describedby": describedBy, autoComplete: "off" } as const;
   const choice = f.type === "single_choice" || f.type === "multi_select";
+  const label = standalone && choice ? f.type === "single_choice" ? "Choose one" : limit || "Choose one or more" : f.label;
+  const optional = !standalone && !f.required && <span className={styles.optional}> (optional)</span>;
   const selected: string[] = value?.selected ?? [];
   function choose(option: string, checked: boolean) { onChange(f.id, f.type === "single_choice" ? { selected: [option] } : { ...value, selected: checked ? [...selected, option] : selected.filter(x => x !== option) }); }
   return <div className={styles.field}>
     {choice || f.type === "boolean" ? <fieldset id={id} tabIndex={-1} disabled={disabled} aria-describedby={describedBy} aria-invalid={!!error}>
-      <legend>{f.label}{f.required && <span> (required)</span>}</legend>
+      <legend>{label}{optional}{f.required && <span className={styles.srOnly}> (required)</span>}</legend>
+      {showLimit && <p className={styles.hint} id={id + "-limit"}>{limit}.</p>}
       {f.type === "boolean" ? [true, false].map(v => <label key={String(v)} className={styles.option}><input type="radio" name={f.id} value={String(v)} checked={value === v} onChange={() => onChange(f.id, v)} />{v ? "Yes" : "No"}</label>) : <>
         {f.options!.map(option => <label key={option.id} className={styles.option}><input type={f.type === "single_choice" ? "radio" : "checkbox"} name={f.id} value={option.id} checked={selected.includes(option.id)} onChange={e => choose(option.id, e.target.checked)} /><span>{option.label}{option.description && <small>{option.description}</small>}</span></label>)}
         {f.allowOther && <><label className={styles.option}><input type={f.type === "single_choice" ? "radio" : "checkbox"} name={f.id} checked={value?.other !== undefined} onChange={e => onChange(f.id, { selected: f.type === "single_choice" ? [] : selected, ...(e.target.checked ? { other: "" } : {}) })} />Other</label>
-          {value?.other !== undefined && <><label htmlFor={id + "-other"}>Your answer</label><textarea id={id + "-other"} name={f.id + "-other"} aria-describedby={describedBy} disabled={disabled} value={value.other} maxLength={8192} onChange={e => onChange(f.id, { ...value, other: e.target.value })} /></>}
+          {value?.other !== undefined && <><label htmlFor={id + "-other"}>Your own answer</label><textarea id={id + "-other"} name={f.id + "-other"} rows={2} aria-describedby={describedBy} disabled={disabled} value={value.other} maxLength={8192} onChange={e => onChange(f.id, { ...value, other: e.target.value })} /></>}
         </>}
       </>}
-    </fieldset> : <><label htmlFor={id}>{f.label}{f.required && <span> (required)</span>}</label>
-      {f.type === "text" ? <textarea {...common} rows={3} required={f.required} minLength={f.minLength} maxLength={f.maxLength ?? 8192} value={value ?? ""} onChange={e => onChange(f.id, e.target.value)} /> : <input {...common} type={f.type === "integer" ? "number" : f.type === "date_time" ? "datetime-local" : f.type} step={f.type === "integer" ? 1 : f.type === "number" || f.type === "date_time" ? "any" : undefined} min={f.minimum} max={f.maximum} required={f.required} spellCheck={false} minLength={f.minLength} maxLength={f.maxLength ?? 8192} value={value ?? ""} onChange={e => onChange(f.id, e.target.value)} />}
+    </fieldset> : <><label className={standalone ? styles.srOnly : undefined} htmlFor={id}>{label}{optional}</label>
+      {f.type === "text" ? <textarea {...common} rows={2} placeholder={standalone ? "Your answer…" : undefined} required={f.required} minLength={f.minLength} maxLength={f.maxLength ?? 8192} value={value ?? ""} onChange={e => onChange(f.id, e.target.value)} /> : <input {...common} type={f.type === "integer" ? "number" : f.type === "date_time" ? "datetime-local" : f.type} step={f.type === "integer" ? 1 : f.type === "number" || f.type === "date_time" ? "any" : undefined} min={f.minimum} max={f.maximum} required={f.required} spellCheck={false} minLength={f.minLength} maxLength={f.maxLength ?? 8192} value={value ?? ""} onChange={e => onChange(f.id, e.target.value)} />}
     </>}
-    {!f.required && (choice || f.type === "boolean") && value !== undefined && <button type="button" className="textButton" disabled={disabled} onClick={() => onChange(f.id, undefined)}>Clear selection</button>}
+    {!f.required && (choice || f.type === "boolean") && value !== undefined && <button type="button" className={`textButton ${styles.quietButton}`} disabled={disabled} onClick={() => onChange(f.id, undefined)}>Clear selection</button>}
     {f.description && <p className={styles.hint} id={id + "-hint"}>{f.description}</p>}
     {f.type === "date_time" && <p className={styles.hint} id={id + "-zone"}>Time zone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>}
     {error && <p className={styles.error} id={id + "-error"} role="alert">{error}</p>}
   </div>;
+}
+
+function selectionLimit(field: InputField) {
+  const minimum = Math.max(field.minSelections ?? 0, field.required ? 1 : 0);
+  const available = (field.options?.length ?? 0) + Number(!!field.allowOther);
+  const maximum = field.maxSelections ?? available;
+  if (minimum === maximum) return `Choose exactly ${minimum}`;
+  if (minimum > 1 && maximum < available) return `Choose ${minimum}–${maximum}`;
+  if (minimum > 1) return `Choose at least ${minimum}`;
+  return maximum < available ? `Choose up to ${maximum}` : "";
 }

@@ -477,7 +477,7 @@ export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
             {!entries.length && <p>No messages yet.</p>}
             <ul className={styles.list}>
               {entries.map((entry) => (
-                <li key={entry.id} className={styles.item} tabIndex={entry.id === target?.id ? -1 : undefined} ref={entry.id === target?.id ? targetRef : undefined}>
+                <li key={entry.id} className={entry.userInputRequestId ? styles.requestEntry : styles.item} tabIndex={entry.id === target?.id ? -1 : undefined} ref={entry.id === target?.id ? targetRef : undefined}>
                   <strong>
                     {entry.agentName}
                     {entry.readAt ? "" : " · Unread"}
@@ -485,7 +485,7 @@ export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
                   <span className={styles.meta}>
                     {new Date(entry.createdAt).toLocaleString()}
                   </span>
-                  <RichText content={entry.content} instanceId={`inbox-${entry.id}`} />
+                  {!entry.userInputRequestId && <RichText content={entry.content} instanceId={`inbox-${entry.id}`} />}
                   <AttachedFiles ids={entry.attachments} />
                   {entry.userInputRequestId && <UserInputCard requestId={entry.userInputRequestId} refreshKey={data?.inbox} onChange={refresh} />}
                   <div className={styles.actions}>
@@ -516,15 +516,15 @@ export function WorkspaceInboxButton({ workspaceId }: { workspaceId: string }) {
                         Open source agent · Task {entry.taskId.slice(0, 8)}
                       </button>
                     )}
-                    <button
+                    {!entry.userInputRequestId && <button
                       className="textButton"
-                      disabled={!entry.taskId || !!entry.userInputRequestId}
+                      disabled={!entry.taskId}
                       onClick={() =>
                         setReply(reply === entry.id ? null : entry.id)
                       }
                     >
                       Reply
-                    </button>
+                    </button>}
                   </div>
                   {reply === entry.id && (
                     <InboxReply entry={entry} onSent={refresh} />

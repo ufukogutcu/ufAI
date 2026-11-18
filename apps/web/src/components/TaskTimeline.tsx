@@ -187,10 +187,12 @@ function TimelineRow({
   const fileResult = item.result?.version as TimelineEntry["file"];
   return (
     <div className={styles.activity}>
+      {item.userInput && <UserInputCard requestId={item.userInput.id} item={item.userInput} onChange={onChange} />}
       <button
         type="button"
-        className={styles.action}
+        className={item.userInput ? `${styles.action} ${styles.requestActivity}` : styles.action}
         aria-expanded={open}
+        aria-label={item.userInput ? `Activity details for ${item.userInput.name}` : undefined}
         onClick={() => {
           if (!open) onInspect();
           setOpen((v) => !v);
@@ -203,16 +205,16 @@ function TimelineRow({
             active && !frozen && item.status === "running" ? styles.spinner : undefined
           }
         />
-        <span className={styles.actionLabel} title={label}>
+        <span className={styles.actionLabel} title={item.userInput ? undefined : label}>
           {messageLabel ? <>
             {messageLabel.prefix}
             <span className={styles.peerNameStart}>
               {appearance && <span className={styles.portrait} aria-hidden="true"><AgentCharacter appearance={appearance} portrait decorative /></span>}
               {nameStart}
             </span>{nameRest}{messageLabel.suffix}
-          </> : label}
+          </> : item.userInput ? "Activity details" : label}
         </span>
-        {item.status && (
+        {item.status && (!item.userInput || item.status !== "completed") && (
           <span
             className={`${styles.state} ${item.status === "failed" || item.status === "interrupted" ? styles.failure : ""}`}
           >
@@ -225,7 +227,6 @@ function TimelineRow({
           className={open ? styles.chevronOpen : styles.chevron}
         />
       </button>
-      {item.userInput && <UserInputCard requestId={item.userInput.id} item={item.userInput} onChange={onChange} />}
       {item.process && (
         <p className={styles.processState}>
           {item.name === "process_output" ? "Underlying command" : "Process"} {item.process.state}
@@ -308,8 +309,7 @@ function TimelineRow({
               </div>
             </>
           )}
-          {item.userInput && <UserInputCard requestId={item.userInput.id} item={item.userInput} onChange={onChange} />}
-      {item.process && (
+          {item.process && (
             <ProcessActivity process={item.process} onChange={onChange} />
           )}
           {item.checkin && <CheckIn item={item.checkin} onChange={onChange} />}
