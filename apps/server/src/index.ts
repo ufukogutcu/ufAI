@@ -1,4 +1,4 @@
-import { createApp } from "./app.js";
+import { createApp, listenApp } from "./app.js";
 
 const host = process.env.HOST ?? "127.0.0.1";
 const port = Number(process.env.PORT ?? 3000);
@@ -22,7 +22,7 @@ process.once("SIGINT", shutdown);
 process.once("SIGTERM", shutdown);
 
 try {
-  await app.listen({ host, port });
+  await listenApp(app, { host, port });
 } catch (error) {
   app.log.error(error);
   await shutdown();

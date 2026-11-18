@@ -78,6 +78,11 @@ async function setup(t: TestContext) {
         return Response.json(created, { status: 201 });
       }
       const saved = items.find((item) => url === `/api/triggers/${item.id}`);
+      if (saved && method === "PATCH") {
+        const updated = { ...saved, ...body.trigger, revision: saved.revision + 1 };
+        items[items.indexOf(saved)] = updated;
+        return Response.json(updated);
+      }
       if (saved) return Response.json(saved);
       if (url.includes("/agents/a/triggers"))
         return Response.json({ items, total: items.length });
@@ -199,6 +204,29 @@ test("App start saves as a built-in event, reopens in its own editor, and can ru
   const sample = p.calls.find((c) => c.url === "/api/triggers/startup/run");
   assert.equal(sample?.body.event.eventType, "ufai.app.started");
   assert.deepEqual(sample?.body.event.data, { manual: true });
+});
+
+test("saving the unfiltered startup event in an existing editor switches to App start", async (t) => {
+  const p = await setup(t);
+  await p.click(p.document.querySelector<HTMLButtonElement>("button.identity")!);
+  const when = p.document.querySelector<HTMLSelectElement>("form select")!;
+  await act(async () => {
+    when.value = "event";
+    when.dispatchEvent(new p.window.Event("change", { bubbles: true }));
+  });
+  const eventType = p.document.querySelector<HTMLInputElement>('input[list="ufai-event-types"]')!;
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(p.window.HTMLInputElement.prototype, "value")!.set!;
+    setter.call(eventType, "ufai.app.started");
+    eventType.dispatchEvent(new p.window.Event("input", { bubbles: true }));
+  });
+  assert.equal(p.dirty(), true);
+  await p.click(p.button("Save"));
+  const saved = p.calls.find((call) => call.method === "PATCH" && call.url === "/api/triggers/pulse");
+  assert.equal(saved?.body.trigger.when.eventType, "ufai.app.started");
+  assert.equal(when.value, "app-start");
+  assert.equal(p.document.querySelector('input[list="ufai-event-types"]'), null);
+  assert.equal(p.dirty(), false);
 });
 
 test("trigger page caches stay bounded without evicting an open editor", async (t) => {

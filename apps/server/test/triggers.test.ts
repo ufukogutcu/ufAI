@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
-import { createApp } from "../src/app.js";
+import { createApp, listenApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
 import type { Triggers } from "../src/triggers.js";
 import {
@@ -625,7 +625,7 @@ test("backend starts persist one event per subscribed workspace and replay pendi
   assert.deepEqual(receipts(s.workspaceId).map((event) => event.id), [first.id]);
   assert.equal(receipts(s.workspaceId)[0]!.processed, false);
 
-  await s.app.listen({ host: "127.0.0.1", port: 0 });
+  await listenApp(s.app, { host: "127.0.0.1", port: 0 });
   const secondStart = s.now();
   await s.service.tick();
   await s.service.tick();
@@ -661,7 +661,7 @@ test("a failed bind and reserved input cannot produce a backend startup event", 
   t.after(() => new Promise<void>((resolve) => occupied.close(() => resolve())));
   const address = occupied.address();
   assert.ok(address && typeof address !== "string");
-  await assert.rejects(s.app.listen({ host: "127.0.0.1", port: address.port }), {
+  await assert.rejects(listenApp(s.app, { host: "127.0.0.1", port: address.port }), {
     code: "EADDRINUSE",
   });
   const { source, token } = s.service.saveSource(s.workspaceId, { name: "External" });
@@ -676,6 +676,29 @@ test("a failed bind and reserved input cannot produce a backend startup event", 
     /reserved/,
   );
   assert.equal(s.service.receipts(s.workspaceId).total, 0);
+});
+
+test("application launch requires a durable startup event when a trigger is subscribed", async (t) => {
+  const s = await setup(t);
+  await s.create({ kind: "event", eventType: "ufai.app.started" });
+  const clock = () => s.db.prepare("SELECT value FROM trigger_clock").get();
+  const before = clock();
+  s.db.exec(`
+    CREATE TEMP TRIGGER fail_startup BEFORE INSERT ON trigger_events
+    WHEN NEW.eventType='ufai.app.started'
+    BEGIN SELECT RAISE(ABORT, 'simulated startup write failure'); END;
+  `);
+  await assert.rejects(
+    listenApp(s.app, { host: "127.0.0.1", port: 0 }),
+    /simulated startup write failure/,
+  );
+  assert.deepEqual(clock(), before);
+  assert.equal(s.service.receipts(s.workspaceId).total, 0);
+
+  // The temporary failure is gone on the next launch.
+  await s.reopen();
+  await listenApp(s.app, { host: "127.0.0.1", port: 0 });
+  assert.equal(s.service.receipts(s.workspaceId).total, 1);
 });
 
 test("skill templates, setup consent, updates and exact review preserve queue and manual state", async (t) => {

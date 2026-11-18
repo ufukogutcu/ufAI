@@ -62,6 +62,7 @@ const appStartedEventType = "ufai.app.started";
 export class Triggers {
   automation?: SkillAutomations;
   private stopped = false;
+  private appStartRecorded = false;
   private running?: Promise<void>;
   private timer?: ReturnType<typeof setInterval>;
   private revisionCursor = 0;
@@ -1316,6 +1317,7 @@ export class Triggers {
     }
   }
   recordAppStart() {
+    if (this.appStartRecorded) return;
     const startupId = randomUUID();
     const startedAt = this.now();
     const data = canonical({ startupId, startedAt });
@@ -1349,6 +1351,7 @@ export class Triggers {
         );
       }
     })();
+    this.appStartRecorded = true;
   }
   start() {
     if (this.options.autoStart === false) return;

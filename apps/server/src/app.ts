@@ -17,7 +17,7 @@ import { MessagingService, registerMessaging } from "./messaging.js";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import Fastify, { type FastifyError } from "fastify";
+import Fastify, { type FastifyError, type FastifyListenOptions } from "fastify";
 import multipart from "@fastify/multipart";
 import { MediaService, effectiveMedia } from "./media-service.js";
 import { SubmissionMedia, type UploadOptions } from "./submission-media.js";
@@ -502,4 +502,12 @@ export function createApp(
   if (options.serveStatic !== false && existsSync(webRoot))
     app.register(fastifyStatic, { root: webRoot });
   return app;
+}
+
+export async function listenApp(app: ReturnType<typeof createApp>, options: FastifyListenOptions) {
+  const address = await app.listen(options);
+  // Fastify logs onListen errors without rejecting listen. Require a durable
+  // receipt for application startup, retrying only if the hook's write failed.
+  app.getDecorator<Triggers>("triggers").recordAppStart();
+  return address;
 }

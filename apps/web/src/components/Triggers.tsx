@@ -337,9 +337,15 @@ function TriggerEditor({
         current ? "PATCH" : "POST",
         { trigger: input, expectedRevision: current?.revision },
       );
+      const persistedDraft: Draft =
+        draft.kind === "event" && isAppStart(t.when)
+          ? { ...draft, kind: "app-start" }
+          : draft;
       store.getState().put(t);
       setCurrent(t);
-      setSavedDraft(JSON.stringify(draft));
+      if (persistedDraft !== draft)
+        setDraft((latest) => (latest === draft ? persistedDraft : latest));
+      setSavedDraft(JSON.stringify(persistedDraft));
       onSaved(t);
     } catch (e) {
       setError(errorMessage(e));
@@ -388,7 +394,7 @@ function TriggerEditor({
             ? {
                 eventId: crypto.randomUUID(),
                 eventType: current.when.eventType,
-                data: isAppStart(current.when)
+                data: draft.kind === "app-start"
                   ? { manual: true }
                   : JSON.parse(sample),
               }
@@ -637,7 +643,14 @@ function TriggerEditor({
         )}
         {draft.kind === "event" && (
           <>
-            <Field label="Event source">
+            <Field
+              label="Event source"
+              hint={
+                draft.eventType.trim() === appStartedEventType && draft.sourceId
+                  ? "To receive App start events, choose Any source in this workspace."
+                  : undefined
+              }
+            >
               {(p) => (
                 <select
                   {...p}
