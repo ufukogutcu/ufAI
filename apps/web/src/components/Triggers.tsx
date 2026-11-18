@@ -33,6 +33,12 @@ import { Tooltip } from "./Tooltip";
 import { SkillSwitch } from "./SkillSwitch";
 import styles from "./Triggers.module.scss";
 const encode = encodeURIComponent;
+const appStartedEventType = "ufai.app.started";
+const isAppStart = (when?: TriggerWhen) =>
+  when?.kind === "event" &&
+  when.eventType === appStartedEventType &&
+  !when.sourceId &&
+  !when.filters?.length;
 const date = (v: string | null, zone?: string) =>
   v
     ? new Date(v).toLocaleString(
@@ -40,14 +46,13 @@ const date = (v: string | null, zone?: string) =>
         zone ? { timeZone: zone } : undefined,
       )
     : "—";
-const summary = (w: TriggerWhen) =>
-  w.kind === "cron"
+function summary(w: TriggerWhen) {
+  if (w.kind === "event") return isAppStart(w) ? "App start" : w.eventType;
+  if (w.kind === "at") return `${date(w.at, w.timezone)} · ${w.timezone}`;
+  return w.kind === "cron"
     ? `${w.expression} · ${w.timezone}`
-    : w.kind === "every"
-      ? `Every ${w.everyMs / 1000}s`
-      : w.kind === "at"
-        ? `${date(w.at, w.timezone)} · ${w.timezone}`
-        : w.eventType;
+    : `Every ${w.everyMs / 1000}s`;
+}
 function useRefresh(refresh: () => Promise<void>) {
   const version = useAgents((s) => s.eventVersion);
   useEffect(() => {
@@ -139,7 +144,7 @@ interface FilterDraft {
 interface Draft {
   name: string;
   instructions: string;
-  kind: TriggerWhen["kind"];
+  kind: TriggerWhen["kind"] | "app-start";
   local: string;
   timezone: string;
   seconds: string;
@@ -174,7 +179,7 @@ function draftFrom(t?: Trigger): Draft {
   return {
     name: t?.name ?? "",
     instructions: t?.instructions ?? "",
-    kind: w?.kind ?? "cron",
+    kind: isAppStart(w) ? "app-start" : (w?.kind ?? "cron"),
     local: w?.kind === "at" ? localTime(w.at, zone) : "",
     timezone: zone,
     seconds: String(w?.kind === "every" ? w.everyMs / 1000 : 3600),
@@ -297,6 +302,8 @@ function TriggerEditor({
         expression: draft.expression,
         timezone: draft.timezone,
       };
+    if (draft.kind === "app-start")
+      return { kind: "event", eventType: appStartedEventType };
     return {
       kind: "event",
       eventType: draft.eventType,
@@ -376,17 +383,19 @@ function TriggerEditor({
         });
         await loadActivity();
       } else {
+        const event =
+          current.when.kind === "event"
+            ? {
+                eventId: crypto.randomUUID(),
+                eventType: current.when.eventType,
+                data: isAppStart(current.when)
+                  ? { manual: true }
+                  : JSON.parse(sample),
+              }
+            : undefined;
         await request(`/triggers/${encode(current.id)}/run`, "POST", {
           requestId: crypto.randomUUID(),
-          ...(draft.kind === "event"
-            ? {
-                event: {
-                  eventId: crypto.randomUUID(),
-                  eventType: draft.eventType,
-                  data: JSON.parse(sample),
-                },
-              }
-            : {}),
+          event,
         });
         await loadActivity();
       }
@@ -462,8 +471,10 @@ function TriggerEditor({
           <>
             <p className={styles.status}>
               {latest?.state ?? current.state} ·{" "}
-              {latest?.queued ?? current.queued} queued · Next:{" "}
-              {date(latest?.nextAt ?? current.nextAt)}
+              {latest?.queued ?? current.queued} queued
+              {!isAppStart(current.when) && (
+                <> · Next: {date(latest?.nextAt ?? current.nextAt)}</>
+              )}
             </p>
             {(latest?.blocker ?? current.blocker) && (
               <Feedback>
@@ -498,7 +509,7 @@ function TriggerEditor({
                 }
                 onClick={() => void action("run")}
               >
-                {draft.kind === "event" ? "Run sample event" : "Run now"}
+                {current.when.kind === "event" ? "Run sample event" : "Run now"}
               </button>
             </div>
           </>
@@ -528,7 +539,14 @@ function TriggerEditor({
             />
           )}
         </Field>
-        <Field label="When">
+        <Field
+          label="When"
+          hint={
+            draft.kind === "app-start"
+              ? "Queues work each time the ufAI backend starts or restarts, even with the dashboard closed."
+              : undefined
+          }
+        >
           {(p) => (
             <select
               {...p}
@@ -542,6 +560,7 @@ function TriggerEditor({
               <option value="at">Once</option>
               <option value="every">Interval</option>
               <option value="cron">Cron</option>
+              <option value="app-start">App start</option>
               <option value="event">Event</option>
             </select>
           )}
@@ -783,37 +802,39 @@ function TriggerEditor({
             </Field>
           </>
         )}
-        <div>
-          <button
-            type="button"
-            className="button"
-            onClick={() => void showPreview()}
-          >
-            {draft.kind === "event"
-              ? "Test filters"
-              : "Preview next occurrences"}
-          </button>
-          {sampleMatch !== null && (
-            <p role="status">
-              {sampleMatch ? "Sample matches" : "Sample does not match"}
-            </p>
-          )}
-          {preview.length > 0 && (
-            <ol className={styles.help}>
-              {preview.map((v) => (
-                <li key={v}>
-                  {date(
-                    v,
-                    draft.kind === "cron" || draft.kind === "at"
-                      ? draft.timezone
-                      : undefined,
-                  )}{" "}
-                  <span className={styles.status}>({v})</span>
-                </li>
-              ))}
-            </ol>
-          )}
-        </div>
+        {draft.kind !== "app-start" && (
+          <div>
+            <button
+              type="button"
+              className="button"
+              onClick={() => void showPreview()}
+            >
+              {draft.kind === "event"
+                ? "Test filters"
+                : "Preview next occurrences"}
+            </button>
+            {sampleMatch !== null && (
+              <p role="status">
+                {sampleMatch ? "Sample matches" : "Sample does not match"}
+              </p>
+            )}
+            {preview.length > 0 && (
+              <ol className={styles.help}>
+                {preview.map((v) => (
+                  <li key={v}>
+                    {date(
+                      v,
+                      draft.kind === "cron" || draft.kind === "at"
+                        ? draft.timezone
+                        : undefined,
+                    )}{" "}
+                    <span className={styles.status}>({v})</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        )}
         <fieldset>
           <legend>Required skills</legend>
           {skills.map((s) => (
@@ -842,8 +863,9 @@ function TriggerEditor({
           )}
         </fieldset>
         <p className={styles.help}>
-          Every occurrence is retained. Missed schedules replay in order; the
-          next occurrence waits until this trigger’s current task finishes.
+          Every occurrence is retained.{" "}
+          {draft.kind !== "app-start" && "Missed schedules replay in order. "}
+          The next occurrence waits until this trigger’s current task finishes.
           Pause keeps collecting. Disable stops collecting. Only failures
           automatically reach Inbox.
         </p>

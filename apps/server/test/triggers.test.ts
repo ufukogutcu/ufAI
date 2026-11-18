@@ -4,6 +4,7 @@ import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { createServer } from "node:net";
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
 import type { Triggers } from "../src/triggers.js";
@@ -572,6 +573,111 @@ test("built-in lifecycle events are transactional and causal cycles are suppress
     before,
   );
 });
+
+test("backend starts persist one event per subscribed workspace and replay pending startup work", async (t) => {
+  const s = await setup(t);
+  const when = { kind: "event", eventType: "ufai.app.started" };
+  const active = await s.create(when);
+  const paused = await s.create(when, { paused: true }, "b");
+  const disabled = await s.create(when, { enabled: false });
+  const filtered = await s.create({
+    ...when,
+    filters: [{ path: "startedAt", operator: "eq", value: "never" }],
+  });
+  const workspace = await s.send("POST", "/api/workspaces", { name: "Second workspace" });
+  assert.equal(workspace.statusCode, 201, workspace.body);
+  const secondWorkspace = workspace.json().id as string;
+  const agent = await s.send("POST", `/api/workspaces/${secondWorkspace}/agents`, {
+    name: "Another agent",
+    presetId: "p",
+  });
+  assert.equal(agent.statusCode, 201, agent.body);
+  const other = await s.create(when, {}, agent.json().id);
+  const unsubscribed = await s.send("POST", "/api/workspaces", { name: "Unsubscribed workspace" });
+  assert.equal(unsubscribed.statusCode, 201, unsubscribed.body);
+  const receipts = (id: string) => s.service.receipts(id).items
+    .filter((event) => event.eventType === when.eventType);
+  const occurrences = (trigger: { id: string; workspaceId: string }) =>
+    s.service.occurrences(trigger.workspaceId, trigger.id).items.reverse();
+
+  assert.equal((await s.send("GET", "/api/health")).statusCode, 200);
+  assert.equal(receipts(s.workspaceId).length, 0);
+  const firstStart = s.now();
+  await s.app.listen({ host: "127.0.0.1", port: 0 });
+  const [first] = receipts(s.workspaceId);
+  const [firstOther] = receipts(secondWorkspace);
+  assert.ok(first && firstOther);
+  assert.notEqual(first.id, firstOther.id);
+  assert.equal(first.eventId, firstOther.eventId);
+  assert.deepEqual(first.data, { startupId: first.eventId, startedAt: firstStart });
+  assert.deepEqual(first.data, firstOther.data);
+  assert.equal(first.occurredAt, firstStart);
+  assert.equal(first.sourceId, null);
+  assert.equal(first.processed, false);
+  assert.deepEqual(first.attachments, []);
+  assert.equal(receipts(unsubscribed.json().id).length, 0);
+
+  // Make both revisions effective after the receipt, before its fan-out runs.
+  const late = await s.create(when);
+  await s.service.toggle(disabled.id, disabled.revision, { enabled: true });
+  s.advance(60_000);
+  await s.reopen();
+  assert.deepEqual(receipts(s.workspaceId).map((event) => event.id), [first.id]);
+  assert.equal(receipts(s.workspaceId)[0]!.processed, false);
+
+  await s.app.listen({ host: "127.0.0.1", port: 0 });
+  const secondStart = s.now();
+  await s.service.tick();
+  await s.service.tick();
+  assert.equal(receipts(s.workspaceId).length, 2);
+  assert.equal(receipts(secondWorkspace).length, 2);
+  assert.notEqual(receipts(s.workspaceId)[0]!.eventId, first.eventId);
+  assert.equal(receipts(s.workspaceId)[0]!.eventId, receipts(secondWorkspace)[0]!.eventId);
+  for (const trigger of [active, other]) {
+    const rows = occurrences(trigger);
+    assert.deepEqual(rows.map((row) => row.scheduledAt), [firstStart, secondStart]);
+    assert.deepEqual(rows.map((row) => row.state), ["submitted", "queued"]);
+    assert.ok(rows[0]!.taskId);
+  }
+  assert.deepEqual(occurrences(paused).map((row) => row.state), ["queued", "queued"]);
+  for (const trigger of [disabled, late])
+    assert.deepEqual(occurrences(trigger).map((row) => row.scheduledAt), [secondStart]);
+  assert.deepEqual(occurrences(filtered), []);
+
+  await s.service.toggle(paused.id, paused.revision, { paused: false });
+  await s.service.tick();
+  assert.deepEqual(occurrences(paused).map((row) => row.state), ["submitted", "queued"]);
+});
+
+test("a failed bind and reserved input cannot produce a backend startup event", async (t) => {
+  const s = await setup(t);
+  const eventType = "ufai.app.started";
+  await s.create({ kind: "event", eventType });
+  const occupied = createServer();
+  await new Promise<void>((resolve, reject) => {
+    occupied.once("error", reject);
+    occupied.listen(0, "127.0.0.1", resolve);
+  });
+  t.after(() => new Promise<void>((resolve) => occupied.close(() => resolve())));
+  const address = occupied.address();
+  assert.ok(address && typeof address !== "string");
+  await assert.rejects(s.app.listen({ host: "127.0.0.1", port: address.port }), {
+    code: "EADDRINUSE",
+  });
+  const { source, token } = s.service.saveSource(s.workspaceId, { name: "External" });
+  const payload = { eventId: "external", eventType, data: {} };
+  const response = await s.send("POST", `/api/event-sources/${source.id}/events`, payload, {
+    authorization: `Bearer ${token}`,
+  });
+  assert.equal(response.statusCode, 400, response.body);
+  assert.match(response.json().error, /reserved/);
+  assert.throws(
+    () => s.service.emit({ workspaceId: s.workspaceId, agentId: "a", taskId: "task", turnId: "turn" }, payload),
+    /reserved/,
+  );
+  assert.equal(s.service.receipts(s.workspaceId).total, 0);
+});
+
 test("skill templates, setup consent, updates and exact review preserve queue and manual state", async (t) => {
   const s = await setup(t),
     folder = join(s.root, "package");
@@ -777,7 +883,7 @@ test("agent trigger mutations are owned, journaled and fenced during skill setup
       trigger: {
         name: "Owned",
         instructions: "Do work",
-        when: { kind: "every", everyMs: 1000 },
+        when: { kind: "event", eventType: "ufai.app.started" },
         enabled: false,
         paused: false,
         requiredSkillIds: [],
@@ -791,6 +897,11 @@ test("agent trigger mutations are owned, journaled and fenced during skill setup
     async () => ({}),
   );
   assert.equal(first.ok, true, JSON.stringify(first));
+  assert.deepEqual((first as any).trigger.when, {
+    kind: "event",
+    eventType: "ufai.app.started",
+    filters: [],
+  });
   const second = await tools.dispatch(
     owner,
     call,
@@ -874,15 +985,14 @@ test("queued historical definitions retain required skills after a future-defini
 });
 
 test("manual built-in samples execute only their selected trigger without forging a built-in fan-out", async (t) => {
-  const s = await setup(t),
-    trigger = await s.create({
-      kind: "event",
-      eventType: "ufai.task.completed",
-    });
+  const s = await setup(t);
+  const when = { kind: "event", eventType: "ufai.app.started" };
+  const trigger = await s.create(when);
+  const peer = await s.create(when, {}, "b");
   const result = s.service.run(trigger.id, "manual-built-in", {
     eventId: "sample",
-    eventType: "ufai.task.completed",
-    data: { taskId: "sample-task" },
+    eventType: when.eventType,
+    data: { manual: true },
   });
   await s.service.tick();
   const occurrence = s.service
@@ -891,15 +1001,7 @@ test("manual built-in samples execute only their selected trigger without forgin
   assert.equal(occurrence.kind, "manual");
   assert.ok(occurrence.taskId);
   assert.equal(s.service.occurrences(s.workspaceId, trigger.id).total, 1);
-  assert.throws(
-    () =>
-      s.service.eventInput({
-        eventId: "external-spoof",
-        eventType: "ufai.task.completed",
-        data: {},
-      }),
-    /reserved/,
-  );
+  assert.equal(s.service.occurrences(s.workspaceId, peer.id).total, 0);
 });
 
 test("skill review also fences a submitted task before its first model start without starving the agent lane", async (t) => {

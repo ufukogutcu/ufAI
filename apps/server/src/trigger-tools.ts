@@ -42,7 +42,7 @@ export const triggerTools: ToolSpec[] = [
   ),
   tool(
     "trigger_create",
-    "Create your own trigger for requested work. Fields: name,instructions,when,enabled,paused,requiredSkillIds. when: {kind:at,at:ISO timestamp with offset,timezone:IANA}, {kind:every,everyMs:integer>=1000}, {kind:cron,expression:5 or 6 fields,timezone:IANA}, or {kind:event,eventType,sourceId?:source ID,filters?:[{path:dot field path,operator:exists/eq/ne/gt/gte/lt/lte/in,value?:JSON}]}. Skill installation is not consent to automation. Ask first during skill setup.",
+    "Create your own trigger for requested work. Fields: name,instructions,when,enabled,paused,requiredSkillIds. when: {kind:at,at:ISO timestamp with offset,timezone:IANA}, {kind:every,everyMs:integer>=1000}, {kind:cron,expression:5 or 6 fields,timezone:IANA}, or {kind:event,eventType,sourceId?:source ID,filters?:[{path:dot field path,operator:exists/eq/ne/gt/gte/lt/lte/in,value?:JSON}]}. To trigger on each successful ufAI backend start, use {kind:event,eventType:ufai.app.started} and leave sourceId unset. Skill installation is not consent to automation. Ask first during skill setup.",
     { trigger: obj },
     ["trigger"],
   ),

@@ -291,6 +291,9 @@ export function createApp(
     execution.wake();
     triggers.start();
   });
+  app.addHook("onListen", async () => {
+    triggers.recordAppStart();
+  });
   app.addHook("onClose", async () => files.close());
   app.addHook("onClose", async () => artifacts.close());
   app.addHook("onClose", async () => processes.close());

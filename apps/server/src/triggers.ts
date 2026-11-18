@@ -58,6 +58,7 @@ export function canonical(value: unknown): string {
 }
 const digest = (s: string) => createHash("sha256").update(s).digest("hex");
 const parse = <T = any>(s: string): T => JSON.parse(s);
+const appStartedEventType = "ufai.app.started";
 export class Triggers {
   automation?: SkillAutomations;
   private stopped = false;
@@ -1313,6 +1314,41 @@ export class Triggers {
       })();
       this.execution.freezeChanged(c.agentId);
     }
+  }
+  recordAppStart() {
+    const startupId = randomUUID();
+    const startedAt = this.now();
+    const data = canonical({ startupId, startedAt });
+    this.db.transaction(() => {
+      const workspaces = this.db
+        .prepare(`
+          SELECT DISTINCT workspaceId FROM agent_triggers
+          WHERE deleted=0 AND json_extract(input,'$.enabled')=1
+            AND json_extract(input,'$.when.kind')='event'
+            AND json_extract(input,'$.when.eventType')=?
+            AND json_extract(input,'$.when.sourceId') IS NULL
+        `)
+        .all(appStartedEventType) as { workspaceId: string }[];
+      const insert = this.db.prepare(`
+        INSERT INTO trigger_events(
+          sequence,id,workspaceId,sourceKey,eventId,eventType,occurredAt,receivedAt,data,fingerprint
+        )
+        VALUES(?,?,?,'builtin',?,?,?,?,?,?)
+      `);
+      for (const { workspaceId } of workspaces) {
+        insert.run(
+          this.sequence(),
+          randomUUID(),
+          workspaceId,
+          startupId,
+          appStartedEventType,
+          startedAt,
+          startedAt,
+          data,
+          startupId,
+        );
+      }
+    })();
   }
   start() {
     if (this.options.autoStart === false) return;

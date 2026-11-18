@@ -61,6 +61,7 @@ async function setup(t: TestContext) {
   const store = createTriggerStore(),
     agents = createAgentStore();
   let dirty = false;
+  const items = [trigger];
   const calls: { method: string; url: string; body: any }[] = [];
   t.mock.method(
     globalThis,
@@ -71,9 +72,15 @@ async function setup(t: TestContext) {
       calls.push({ url, method, body });
       if (url === "/api/triggers/preview")
         return Response.json({ times: ["2027-01-01T09:00:00.000Z"] });
-      if (url === "/api/triggers/pulse") return Response.json(trigger);
+      if (url === "/api/agents/a/triggers" && method === "POST") {
+        const created = { ...trigger, ...body.trigger, id: "startup", nextAt: null };
+        items.push(created);
+        return Response.json(created, { status: 201 });
+      }
+      const saved = items.find((item) => url === `/api/triggers/${item.id}`);
+      if (saved) return Response.json(saved);
       if (url.includes("/agents/a/triggers"))
-        return Response.json({ items: [trigger], total: 1 });
+        return Response.json({ items, total: items.length });
       return Response.json({ items: [], total: 0 });
     },
   );
@@ -155,6 +162,43 @@ test("creating a trigger is explicit and preview performs no trigger mutation", 
     p.calls.filter((c) => c.url === "/api/triggers/preview").length,
     1,
   );
+});
+
+test("App start saves as a built-in event, reopens in its own editor, and can run a sample", async (t) => {
+  const p = await setup(t);
+  await p.click(p.button("New trigger"));
+  const when = () => p.document.querySelector<HTMLSelectElement>("form select")!;
+  await act(async () => {
+    when().value = "app-start";
+    when().dispatchEvent(new p.window.Event("change", { bubbles: true }));
+    const name = p.document.querySelector<HTMLInputElement>('[name="trigger-name"]')!;
+    const instructions = p.document.querySelector<HTMLTextAreaElement>('[name="trigger-instructions"]')!;
+    for (const [field, value] of [[name, "Startup check"], [instructions, "Check pending work"]] as const) {
+      Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value")!.set!.call(field, value);
+      field.dispatchEvent(new p.window.Event("input", { bubbles: true }));
+    }
+  });
+  assert.equal(p.document.querySelectorAll("form select").length, 1);
+  assert.equal(p.document.querySelectorAll("form textarea").length, 1);
+  assert.equal(p.button("Preview next occurrences"), undefined);
+  const helpId = when().getAttribute("aria-describedby")!;
+  assert.match(p.document.getElementById(helpId)!.textContent!, /backend starts or restarts/);
+  await p.click(p.button("Save and enable"));
+  const created = p.calls.find((c) => c.method === "POST" && c.url === "/api/agents/a/triggers");
+  assert.deepEqual(created?.body.trigger.when, { kind: "event", eventType: "ufai.app.started" });
+  assert.equal(created?.body.trigger.enabled, true);
+
+  await p.click(p.button("All triggers"));
+  const row = [...p.document.querySelectorAll<HTMLButtonElement>("button.identity")]
+    .find((button) => button.textContent?.includes("Startup check"));
+  assert.match(row!.textContent!, /App start/);
+  await p.click(row!);
+  assert.equal(when().value, "app-start");
+  assert.equal(p.dirty(), false);
+  await p.click(p.button("Run sample event"));
+  const sample = p.calls.find((c) => c.url === "/api/triggers/startup/run");
+  assert.equal(sample?.body.event.eventType, "ufai.app.started");
+  assert.deepEqual(sample?.body.event.data, { manual: true });
 });
 
 test("trigger page caches stay bounded without evicting an open editor", async (t) => {
