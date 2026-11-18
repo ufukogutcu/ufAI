@@ -280,6 +280,10 @@ export interface WorkspaceExecutionControl extends Omit<AgentExecutionControl, "
   resumeAgentCount: number;
   frozenAgentCount: number;
 }
+export interface WorkspacePacing {
+  extraDelayMs: number;
+  revision: number;
+}
 export interface Agent {
   executionControl: AgentExecutionControl;
   issueCounts: { warning: number; error: number };

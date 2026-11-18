@@ -10,6 +10,7 @@ import { useNotice } from "./FeedbackProvider";
 import { freezeChoices } from "./AgentFreeze";
 import { GlassMaterial } from "./GlassMaterial";
 import { Tooltip } from "./Tooltip";
+import { WorkspaceSpeed } from "./WorkspaceSpeed";
 import freezeStyles from "./AgentFreeze.module.scss";
 import styles from "./Flowboard.module.scss";
 
@@ -113,6 +114,7 @@ export function WorkspaceControls({ workspaceId }: { workspaceId: string }) {
         aria-pressed={pause.state === "frozen" || pause.state === "resuming"} disabled={pause.pending} onClick={pause.activate}>
         {pause.state === "frozen" || pause.state === "resuming" ? <Play size={16} aria-hidden="true" /> : <Pause size={16} aria-hidden="true" />}
       </button></Tooltip>
+      <WorkspaceSpeed key={workspaceId} workspaceId={workspaceId} />
       <span className={styles.controlStatus} role="status">{pause.pending ? pause.label : pause.state === "frozen" ? "Workspace paused" : ""}</span>
     </Panel>
     {pause.dialog}

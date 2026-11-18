@@ -28,19 +28,23 @@ test("Codex journals queued callbacks before execution and withholds replies unt
   const gate=new Promise<void>(resolve=>release=resolve);
   t.after(async()=>{release();await r.close();await rm(directory,{recursive:true,force:true});});
   const queued:string[]=[],executed:string[]=[];
+  let continuations = 0;
   let finished=false;
   const answer=r.executeTask("connection",{...base,messages:[{role:"user",content:"parallel-freeze"}],tools:taskTools,
     onToolQueued:call=>{queued.push(call.id);},
     onTool:async call=>{executed.push(call.id);return {ok:true,text:"Observed"};},
     beforeToolReply:()=>gate,
+    beforeToolContinuation: async () => { continuations++; },
   }).then(result=>{finished=true;return result;});
   for(let i=0;i<200 && queued.length<2;i++) await delay(5);
   assert.equal(queued.length,2);
   assert.equal(executed.length,1);
+  assert.equal(continuations, 0);
   assert.equal(finished,false);
   release();
   assert.equal((await answer).text,"Final answer.");
   assert.deepEqual(executed,queued);
+  assert.equal(continuations, 2);
 });
 async function runtime(t: any) {
   const dir = await mkdtemp(join(tmpdir(), "ufai-codex-text-"));

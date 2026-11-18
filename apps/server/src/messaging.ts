@@ -690,6 +690,8 @@ export class MessagingService {
     const transit = recipient && owner.turnId
       ? this.transits.create(id, request, owner.agentId, recipient)
       : undefined;
+    const queuedFromChat = transit?.paced && this.db
+      .prepare("SELECT 1 FROM agent_tasks WHERE id=? AND kind='chat'").get(owner.taskId);
     if (kind !== "progress" && !delivered) {
       this.db
         .prepare(
@@ -699,7 +701,10 @@ export class MessagingService {
       if (!transit) this.deliver(id);
     }
     this.changed(request.workspaceId);
-    return { messageId: id, requestId: request.id, ...(transit ? { startedAt: transit.startedAt, arrivesAt: transit.arrivesAt } : {}) };
+    return { messageId: id, requestId: request.id,
+      ...(transit ? { startedAt: transit.startedAt, arrivesAt: transit.arrivesAt } : {}),
+      ...(queuedFromChat ? { delivery: "queued" } : {}),
+    };
   }
   message(owner: ToolOwner, args: any, key: string) {
     return this.once(key, owner.workspaceId, args, () => {
@@ -1553,7 +1558,8 @@ export function registerMessaging(
       const after = req.query.after === undefined ? 0 : Number(req.query.after);
       if (!Number.isSafeInteger(after) || after < 0) fail("Invalid transmission cursor.", 400);
       const serverNow = now();
-      const items = db.prepare(`SELECT mt.*,m.sequence FROM message_transits mt
+      const items = db.prepare(`SELECT mt.messageId,mt.workspaceId,mt.requestId,mt.linkId,mt.senderAgentId,
+        mt.recipientAgentId,mt.recipientTaskId,mt.startedAt,mt.arrivesAt,mt.state,m.sequence FROM message_transits mt
         JOIN communication_messages m ON m.id=mt.messageId
         WHERE mt.workspaceId=? AND mt.state='in_flight' AND mt.arrivesAt>? AND m.sequence>?
         ORDER BY m.sequence LIMIT ?`).all(req.params.id, serverNow, after, limit) as any[];

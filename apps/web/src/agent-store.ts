@@ -33,6 +33,7 @@ import type {
   CommunicationAnchors,
   InboxEntry,
   WorkspaceExecutionControl,
+  WorkspacePacing,
   FreezePolicy,
 } from "../../server/src/contracts";
 
@@ -47,6 +48,10 @@ interface AgentState {
   workspaceControlErrors: Record<string, string>;
   loadWorkspaceControl: (id: string) => Promise<void>;
   controlWorkspace: (id: string, action: "pause" | "resume", policy?: FreezePolicy) => Promise<void>;
+  workspacePacing: Record<string, WorkspacePacing>;
+  workspacePacingErrors: Record<string, string>;
+  loadWorkspacePacing: (id: string) => Promise<void>;
+  saveWorkspacePacing: (id: string, extraDelayMs: number) => Promise<void>;
   communication: Record<
     string,
     {
@@ -194,6 +199,7 @@ export function createAgentStore() {
   let snapshotSequence = 0;
   const activitySequences = new Map<string, number>();
   const workspaceControlSequences = new Map<string, number>();
+  const workspacePacingSequences = new Map<string, number>();
   const loads = new Map<string, Promise<void>>(),
     positionWrites = new Map<string, Promise<void>>();
   const pendingPositions = new Map<
@@ -209,6 +215,17 @@ export function createAgentStore() {
       workspaceControlSequences.set(id, sequence);
       set(s => ({ workspaceControls: equal(current,control) ? s.workspaceControls : { ...s.workspaceControls, [id]: control },
         workspaceControlErrors: { ...s.workspaceControlErrors, [id]: "" } }));
+    }
+    function putWorkspacePacing(id: string, pacing: WorkspacePacing, sequence: number) {
+      const current = get().workspacePacing[id];
+      const previousSequence = workspacePacingSequences.get(id) ?? 0;
+      if (current && (current.revision > pacing.revision ||
+        (current.revision === pacing.revision && sequence < previousSequence))) return;
+      workspacePacingSequences.set(id, Math.max(sequence, previousSequence));
+      set(s => ({
+        workspacePacing: current?.revision === pacing.revision ? s.workspacePacing : { ...s.workspacePacing, [id]: pacing },
+        workspacePacingErrors: s.workspacePacingErrors[id] ? { ...s.workspacePacingErrors, [id]: "" } : s.workspacePacingErrors,
+      }));
     }
     function forgetPanelTabs(ids: string[]) {
       if (!ids.some(id => Object.hasOwn(get().panelTabs, id))) return;
@@ -667,6 +684,24 @@ export function createAgentStore() {
       connectionWorkspaceId: null,
       workspaceControls: {},
       workspaceControlErrors: {},
+      workspacePacing: {},
+      workspacePacingErrors: {},
+      async loadWorkspacePacing(id) {
+        const sequence = ++snapshotSequence;
+        try {
+          putWorkspacePacing(id, await request<WorkspacePacing>(`/workspaces/${encodeURIComponent(id)}/pacing`), sequence);
+        } catch (error) {
+          if (sequence >= (workspacePacingSequences.get(id) ?? 0)) {
+            workspacePacingSequences.set(id, sequence);
+            set(s => ({ workspacePacingErrors: { ...s.workspacePacingErrors, [id]: errorMessage(error) } }));
+          }
+        }
+      },
+      async saveWorkspacePacing(id, extraDelayMs) {
+        const sequence = ++snapshotSequence;
+        const pacing = await request<WorkspacePacing>(`/workspaces/${encodeURIComponent(id)}/pacing`, "PUT", { extraDelayMs });
+        putWorkspacePacing(id, pacing, sequence);
+      },
       async loadWorkspaceControl(id) {
         const sequence = ++snapshotSequence;
         try {

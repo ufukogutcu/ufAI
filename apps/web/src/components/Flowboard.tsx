@@ -160,6 +160,8 @@ function Board({ workspaceId }: { workspaceId: string }) {
     agentStore.setState({ connected: false, connectionWorkspaceId: workspaceId });
     void agentStore.getState().loadWorkspace(workspaceId);
     void agentStore.getState().loadWorkspaceControl(workspaceId).catch(() => {});
+    const refreshPacing = () => void agentStore.getState().loadWorkspacePacing(workspaceId);
+    refreshPacing();
     let closed = false,
       timer: ReturnType<typeof setTimeout> | undefined,
       pending = false;
@@ -190,30 +192,31 @@ function Board({ workspaceId }: { workspaceId: string }) {
       if (!closed) agentStore.setState(s => ({ timelineVersion: s.timelineVersion + 1 }));
     };
     const changed = (event: MessageEvent) => {
-      invalidateTimeline();
       try {
-        if (JSON.parse(event.data).kind === "message-transit") {
+        const { kind } = JSON.parse(event.data);
+        if (kind === "workspace-pacing") {
+          refreshPacing();
+          return;
+        }
+        if (kind === "message-transit") {
           refreshTransits();
           void agentStore.getState().loadWorkspace(workspaceId);
         }
       } catch { /* Ordinary snapshots still refresh for malformed invalidations. */ }
+      invalidateTimeline();
       refresh();
     };
-    const resync = () => { invalidateTimeline(); refreshTransits(); refresh(); };
+    const resync = () => { invalidateTimeline(); refreshTransits(); refreshPacing(); refresh(); };
     events.addEventListener("change", changed);
     events.addEventListener("resync", resync);
     events.onopen = () => {
       if (closed) return;
       agentStore.setState({ connected: true });
-      invalidateTimeline();
-      refreshTransits();
-      refresh();
+      resync();
     };
     events.onerror = () => { if (!closed) agentStore.setState({ connected: false }); };
     const unfocus = refreshOnFocus(async () => {
-      invalidateTimeline();
-      refreshTransits();
-      refresh();
+      resync();
     });
     return () => {
       closed = true;

@@ -119,7 +119,7 @@ const allTaskTools: ToolSpec[] = [
   ),
   spec(
     "agent_send",
-    "Message a connected agent; this tool waits for the short visual delivery trip, not for a reply. Either agent may initiate contact. Continue independent work. Replies resume this task automatically. Schedule a check-in if useful, then task_yield when no independent work remains. Attach immutable versions, not host paths.",
+    "Message a connected agent. The tool waits for delivery unless it reports queued. Replies resume this task. Continue independent work. Schedule a check-in if useful, then task_yield when no work remains. Attach immutable versions.",
     {
       agentId: str("Recipient agent ID", 100),
       kind: { type: "string", enum: ["request", "notification"] },
@@ -130,7 +130,7 @@ const allTaskTools: ToolSpec[] = [
   ),
   spec(
     "agent_message",
-    "Send a question, progress update, or answer within an accepted request. This tool completes after the short visual delivery trip. Questions and answers resume the other task; progress stays in history. Answer incoming questions explicitly without changing your own final-result destination. An answer requires its question message ID.",
+    "Send a question, progress update, or answer within an accepted request. The tool waits for delivery unless it reports queued. Questions and answers resume the other task. Progress stays in history. Answer explicitly using the question message ID. Keep your final-result destination.",
     {
       requestId: str("Request ID", 100),
       kind: { type: "string", enum: ["question", "progress", "answer"] },
@@ -898,7 +898,7 @@ export class AgentTools {
         const result = name === "agent_send"
           ? messaging.send(owner, a, key)
           : messaging.message(owner, a, key);
-        await messaging.transits.wait(result.messageId, signal);
+        if (result.delivery !== "queued") await messaging.transits.wait(result.messageId, signal);
         return result;
       }
       if (name === "agent_request_status")

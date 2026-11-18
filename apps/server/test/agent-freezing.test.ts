@@ -65,6 +65,83 @@ async function workspaceAction(s: Awaited<ReturnType<typeof setup>>, action: "pa
   return response.json<WorkspaceExecutionControl>();
 }
 
+test("workspace pacing is validated, isolated, and retained across a restart while paused", async t => {
+  const s = await setup(t);
+  const url = `/api/workspaces/${s.workspaceId}/pacing`;
+  const read = async () => (await s.app.inject(url)).json();
+  const put = (extraDelayMs: unknown) => s.app.inject({ method: "PUT", url, payload: { extraDelayMs } });
+  assert.deepEqual(await read(), { extraDelayMs: 0, revision: 0 });
+  for (const value of [-500, 200, 3500, 500.5, "500", null])
+    assert.equal((await put(value)).statusCode, 400);
+  assert.equal((await s.app.inject({ method: "PUT", url, payload: { extraDelayMs: 500, unexpected: true } })).statusCode, 400);
+  assert.equal((await s.app.inject("/api/workspaces/missing/pacing")).statusCode, 404);
+  assert.equal((await s.app.inject({ url, headers: { "sec-fetch-site": "cross-site" } })).statusCode, 403);
+  const other = await s.app.inject({ method: "POST", url: "/api/workspaces", payload: { name: "Other" } });
+  assert.equal(other.statusCode, 201);
+  await workspaceAction(s, "pause");
+  const saved = { extraDelayMs: 2000, revision: 1 };
+  assert.deepEqual((await put(2000)).json(), saved);
+  assert.deepEqual((await put(2000)).json(), saved);
+  const eventCount = s.db.prepare("SELECT count(*) AS count FROM execution_events WHERE workspaceId=? AND kind='workspace-pacing'").get(s.workspaceId);
+  assert.deepEqual(eventCount, { count: 1 });
+  assert.deepEqual((await s.app.inject(`/api/workspaces/${other.json().id}/pacing`)).json(), { extraDelayMs: 0, revision: 0 });
+  await s.reopen();
+  assert.deepEqual(await read(), saved);
+  assert.equal(s.engine.workspaceFreezing.control(s.workspaceId).state, "frozen");
+  assert.deepEqual((await put(0)).json(), { extraDelayMs: 0, revision: 2 });
+});
+
+test("pacing delays ordinary tool continuations while Chat continues at its usual speed", async t => {
+  const s = await setup(t);
+  await s.app.inject({ method: "PUT", url: `/api/workspaces/${s.workspaceId}/pacing`, payload: { extraDelayMs: 500 } });
+  const taskRounds: number[] = [];
+  let chatRounds = 0;
+  let chatFinishedBeforeTaskRound = false;
+  s.service.connections.toolRound = async (_snapshot, request) => {
+    if (request.instructions.includes("Main agent Chat.")) {
+      if (++chatRounds === 1) return round([write("chat", "chat.txt")], "");
+      chatFinishedBeforeTaskRound = taskRounds.length === 1;
+      return round();
+    }
+    taskRounds.push(performance.now());
+    return taskRounds.length === 1 ? round([write("work", "task.txt")], "") : round();
+  };
+  const task = s.engine.submit("a", "new", "Task", randomUUID());
+  await s.until(() => taskRounds.length === 1);
+  s.engine.submit("a", "chat", "Chat", randomUUID());
+  await s.until(() => s.engine.task(task.taskId!).status === "completed");
+  assert.equal(chatRounds, 2);
+  assert.equal(chatFinishedBeforeTaskRound, true);
+  assert.equal(taskRounds.length, 2);
+  assert.ok(taskRounds[1]! - taskRounds[0]! >= 480);
+});
+
+test("pausing during a paced continuation preserves the safe boundary and cancellation stops the turn", async t => {
+  const s = await setup(t);
+  await s.app.inject({ method: "PUT", url: `/api/workspaces/${s.workspaceId}/pacing`, payload: { extraDelayMs: 500 } });
+  let rounds = 0;
+  s.service.connections.toolRound = async () => ++rounds === 1 ? round([write("before-pause", "task.txt")], "") : round();
+  const task = s.engine.submit("a", "new", "Task", randomUUID());
+  await s.until(() => !!s.db.prepare("SELECT 1 FROM execution_deliveries WHERE turnId=?").get(task.turnId));
+  await workspaceAction(s, "pause");
+  await s.until(() => !!s.db.prepare("SELECT 1 FROM execution_checkpoints WHERE turnId=? AND safe=1").get(task.turnId));
+  await s.service.tick();
+  assert.equal(s.engine.workspaceFreezing.control(s.workspaceId).state, "frozen");
+  assert.equal(rounds, 1);
+  await s.engine.cancelTask(task.taskId!);
+  await workspaceAction(s, "resume", "all");
+  assert.equal(s.engine.task(task.taskId!).status, "cancelled");
+  assert.equal(rounds, 1);
+  await s.service.tick();
+
+  const second = s.engine.submit("a", "new", "Cancel during delay", randomUUID());
+  s.service.connections.toolRound = async () => ++rounds === 2 ? round([write("before-stop", "stop.txt")], "") : round();
+  await s.until(() => !!s.db.prepare("SELECT 1 FROM execution_deliveries WHERE turnId=?").get(second.turnId));
+  await s.engine.cancelTask(second.taskId!);
+  assert.equal(s.engine.task(second.taskId!).status, "cancelled");
+  assert.equal(rounds, 2);
+});
+
 test("workspace pause preserves individual freezes, rejects individual resumes and freezes new agents before admission",async t=>{
   const s=await setup(t);
   await s.action("freeze");
@@ -142,21 +219,24 @@ test("workspace pause waits for both execution lanes and leaves other workspaces
   const s=await setup(t);
   const other=(await s.app.inject({method:"POST",url:"/api/workspaces",payload:{name:"Other"}})).json();
   const otherAgent=(await s.app.inject({method:"POST",url:`/api/workspaces/${other.id}/agents`,payload:{name:"Other agent",presetId:"p"}})).json();
-  const pending:((value:ToolRound)=>void)[]=[];
+  const pending = new Map<"task" | "chat", (value: ToolRound) => void>();
   s.service.connections.toolRound=async(_snapshot,request)=>{
-    if(request.messages.some(m=>m.content.includes("Hold lane"))) return new Promise(resolve=>pending.push(resolve));
+    if (request.messages.some(message => message.content.includes("Hold lane"))) {
+      const lane = request.instructions.includes("Main agent Chat.") ? "chat" : "task";
+      return new Promise(resolve => pending.set(lane, resolve));
+    }
     return round();
   };
   const task=s.engine.submit("a","new","Hold lane task",randomUUID());
   const chat=s.engine.submit("a","chat","Hold lane chat",randomUUID());
-  await s.until(()=>pending.length===2);
+  await s.until(()=>pending.size===2);
   assert.equal((await workspaceAction(s,"pause")).state,"freezing");
   const outside=s.engine.submit(otherAgent.id,"new","Continue outside",randomUUID());
   await s.until(()=>s.engine.task(outside.taskId!).status==="completed");
-  pending[0]!(round([write("task-write","task.txt")]));
+  pending.get("task")!(round([write("task-write","task.txt")]));
   await s.until(()=>!!s.db.prepare("SELECT 1 FROM execution_checkpoints WHERE turnId=? AND safe=1").get(task.turnId));
   await s.service.tick();assert.equal(s.engine.workspaceFreezing.control(s.workspaceId).state,"freezing");
-  pending[1]!(round([write("chat-write","chat.txt")]));
+  pending.get("chat")!(round([write("chat-write","chat.txt")]));
   await s.until(()=>!!s.db.prepare("SELECT 1 FROM execution_checkpoints WHERE turnId=? AND safe=1").get(chat.turnId));
   await s.service.tick();assert.equal(s.engine.workspaceFreezing.control(s.workspaceId).state,"frozen");
   assert.equal((s.db.prepare("SELECT count(*) n FROM tool_invocations").get() as any).n,0);

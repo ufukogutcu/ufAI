@@ -19,6 +19,7 @@ import { MessagingService } from "../src/messaging.js";
 import { removeMessagingTables, removeCommunicationAnchors } from "./legacy-schema.js";
 import { createApp } from "../src/app.js";
 import { connectedAgentSummaries } from "../src/connection-awareness.js";
+import { saveWorkspacePacing } from "../src/workspace-pacing.js";
 import type { TaskRequest, ToolCall, ToolResult } from "../src/execution-types.js";
 async function until(fn: () => boolean) {
   for (let i = 0; i < 500; i++) {
@@ -859,7 +860,7 @@ test("v13 upgrade preserves populated records and stable paths while backfilling
       );
     else assert.deepEqual(rows, retained[table], table);
   }
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 40);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 41);
   assert.deepEqual(
     (upgraded.prepare("SELECT content FROM agent_messages").all() as any[]).map(
       (r) => r.content,
@@ -2770,7 +2771,7 @@ test("v20 routing upgrade preserves existing check-ins and installs missing rout
   );
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 40);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 41);
     const row = upgraded
       .prepare("SELECT * FROM task_checkins WHERE id=?")
       .get(reminder.checkinId) as any;
@@ -2945,7 +2946,7 @@ function insertReverseLink(s: Awaited<ReturnType<typeof setup>>, id: string) {
 function upgradeLinks(s: Awaited<ReturnType<typeof setup>>) {
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 40);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 41);
     assert.deepEqual(upgraded.pragma("foreign_key_check"), []);
     assert.deepEqual(upgraded.pragma("integrity_check"), [{ integrity_check: "ok" }]);
   } finally {
@@ -3133,6 +3134,32 @@ test("messaging tools remain pending until arrival and duplicate callbacks share
   assert.equal((await progress).ok, true);
 });
 
+test("slow Chat handoffs acknowledge queueing while durable ordered travel controls recipient admission", async t => {
+  const s = await setup(t);
+  s.messaging.createLink(s.workspaceId, "a", "b");
+  s.db.prepare("UPDATE agents SET x=0,y=0 WHERE id IN ('a','b')").run();
+  const chat = s.engine.submit("a", "chat", "Delegate", randomUUID());
+  const owner = { ...s.owner, turnId: chat.turnId, taskId: chat.taskId! };
+  const dispatch = (call: ToolCall) => s.tools.dispatch(owner, call, new AbortController().signal, async () => ({}));
+  saveWorkspacePacing(s.db, s.workspaceId, 3000);
+  const call = { id: "paced-send", name: "agent_send", arguments: { agentId: "b", content: "Travel slowly" } };
+  const result = await dispatch(call);
+  assert.equal(result.ok, true);
+  assert.equal(result.delivery, "queued");
+  assert.equal(Date.parse(result.arrivesAt as string) - Date.parse(result.startedAt as string), 3600);
+  assert.deepEqual(await dispatch(call), result);
+  assert.equal(s.engine.task(result.taskId as string).status, "queued");
+  saveWorkspacePacing(s.db, s.workspaceId, 0);
+  const followup = await dispatch({ id: "paced-followup", name: "agent_message", arguments: { requestId: result.requestId, kind: "progress", content: "Follow-up" } });
+  assert.equal(followup.delivery, "queued");
+  assert.equal(followup.arrivesAt, result.arrivesAt);
+  const state = s.db.prepare("SELECT state FROM message_transits WHERE messageId=?");
+  assert.deepEqual(state.get(result.messageId), { state: "in_flight" });
+  arrive(s);
+  assert.deepEqual(state.get(result.messageId), { state: "arrived" });
+  assert.deepEqual(state.get(followup.messageId), { state: "arrived" });
+});
+
 test("replies and recovered waits cannot consume travelling messages; progress arrives without waking work", async (t) => {
   const s = await setup(t);
   s.messaging.createLink(s.workspaceId, "a", "b");
@@ -3251,7 +3278,7 @@ test("v22 upgrade preserves old messages without adding retrospective transmissi
   s.db.exec("DROP INDEX communication_deliveries_turn; DROP TABLE message_transits; PRAGMA user_version=22");
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 40);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 41);
     assert.equal((upgraded.prepare("SELECT count(*) n FROM message_transits").get() as any).n, 0);
     assert.equal((upgraded.prepare("SELECT content FROM communication_messages WHERE id=?").get(sent.messageId) as any).content, "Old message");
     assert.deepEqual(upgraded.pragma("foreign_key_check"), []);

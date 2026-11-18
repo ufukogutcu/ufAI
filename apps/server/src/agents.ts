@@ -9,6 +9,7 @@ import { AgentExecution } from "./agent-execution.js";
 import { guard } from "./connections.js";
 import { ConnectionError } from "./model-providers.js";
 import { objectBody, InputError, pagination } from "./validation.js";
+import { isWorkspaceDelay, readWorkspacePacing, saveWorkspacePacing } from "./workspace-pacing.js";
 
 const time = () => new Date().toISOString();
 const invalid = (field: string, message: string): never => {
@@ -78,6 +79,23 @@ export function registerAgents(
     if (!db.prepare("SELECT id FROM workspaces WHERE id=?").get(id))
       throw new ConnectionError("Workspace not found.", 404);
   };
+  app.get<{ Params: { id: string } }>("/api/workspaces/:id/pacing", async req => {
+    guard(req);
+    workspace(req.params.id);
+    return readWorkspacePacing(db, req.params.id);
+  });
+  app.put<{ Params: { id: string } }>("/api/workspaces/:id/pacing", async req => {
+    guard(req);
+    const id = req.params.id;
+    workspace(id);
+    const { extraDelayMs } = fields(req.body, ["extraDelayMs"]);
+    if (!isWorkspaceDelay(extraDelayMs))
+      return invalid("extraDelayMs", "Choose 0 to 3000 milliseconds in 500-millisecond steps.");
+    const current = readWorkspacePacing(db, id);
+    const saved = saveWorkspacePacing(db, id, extraDelayMs);
+    if (saved.revision !== current.revision) execution.workspaceEvent(id, "workspace-pacing");
+    return saved;
+  });
   const validate = (body: unknown, existing?: any) => {
     const p = fields(body, [
       "name",

@@ -38,7 +38,7 @@ for (const version of [36, 37]) {
       db.close();
 
       db = openDatabase(path);
-      assert.equal(db.pragma("user_version", { simple: true }), 40);
+      assert.equal(db.pragma("user_version", { simple: true }), 41);
       const checkpoint = db.prepare("SELECT context,answer,maintenanceBaseline FROM execution_checkpoints WHERE turnId='turn'").get();
       assert.deepEqual(checkpoint, {
         context: "saved context", answer: "saved answer",
@@ -61,7 +61,7 @@ for (const version of [36, 37]) {
       } finally { await app.close(); }
 
       db = openDatabase(path);
-      assert.equal(db.pragma("user_version", { simple: true }), 40);
+      assert.equal(db.pragma("user_version", { simple: true }), 41);
       for (const table of ["execution_checkpoints", "execution_results", "execution_deliveries", "execution_generations"])
         assert.equal((db.prepare(`SELECT count(*) n FROM ${table} WHERE turnId='turn'`).get() as { n: number }).n, 0);
       assert.equal((db.prepare("SELECT content FROM agent_messages WHERE id='input'").get() as { content: string }).content, "Synthetic input");

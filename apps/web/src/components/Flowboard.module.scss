@@ -66,10 +66,80 @@
   :global(.iconButton) { width: var(--zoom-control-size); height: var(--zoom-control-size); }
 }
 .workspaceControls:global(.react-flow__panel.bottom.center) { transform: translateX(-50%); }
+.workspaceControls:global(.react-flow__panel) .speedButton {
+  width: auto;
+  min-width: var(--zoom-control-size);
+  padding-inline: 6px;
+  gap: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.speedPopup {
+  position: fixed;
+  z-index: 30;
+  bottom: var(--speed-popup-bottom);
+  inset-inline: 12px;
+  margin-inline: auto;
+  display: grid;
+  gap: 10px;
+  width: min(17rem, calc(100vw - 24px));
+  max-height: calc(100dvh - var(--speed-popup-bottom) - var(--toolbar-top) - var(--toolbar-height) - 8px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-floating);
+  background: var(--surface);
+  box-shadow: 0 12px 32px -12px var(--glass-shadow);
+  cursor: auto;
+}
+.speedPopup h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.speedPopup p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.speedValue {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.speedRange {
+  width: 100%;
+  min-height: var(--zoom-control-size);
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+.speedRange:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.speedActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.speedActions :global(.button) { min-height: var(--zoom-control-size); }
 .controlStatus { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .hint:global(.react-flow__panel) { padding: 14px 12px; color: var(--faint); font-size: 11px; margin: 24px; span { margin: 0 8px; } }
 @media (max-width: 640px) {
   .workspaceControls:global(.react-flow__panel) { bottom: calc(var(--zoom-control-size) + 20px); }
+  .speedPopup {
+    inset-inline-start: var(--shell-gutter);
+    width: min(17rem, calc(100vw - var(--shell-gutter) - 12px));
+    gap: 8px;
+    padding: 12px;
+  }
   .emptyRegion { bottom: calc(2 * var(--zoom-control-size) + 76px); }
   .empty { left: calc(50% + 32px); width: calc(100% - 112px); h2 { font-size: 28px; } }
   .controls:global(.react-flow__panel) { margin: 16px 16px 24px var(--shell-gutter); }

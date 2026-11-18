@@ -1,5 +1,6 @@
 import { migrateFreezing, migrateFreezeCutoffs, migrateExecutionState } from "./agent-freezing.js";
 import { migrateWorkspaceFreezing } from "./workspace-freezing.js";
+import { migrateWorkspacePacing } from "./workspace-pacing.js";
 import { migrateUserInputs } from "./user-input-schema.js";
 import { migrateVault } from "./vault-schema.js";
 import { migrateMcp } from "./mcp-schema.js";
@@ -36,7 +37,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 40)
+    if (version > 41)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -400,6 +401,14 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     if (version < 40) database.transaction(() => {
       migrateWorkspaceFreezing(database);
       database.pragma("user_version = 40");
+    })();
+
+    if (version < 41) database.transaction(() => {
+      migrateWorkspacePacing(database);
+      const columns = database.pragma("table_info(message_transits)") as { name: string }[];
+      if (!columns.some(column => column.name === "normalArrivesAt"))
+        database.exec("ALTER TABLE message_transits ADD COLUMN normalArrivesAt TEXT");
+      database.pragma("user_version = 41");
     })();
 
   } catch (error) {

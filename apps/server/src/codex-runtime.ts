@@ -249,7 +249,9 @@ class CodexClient {
               if (result.media?.length && !opened)
                 throw new ConnectionError("Media resolution unavailable.", 409);
               task.signal.throwIfAborted();
+              if (!textTurn.yielding) await task.beforeToolContinuation?.();
               await task.beforeToolReply?.();
+              task.signal.throwIfAborted();
               this.send({
                 id: message.id,
                 result: {

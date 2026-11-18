@@ -6,6 +6,7 @@ import { skillRuntimeGuidance } from "./skills.js";
 import { effectiveMedia } from "./media-service.js";
 import { randomUUID, createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { setTimeout as delay } from "node:timers/promises";
 import type Database from "better-sqlite3";
 import type {
   Agent,
@@ -28,6 +29,7 @@ import { ConnectionService } from "./connection-service.js";
 import { ConnectionError } from "./model-providers.js";
 import { maintenanceEvidence } from "./maintenance-evidence.js";
 import { AgentIssues } from "./agent-issues.js";
+import { readWorkspacePacing } from "./workspace-pacing.js";
 import { connectedAgentSummaries, connectionAwarenessGuidance, type ConnectedAgentSummary } from "./connection-awareness.js";
 
 const instructionPrecedence =
@@ -749,6 +751,10 @@ export class AgentExecution {
     this.db.prepare("UPDATE execution_checkpoints SET safe=0 WHERE turnId=?").run(turn.id);
     this.live(turn,active);
   }
+  private async paceTask(workspaceId: string, active: Active) {
+    const { extraDelayMs } = readWorkspacePacing(this.db, workspaceId);
+    if (extraDelayMs) await delay(extraDelayMs, undefined, { signal: active.controller.signal });
+  }
   wake() {
     if (!this.stopped && this.options.autoStart !== false)
       setImmediate(() => this.pump());
@@ -1386,6 +1392,7 @@ export class AgentExecution {
       },
       tools: taskTools,
       beforeToolReply: () => this.freezeGate(turn,active),
+      beforeToolContinuation: active.chatLane ? undefined : () => this.paceTask(owner.workspaceId, active),
       onUsage: recordCodexUsage,
       onToolQueued: original => { this.outputLive(turn,active); const call = scopeCall(original); this.db.prepare("INSERT OR IGNORE INTO execution_results(turnId,callId,call) VALUES(?,?,?)").run(turn.id,call.id,JSON.stringify(call)); },
       continuation,
@@ -1593,6 +1600,7 @@ export class AgentExecution {
         );
       const stored = this.db.prepare("SELECT response FROM execution_rounds WHERE turnId=? AND ordinal=?").get(turn.id,roundIndex) as any;
       if (!stored) {
+        if (roundIndex > 0 && !active.chatLane) await this.paceTask(owner.workspaceId, active);
         await this.freezeGate(turn,active);
         this.db.prepare("UPDATE execution_checkpoints SET safe=0 WHERE turnId=?").run(turn.id);
       }

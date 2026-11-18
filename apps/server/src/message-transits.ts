@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import type { MessageTransit } from "./contracts.js";
 import { ConnectionError } from "./model-providers.js";
+import { readWorkspacePacing } from "./workspace-pacing.js";
 
 export function migrateMessageTransits(db: Database.Database) {
   db.exec(`CREATE TABLE message_transits (
@@ -34,21 +35,29 @@ export class MessageTransits {
     private arrived: (messageId: string) => void,
   ) {}
 
-  create(messageId: string, request: { id: string; workspaceId: string; linkId: string }, senderAgentId: string, recipientTaskId: string): MessageTransit | undefined {
+  create(messageId: string, request: { id: string; workspaceId: string; linkId: string }, senderAgentId: string, recipientTaskId: string): (MessageTransit & { paced: boolean }) | undefined {
     const peers = this.db.prepare(`SELECT a.x,a.y,b.x AS targetX,b.y AS targetY,b.id AS recipientAgentId
       FROM agents a JOIN agent_tasks t ON t.id=? JOIN agents b ON b.id=t.agentId
       JOIN communication_links l ON l.id=? AND l.state='active' WHERE a.id=?`).get(recipientTaskId, request.linkId, senderAgentId) as
       { x: number; y: number; targetX: number; targetY: number; recipientAgentId: string } | undefined;
     if (!peers) return;
     const startedAt = new Date().toISOString();
-    const previous = this.db.prepare("SELECT max(arrivesAt) AS deadline FROM message_transits WHERE requestId=? AND senderAgentId=? AND state='in_flight'").get(request.id, senderAgentId) as { deadline: string | null };
-    const arrivesAt = new Date(Math.max(Date.parse(startedAt) + messageTravelDuration(Math.hypot(peers.targetX - peers.x, peers.targetY - peers.y)), Date.parse(previous.deadline ?? startedAt))).toISOString();
+    const previous = this.db.prepare(`SELECT max(arrivesAt) AS deadline, max(coalesce(normalArrivesAt,arrivesAt)) AS normalDeadline
+      FROM message_transits WHERE requestId=? AND senderAgentId=? AND state='in_flight'`).get(request.id, senderAgentId) as {
+      deadline: string | null; normalDeadline: string | null;
+    };
+    const normalArrival = Date.parse(startedAt) + messageTravelDuration(Math.hypot(peers.targetX - peers.x, peers.targetY - peers.y));
+    const { extraDelayMs } = readWorkspacePacing(this.db, request.workspaceId);
+    const arrival = Math.max(normalArrival + extraDelayMs, Date.parse(previous.deadline ?? startedAt));
+    const arrivesAt = new Date(arrival).toISOString();
+    // Compare against the original delivery order as well as the usual distance.
+    const normalDeadline = Math.max(normalArrival, Date.parse(previous.normalDeadline ?? startedAt));
     const transit: MessageTransit = { messageId, workspaceId: request.workspaceId, requestId: request.id, linkId: request.linkId, senderAgentId, recipientAgentId: peers.recipientAgentId, startedAt, arrivesAt, state: "in_flight" };
-    this.db.prepare(`INSERT INTO message_transits(messageId,workspaceId,requestId,linkId,senderAgentId,recipientAgentId,recipientTaskId,startedAt,arrivesAt,state)
-      VALUES (?,?,?,?,?,?,?,?,?,'in_flight')`).run(messageId, request.workspaceId, request.id, request.linkId, senderAgentId, peers.recipientAgentId, recipientTaskId, startedAt, arrivesAt);
+    this.db.prepare(`INSERT INTO message_transits(messageId,workspaceId,requestId,linkId,senderAgentId,recipientAgentId,recipientTaskId,startedAt,arrivesAt,state,normalArrivesAt)
+      VALUES (?,?,?,?,?,?,?,?,?,'in_flight',?)`).run(messageId, request.workspaceId, request.id, request.linkId, senderAgentId, peers.recipientAgentId, recipientTaskId, startedAt, arrivesAt, new Date(normalDeadline).toISOString());
     this.changed(request.workspaceId);
     this.schedule();
-    return transit;
+    return { ...transit, paced: arrival > normalDeadline };
   }
 
   private cancelled(messageId: string) {
