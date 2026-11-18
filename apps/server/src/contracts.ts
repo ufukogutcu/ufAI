@@ -273,6 +273,12 @@ export interface AgentExecutionControl {
   frozenAt: string | null;
   queuedTriggerCount: number;
   backlogPending: boolean;
+  workspaceHeld: boolean;
+}
+export interface WorkspaceExecutionControl extends Omit<AgentExecutionControl, "workspaceHeld"> {
+  agentCount: number;
+  resumeAgentCount: number;
+  frozenAgentCount: number;
 }
 export interface Agent {
   executionControl: AgentExecutionControl;

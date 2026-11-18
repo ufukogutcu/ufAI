@@ -213,6 +213,14 @@ test("outside dismissal restores the opener or its configured focus fallback", a
   bounds(t, second);
   await tap(p, second);
   assert.equal(p.document.activeElement, fallback);
+  // An asynchronous preflight can disable/blur the opener before the modal mounts.
+  fallback.blur();
+  assert.equal(p.document.activeElement,p.document.body);
+  await act(async () => p.root.render(h(Dialog, {
+    title: "After preflight", onClose() {}, returnFocusFallbackRef: {current:fallback},
+  },h("input"))));
+  await act(async () => p.root.render(null));
+  assert.equal(p.document.activeElement,fallback);
 });
 
 test("outside clicks use unsaved-change guards and dismissing the warning keeps the draft", async t => {

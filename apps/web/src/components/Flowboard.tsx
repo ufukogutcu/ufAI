@@ -41,6 +41,7 @@ import { Appearance } from "./Appearance";
 import { Feedback, LoadingState } from "./Feedback";
 import { useNotice } from "./FeedbackProvider";
 import { WorkspaceFeedback } from "./WorkspaceFeedback";
+import { WorkspaceControls } from "./WorkspaceControls";
 
 const edgeTypes = { communication: CommunicationEdge };
 const nodeTypes = { agent: AgentNode };
@@ -158,6 +159,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
   useEffect(() => {
     agentStore.setState({ connected: false, connectionWorkspaceId: workspaceId });
     void agentStore.getState().loadWorkspace(workspaceId);
+    void agentStore.getState().loadWorkspaceControl(workspaceId).catch(() => {});
     let closed = false,
       timer: ReturnType<typeof setTimeout> | undefined,
       pending = false;
@@ -168,6 +170,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
         pending = false;
         if (closed) return;
         void (async () => {
+          void agentStore.getState().loadWorkspaceControl(workspaceId).catch(() => {});
           await agentStore.getState().loadWorkspace(workspaceId);
           await agentStore.getState().loadCommunication(workspaceId);
           const id = agentStore.getState().selected[workspaceId];
@@ -324,6 +327,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
           color="var(--canvas-dots)"
         />
         <ViewControls />
+        <WorkspaceControls workspaceId={workspaceId} />
         <ConnectionPreview />
         <Panel position="bottom-right" className={styles.hint}>
           Drag to pan <span>·</span> Scroll to zoom

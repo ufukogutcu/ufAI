@@ -32,6 +32,8 @@ import type {
   CommunicationLink,
   CommunicationAnchors,
   InboxEntry,
+  WorkspaceExecutionControl,
+  FreezePolicy,
 } from "../../server/src/contracts";
 
 interface AppearanceSuggestion {
@@ -41,6 +43,10 @@ interface AppearanceSuggestion {
 }
 
 interface AgentState {
+  workspaceControls: Record<string, WorkspaceExecutionControl>;
+  workspaceControlErrors: Record<string, string>;
+  loadWorkspaceControl: (id: string) => Promise<void>;
+  controlWorkspace: (id: string, action: "pause" | "resume", policy?: FreezePolicy) => Promise<void>;
   communication: Record<
     string,
     {
@@ -187,6 +193,7 @@ export function createAgentStore() {
   // snapshots independently so a slower read or position save cannot rewind them.
   let snapshotSequence = 0;
   const activitySequences = new Map<string, number>();
+  const workspaceControlSequences = new Map<string, number>();
   const loads = new Map<string, Promise<void>>(),
     positionWrites = new Map<string, Promise<void>>();
   const pendingPositions = new Map<
@@ -195,6 +202,14 @@ export function createAgentStore() {
   >();
   const revisions = new Map<string, number>();
   return createStore<AgentState>((set, get) => {
+    function putWorkspaceControl(id: string, control: WorkspaceExecutionControl, sequence: number) {
+      const current = get().workspaceControls[id];
+      if (current && (current.revision > control.revision ||
+        (current.revision === control.revision && sequence < (workspaceControlSequences.get(id) ?? 0)))) return;
+      workspaceControlSequences.set(id, sequence);
+      set(s => ({ workspaceControls: equal(current,control) ? s.workspaceControls : { ...s.workspaceControls, [id]: control },
+        workspaceControlErrors: { ...s.workspaceControlErrors, [id]: "" } }));
+    }
     function forgetPanelTabs(ids: string[]) {
       if (!ids.some(id => Object.hasOwn(get().panelTabs, id))) return;
       const panelTabs = { ...get().panelTabs };
@@ -650,6 +665,31 @@ export function createAgentStore() {
       errorActionLabel: "Reload agents",
       retryError: null,
       connectionWorkspaceId: null,
+      workspaceControls: {},
+      workspaceControlErrors: {},
+      async loadWorkspaceControl(id) {
+        const sequence = ++snapshotSequence;
+        try {
+          putWorkspaceControl(id,await request<WorkspaceExecutionControl>(`/workspaces/${encodeURIComponent(id)}/execution-control`),sequence);
+        } catch (error) {
+          if (sequence >= (workspaceControlSequences.get(id) ?? 0)) {
+            workspaceControlSequences.set(id,sequence);
+            set(s => ({workspaceControlErrors: {...s.workspaceControlErrors,[id]:errorMessage(error)}}));
+          }
+          throw error;
+        }
+      },
+      async controlWorkspace(id, action, policy) {
+        const current = get().workspaceControls[id];
+        if (!current) throw new Error("Load the workspace pause state before trying again.");
+        const sequence = ++snapshotSequence;
+        const control = await request<WorkspaceExecutionControl>(`/workspaces/${encodeURIComponent(id)}/${action}`,"POST",{
+          requestId: crypto.randomUUID(),expectedRevision:current.revision,
+          ...(action === "resume" ? {policy:policy ?? "all"} : {}),
+        });
+        putWorkspaceControl(id,control,sequence);
+        await get().loadWorkspace(id);
+      },
       async loadWorkspace(id) {
         return refresh(`workspace:${id}`, async () => {
           try {

@@ -1,4 +1,5 @@
 import { AgentFreezing } from "./agent-freezing.js";
+import { WorkspaceFreezing } from "./workspace-freezing.js";
 import { withTaskTrigger } from "./task-trigger.js";
 import type { SkillActivation } from "./skill-types.js";
 import { skillRuntimeGuidance } from "./skills.js";
@@ -68,6 +69,7 @@ type Summary = { content: string; throughSequence: number; version: number };
 export class AgentExecution {
   readonly issues: AgentIssues;
   readonly freezing: AgentFreezing;
+  readonly workspaceFreezing: WorkspaceFreezing;
   messaging?: import("./messaging.js").MessagingService;
   incoming?: import("./submission-media.js").SubmissionMedia;
   readonly events = new EventEmitter();
@@ -90,6 +92,7 @@ export class AgentExecution {
   ) {
     this.issues = new AgentIssues(db);
     this.freezing = new AgentFreezing(db, this);
+    this.workspaceFreezing = new WorkspaceFreezing(db, this);
     this.events.setMaxListeners(128);
     // Replies committed before a crash resume maintenance without repeating generation.
     db.transaction(() => {
@@ -130,6 +133,7 @@ export class AgentExecution {
           AND NOT EXISTS (SELECT 1 FROM agent_turns r WHERE r.taskId=agent_tasks.id AND r.status IN ('interrupted','failed','blocked'))`,
       ).run();
     })();
+    this.workspaceFreezing.settlePending();
     if (options.autoStart !== false) {
       this.timer = setInterval(() => this.wake(), 1000);
       this.timer.unref();
@@ -699,6 +703,8 @@ export class AgentExecution {
   }
   freezeChanged(id: string) {
     this.settleFreeze(id);
+    const owner = this.db.prepare("SELECT workspaceId FROM agents WHERE id=?").get(id) as {workspaceId:string} | undefined;
+    if (owner) this.workspaceFreezing.settle(owner.workspaceId);
     this.event(id);
     this.wake();
   }
@@ -796,6 +802,7 @@ export class AgentExecution {
               t.rowid) AS laneOrder
           FROM agent_turns t JOIN agent_tasks own ON own.id=t.taskId
           WHERE t.status='queued' AND NOT EXISTS(SELECT 1 FROM agent_freezes f WHERE f.agentId=t.agentId AND f.state!='active')
+            AND NOT EXISTS(SELECT 1 FROM workspace_freezes wf JOIN agents wa ON wa.workspaceId=wf.workspaceId WHERE wa.id=t.agentId AND wf.state!='active')
             AND ${this.freezing.taskAdmissionSql("t.taskId")}
             AND (t.snapshot IS NOT NULL OR EXISTS(SELECT 1 FROM agent_turns prior WHERE prior.taskId=t.taskId AND prior.snapshot IS NOT NULL)
               OR NOT EXISTS(SELECT 1 FROM trigger_occurrences o JOIN agent_triggers g ON g.id=o.triggerId

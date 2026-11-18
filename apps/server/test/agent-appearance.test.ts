@@ -139,7 +139,7 @@ test("migration backfills durable distinct appearances while preserving centers 
     INSERT INTO agent_turns(id,taskId,conversationId,agentId,inputMessageId,attempt,status,snapshot,createdAt,updatedAt) VALUES ('turn','task','conversation','agent-0','message',1,'queued','{"keep":true}','then','then');`);
   db.close(); db = openDatabase(path);
   const agents = db.prepare("SELECT * FROM agents ORDER BY id").all() as any[];
-  assert.equal(db.pragma("user_version", { simple: true }), 39);
+  assert.equal(db.pragma("user_version", { simple: true }), 40);
   assert.equal(new Set(agents.map(agent => appearanceKey(JSON.parse(agent.appearance)))).size, 4);
   for (const agent of agents) {
     assert.equal(agent.x + 176 / 2, 100 + 224 / 2);
@@ -171,7 +171,7 @@ test("compact geometry upgrades version 16 once, preserving metadata and clampin
   db.pragma("user_version = 16");
   db.close(); db = openDatabase(path);
   const after = db.prepare("SELECT * FROM agents ORDER BY id").all() as any[];
-  assert.equal(db.pragma("user_version", { simple: true }), 39);
+  assert.equal(db.pragma("user_version", { simple: true }), 40);
   for (let i = 0; i < before.length; i++) {
     const expectedX = Math.max(-1e6, Math.min(1e6, before[i].x + 32) - 16);
     const { clusterId: _membership, ...retained } = before[i];
@@ -204,7 +204,7 @@ test("larger character geometry upgrades version 23 once, preserving centers and
   db.pragma("user_version = 23");
   db.close(); db = openDatabase(path);
   const after = db.prepare("SELECT * FROM agents ORDER BY id").all() as any[];
-  assert.equal(db.pragma("user_version", { simple: true }), 39);
+  assert.equal(db.pragma("user_version", { simple: true }), 40);
   for (let i = 0; i < before.length; i++) {
     const x = Math.max(-1e6, before[i].x - 16);
     const y = Math.max(-1e6, before[i].y - 16);

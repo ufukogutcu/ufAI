@@ -1306,7 +1306,10 @@ export class Triggers {
           this.db.prepare("UPDATE trigger_occurrences SET state=?,resumeBatch=?,error=? WHERE id=?")
             .run(keep ? o.state : "skipped",c.batch,keep ? null : "Skipped by the agent's unfreeze queue choice.",o.id);
         }
-        if (rows.length < 32) this.db.prepare("UPDATE agent_freezes SET state='active',revision=revision+1,replaying=1 WHERE agentId=? AND state='resuming'").run(c.agentId);
+        if (rows.length < 32) {
+          this.db.prepare("UPDATE agent_freezes SET state='active',revision=revision+1,replaying=1 WHERE agentId=? AND state='resuming'").run(c.agentId);
+          this.db.prepare("UPDATE workspace_freeze_agents SET prepared=1 WHERE agentId=? AND releaseOnResume=1").run(c.agentId);
+        }
       })();
       this.execution.freezeChanged(c.agentId);
     }
@@ -1326,6 +1329,7 @@ export class Triggers {
       this.reconcile();
       this.fanout();
       this.prepareResumes();
+      this.execution.workspaceFreezing.settlePending();
       await this.automation?.tick();
       await this.dispatch();
     })().finally(() => {

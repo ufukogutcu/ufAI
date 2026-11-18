@@ -149,6 +149,17 @@ One local installation holds one shared setup across browser sessions. There are
 - **Limitations:** Freeze does not suspend external services, browser pages or already-running commands, and it cannot undo actions. A tool or provider that never finishes can leave Freezing… pending; Stop still cancels the affected task. Preparing resume… may take time for a large backlog. Workspace duplicates start active and do not copy frozen execution, checkpoints or queues.
 - **Related references:** [Execution](#agent-execution), [Chat](#agent-chat), [Triggers](#agent-triggers), [Characters](#agent-characters).
 
+### workspace-pausing
+
+- **Status:** implemented
+- **Purpose:** Freeze every agent in a workspace with one control, while preserving individual freezes.
+- **Steps:** Use Pause workspace in the separate glass menu at the bottom center of the flowboard. On narrow screens this menu sits above the zoom controls. Pausing… waits for agents to reach the same safe stopping points as individual freezing; the play button becomes Resume workspace when they are paused. Other workspaces continue normally.
+- **New agents and messages:** Agents created while pausing or paused start frozen. Agents created during resume preparation also wait for the workspace to resume. Messages, input answers and trigger occurrences can still be accepted and remain queued. Individual agents cannot unfreeze until the workspace resumes.
+- **Resuming:** Resume workspace always opens a dialog, including with an empty trigger queue. Choose Run all, Skip all, or Latest per trigger for the agents that the workspace will release. The displayed count may be incomplete while occurrences are still being collected; the choice applies through confirmation, including never-started backlog from before the pause. Cancel leaves the workspace paused. Agents frozen individually before the workspace pause stay frozen and their queued triggers are unchanged by this choice.
+- **Order and recovery:** All participating agents remain held until trigger preparation finishes. Interrupted work then resumes first and retained triggers replay one at a time per agent. Workspace pause and preparation survive reloads and backend restarts. New and duplicated workspaces start active.
+- **Limitations:** The same [safe stopping and external-process limits](#agent-freezing) apply. Pausing does not suspend already-running commands or undo actions. An agent already preparing its individual resume must finish before the workspace can be paused.
+- **Related references:** [Workspaces](#workspaces), [Agent freezing](#agent-freezing), [Triggers](#agent-triggers).
+
 ### agent-execution
 
 - **Status:** implemented

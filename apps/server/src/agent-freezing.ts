@@ -86,7 +86,11 @@ export class AgentFreezing {
   state(id: string): AgentExecutionControl["state"] {
     return (this.db.prepare("SELECT state FROM agent_freezes WHERE agentId=?").get(id) as any)?.state ?? "active";
   }
-  blocked(id: string) { return this.state(id) !== "active"; }
+  workspaceHold(id: string): AgentExecutionControl["state"] | undefined {
+    return (this.db.prepare(`SELECT f.state FROM workspace_freezes f JOIN agents a ON a.workspaceId=f.workspaceId
+      WHERE a.id=? AND f.state!='active'`).get(id) as {state:AgentExecutionControl["state"]} | undefined)?.state;
+  }
+  blocked(id: string) { return this.state(id) !== "active" || !!this.workspaceHold(id); }
   control(id: string): AgentExecutionControl {
     const row = this.db.prepare("SELECT * FROM agent_freezes WHERE agentId=?").get(id) as any;
     const queued = this.db.prepare(`SELECT count(*) n FROM trigger_occurrences o JOIN agent_triggers g ON g.id=o.triggerId
@@ -98,9 +102,18 @@ export class AgentFreezing {
       AND (r.untilSequence IS NULL OR r.untilSequence>e.sequence) JOIN agent_triggers g ON g.id=r.triggerId
       WHERE g.agentId=? AND g.deleted=0 AND e.processed=0 AND e.cursor<r.sequence
       AND json_extract(r.input,'$.when.kind')='event' LIMIT 1`).get(id, new Date().toISOString(), id);
-    return { state: row?.state ?? "active", revision: row?.revision ?? 1,
+    const hold = this.workspaceHold(id);
+    return { state: hold === "resuming" ? "resuming" : row?.state ?? "active", revision: row?.revision ?? 1,
       requestedAt: row?.requestedAt ?? null, frozenAt: row?.frozenAt ?? null,
-      queuedTriggerCount: queued.n, backlogPending: !!backlog };
+      queuedTriggerCount: queued.n, backlogPending: !!backlog, workspaceHeld: !!hold };
+  }
+  /** Transaction-only primitive shared by individual and workspace requests. */
+  beginFreeze(id: string, stamp: string) {
+    this.db.prepare("INSERT OR IGNORE INTO agent_freezes(agentId,state) VALUES(?,'active')").run(id);
+    this.db.prepare("UPDATE agent_freezes SET state='freezing',revision=revision+1,requestedAt=?,frozenAt=NULL WHERE agentId=?").run(stamp,id);
+    this.db.prepare(`INSERT OR IGNORE INTO agent_resume_blockers SELECT ?,t.id FROM agent_tasks t
+      WHERE t.agentId=? AND t.kind='task' AND t.status NOT IN ('completed','failed','cancelled')
+      AND EXISTS(SELECT 1 FROM agent_turns r WHERE r.taskId=t.id AND r.status IN ('running','waiting') AND r.snapshot IS NOT NULL)`).run(id,id);
   }
   request(id: string, action: "freeze" | "resume", input: { requestId: string; expectedRevision: number; policy?: FreezePolicy }) {
     this.execution.requiredAgent(id);
@@ -115,19 +128,23 @@ export class AgentFreezing {
       const control = this.control(id);
       if (control.revision !== input.expectedRevision)
         throw new ConnectionError("Agent freeze state changed. Refresh and try again.", 409);
+      if (action === "resume" && control.workspaceHeld)
+        throw new ConnectionError("Resume the workspace before unfreezing this agent.", 409);
       if (action === "resume" && control.state !== "frozen")
         throw new ConnectionError("Wait until the agent is frozen before resuming.", 409);
       if (action === "freeze" && control.state === "resuming")
         throw new ConnectionError("Resume preparation is still running.", 409);
       this.db.prepare("INSERT INTO agent_freeze_requests VALUES(?,?,?,?)").run(input.requestId,id,action,encoded);
+      if (action === "freeze" && control.workspaceHeld) {
+        this.db.prepare("UPDATE workspace_freeze_agents SET releaseOnResume=0 WHERE agentId=?").run(id);
+        this.db.prepare("UPDATE agent_freezes SET revision=revision+1 WHERE agentId=?").run(id);
+        return;
+      }
       if (action === "freeze" && control.state !== "active") return;
       const stamp = new Date().toISOString();
       this.db.prepare("INSERT OR IGNORE INTO agent_freezes(agentId,state) VALUES(?,'active')").run(id);
       if (action === "freeze") {
-        this.db.prepare("UPDATE agent_freezes SET state='freezing',revision=revision+1,requestedAt=?,frozenAt=NULL WHERE agentId=?").run(stamp,id);
-        this.db.prepare(`INSERT OR IGNORE INTO agent_resume_blockers SELECT ?,t.id FROM agent_tasks t
-          WHERE t.agentId=? AND t.kind='task' AND t.status NOT IN ('completed','failed','cancelled')
-          AND EXISTS(SELECT 1 FROM agent_turns r WHERE r.taskId=t.id AND r.status IN ('running','waiting') AND r.snapshot IS NOT NULL)`).run(id,id);
+        this.beginFreeze(id,stamp);
       } else {
         this.db.prepare(`UPDATE agent_freezes SET state='resuming',revision=revision+1,cutoff=?,eventCutoff=(SELECT value FROM trigger_clock),occurrenceCutoff=coalesce((SELECT max(sequence) FROM trigger_occurrences),0),policy=?,batch=? WHERE agentId=?`)
           .run(stamp,input.policy,input.requestId,id);

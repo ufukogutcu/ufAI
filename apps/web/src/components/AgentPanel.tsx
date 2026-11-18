@@ -641,7 +641,7 @@ export function AgentPanel({
         ))}
       </nav>
       {freeze.dialog}
-      {agent.executionControl?.state !== undefined && agent.executionControl.state !== "active" && <p className={freezeStyles.waiting} role="status">{freezeLabel(agent)} · New messages will wait until the agent resumes. Background commands continue.</p>}
+      {agent.executionControl?.state !== undefined && agent.executionControl.state !== "active" && <p className={freezeStyles.waiting} role="status">{freezeLabel(agent)} · {agent.executionControl.workspaceHeld ? "Resume the workspace before unfreezing this agent. " : ""}New messages will wait until the agent resumes. Background commands continue.</p>}
       <FeedbackHost kind="panel" />
       {error && (
         <Feedback role="alert">

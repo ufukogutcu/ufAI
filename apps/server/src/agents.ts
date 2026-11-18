@@ -61,6 +61,18 @@ export function registerAgents(
     if (action === "resume" && !["all","skip","latest_per_trigger"].includes(p.policy as string)) invalid("policy","Choose all, skip or latest_per_trigger.");
     return reply.code(202).send(execution.freezing.request(req.params.id,action,p as {requestId:string;expectedRevision:number;policy?:import("./contracts.js").FreezePolicy}));
   });
+  app.get<{Params:{id:string}}>("/api/workspaces/:id/execution-control", async req => {
+    guard(req);
+    return execution.workspaceFreezing.control(req.params.id);
+  });
+  for (const action of ["pause","resume"] as const) app.post<{Params:{id:string}}>(`/api/workspaces/:id/${action}`,async (req,reply) => {
+    guard(req);
+    const p = fields(req.body,["requestId","expectedRevision",...(action === "resume" ? ["policy"] : [])]);
+    if (typeof p.requestId !== "string" || !/^[a-zA-Z0-9_-]{8,100}$/.test(p.requestId)) invalid("requestId","Use a unique request ID of 8–100 letters, numbers, underscores or hyphens.");
+    if (!Number.isSafeInteger(p.expectedRevision) || (p.expectedRevision as number)<1) invalid("expectedRevision","Use a positive saved control revision.");
+    if (action === "resume" && !["all","skip","latest_per_trigger"].includes(p.policy as string)) invalid("policy","Choose all, skip or latest_per_trigger.");
+    return reply.code(202).send(execution.workspaceFreezing.request(req.params.id,action,p as {requestId:string;expectedRevision:number;policy?:import("./contracts.js").FreezePolicy}));
+  });
   const workspace = (id: string) => {
     execution.assertWorkspaceAvailable(id);
     if (!db.prepare("SELECT id FROM workspaces WHERE id=?").get(id))
@@ -171,6 +183,7 @@ export function registerAgents(
           ts,
           ts,
         );
+        execution.workspaceFreezing.inherit(id,req.params.id);
       }).immediate();
       execution.event(id);
       files.kick();

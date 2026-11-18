@@ -46,9 +46,9 @@ export function Dialog({
     dialog.querySelector<HTMLElement>(initialFocusSelector)?.focus();
     return () => {
       dialog.close();
-      if (previous instanceof HTMLElement && previous.isConnected)
+      if (previous instanceof HTMLElement && previous.isConnected && previous !== document.body)
         previous.focus();
-      if (returnFocusFallbackRef && document.activeElement !== previous)
+      if (returnFocusFallbackRef && (previous === document.body || document.activeElement !== previous))
         returnFocusFallbackRef.current?.focus();
     };
   }, [initialFocusSelector, returnFocusFallbackRef]);

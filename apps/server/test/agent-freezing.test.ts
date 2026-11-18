@@ -9,7 +9,7 @@ import { openDatabase } from "../src/database.js";
 import { createApp } from "../src/app.js";
 import type { Triggers } from "../src/triggers.js";
 import type { TaskRequest, ToolRound } from "../src/execution-types.js";
-import type { FreezePolicy } from "../src/contracts.js";
+import type { FreezePolicy, WorkspaceExecutionControl } from "../src/contracts.js";
 import { ConnectionError } from "../src/model-providers.js";
 
 const round = (calls: ToolRound["calls"] = [], text = "Done"): ToolRound => ({calls,text,continuation:{saved:"opaque-signature"},usage:{outputTokens:3}});
@@ -56,6 +56,181 @@ async function setup(t:TestContext) {
     async trigger(agentId="a") { return service().save(agentId,{name:"Fixture",instructions:"Handle once",when:{kind:"every",everyMs:1000,anchor:new Date(clock).toISOString()},enabled:true,paused:false,requiredSkillIds:[]}); },
   };
 }
+
+async function workspaceAction(s: Awaited<ReturnType<typeof setup>>, action: "pause" | "resume", policy?: FreezePolicy) {
+  const current = s.engine.workspaceFreezing.control(s.workspaceId);
+  const response = await s.app.inject({method:"POST",url:`/api/workspaces/${s.workspaceId}/${action}`,
+    payload:{requestId:randomUUID(),expectedRevision:current.revision,...(policy ? {policy} : {})}});
+  assert.equal(response.statusCode,202,response.body);
+  return response.json<WorkspaceExecutionControl>();
+}
+
+test("workspace pause preserves individual freezes, rejects individual resumes and freezes new agents before admission",async t=>{
+  const s=await setup(t);
+  await s.action("freeze");
+  const paused=await workspaceAction(s,"pause");
+  assert.equal(paused.state,"frozen");
+  assert.equal(paused.resumeAgentCount,1);
+  assert.equal(paused.frozenAgentCount,2);
+  assert.equal(s.control().workspaceHeld,true);
+  const rejected=await s.app.inject({method:"POST",url:"/api/agents/a/resume",payload:{requestId:randomUUID(),expectedRevision:s.control().revision,policy:"all"}});
+  assert.equal(rejected.statusCode,409);
+  assert.match(rejected.body,/Resume the workspace/);
+  const created=await s.app.inject({method:"POST",url:`/api/workspaces/${s.workspaceId}/agents`,payload:{name:"New agent",presetId:"p"}});
+  assert.equal(created.statusCode,201,created.body);
+  const agent=created.json();
+  assert.equal(agent.executionControl.state,"frozen");
+  assert.equal(agent.executionControl.workspaceHeld,true);
+  const task=s.engine.submit(agent.id,"new","Wait for workspace",randomUUID());
+  s.engine.pump();assert.equal(s.engine.task(task.taskId!).status,"queued");
+  await s.reopen();
+  assert.equal(s.engine.workspaceFreezing.control(s.workspaceId).state,"frozen");
+  await workspaceAction(s,"resume","all");
+  await s.service.tick();
+  assert.equal(s.engine.workspaceFreezing.control(s.workspaceId).state,"active");
+  assert.equal(s.control().state,"frozen");
+  assert.equal(s.control().workspaceHeld,false);
+  assert.equal(s.engine.requiredAgent("b").executionControl.state,"active");
+  await s.until(()=>s.engine.task(task.taskId!).status==="completed");
+});
+
+test("an explicit freeze during workspace pause is retained on workspace resume",async t=>{
+  const s=await setup(t);await workspaceAction(s,"pause");
+  await s.action("freeze");
+  assert.equal(s.engine.workspaceFreezing.control(s.workspaceId).resumeAgentCount,1);
+  await workspaceAction(s,"resume","skip");await s.service.tick();
+  assert.equal(s.control().state,"frozen");
+  assert.equal(s.engine.requiredAgent("b").executionControl.state,"active");
+});
+
+test("workspace controls validate inputs, fence revisions and origins, and replay canonical requests",async t=>{
+  const s=await setup(t),url=`/api/workspaces/${s.workspaceId}/pause`;
+  const payload={requestId:randomUUID(),expectedRevision:1};
+  assert.equal((await s.app.inject({method:"POST",url,headers:{origin:"https://foreign.example"},payload})).statusCode,403);
+  assert.equal((await s.app.inject({method:"POST",url,payload:{...payload,extra:true}})).statusCode,400);
+  assert.equal((await s.app.inject({method:"POST",url,payload:{...payload,expectedRevision:0}})).statusCode,400);
+  assert.equal((await s.app.inject({method:"POST",url,payload:{...payload,requestId:"short"}})).statusCode,400);
+  const first=await s.app.inject({method:"POST",url,payload});assert.equal(first.statusCode,202,first.body);
+  const replay=await s.app.inject({method:"POST",url,payload:{expectedRevision:1,requestId:payload.requestId}});
+  assert.equal(replay.statusCode,202);assert.equal(replay.json().revision,first.json().revision);
+  assert.equal((await s.app.inject({method:"POST",url,payload:{...payload,expectedRevision:2}})).statusCode,409);
+  assert.equal((await s.app.inject({method:"POST",url,payload:{...payload,requestId:randomUUID()}})).statusCode,409);
+  assert.equal((await s.app.inject({method:"GET",url:`/api/workspaces/missing/execution-control`})).statusCode,404);
+  const resumeUrl=`/api/workspaces/${s.workspaceId}/resume`;
+  assert.equal((await s.app.inject({method:"POST",url:resumeUrl,payload:{requestId:randomUUID(),expectedRevision:first.json().revision,policy:"bad"}})).statusCode,400);
+  const read=await s.app.inject(`/api/workspaces/${s.workspaceId}/execution-control`);
+  assert.equal(read.json().state,"frozen");
+  const current=s.engine.requiredAgent("b").executionControl;
+  const r=await s.app.inject({method:"POST",url:"/api/agents/b/resume",payload:{requestId:randomUUID(),expectedRevision:current.revision,policy:"all"}});
+  assert.equal(r.statusCode,409);
+});
+
+test("empty workspace pause/resume emits workspace invalidations and deletion of the last preparing member releases the barrier",async t=>{
+  const s=await setup(t);
+  s.db.prepare("DELETE FROM agents").run();
+  assert.equal((await workspaceAction(s,"pause")).state,"frozen");
+  assert.equal((await workspaceAction(s,"resume","skip")).state,"active");
+  assert.ok(s.db.prepare("SELECT 1 FROM execution_events WHERE workspaceId=? AND agentId IS NULL").get(s.workspaceId));
+  const made=await s.app.inject({method:"POST",url:`/api/workspaces/${s.workspaceId}/agents`,payload:{name:"Only member"}});
+  assert.equal(made.json().executionControl.state,"active");
+  await workspaceAction(s,"pause");await workspaceAction(s,"resume","all");
+  s.db.prepare("DELETE FROM agents").run();await s.service.tick();
+  assert.equal(s.engine.workspaceFreezing.control(s.workspaceId).state,"active");
+});
+
+test("workspace pause waits for both execution lanes and leaves other workspaces running",async t=>{
+  const s=await setup(t);
+  const other=(await s.app.inject({method:"POST",url:"/api/workspaces",payload:{name:"Other"}})).json();
+  const otherAgent=(await s.app.inject({method:"POST",url:`/api/workspaces/${other.id}/agents`,payload:{name:"Other agent",presetId:"p"}})).json();
+  const pending:((value:ToolRound)=>void)[]=[];
+  s.service.connections.toolRound=async(_snapshot,request)=>{
+    if(request.messages.some(m=>m.content.includes("Hold lane"))) return new Promise(resolve=>pending.push(resolve));
+    return round();
+  };
+  const task=s.engine.submit("a","new","Hold lane task",randomUUID());
+  const chat=s.engine.submit("a","chat","Hold lane chat",randomUUID());
+  await s.until(()=>pending.length===2);
+  assert.equal((await workspaceAction(s,"pause")).state,"freezing");
+  const outside=s.engine.submit(otherAgent.id,"new","Continue outside",randomUUID());
+  await s.until(()=>s.engine.task(outside.taskId!).status==="completed");
+  pending[0]!(round([write("task-write","task.txt")]));
+  await s.until(()=>!!s.db.prepare("SELECT 1 FROM execution_checkpoints WHERE turnId=? AND safe=1").get(task.turnId));
+  await s.service.tick();assert.equal(s.engine.workspaceFreezing.control(s.workspaceId).state,"freezing");
+  pending[1]!(round([write("chat-write","chat.txt")]));
+  await s.until(()=>!!s.db.prepare("SELECT 1 FROM execution_checkpoints WHERE turnId=? AND safe=1").get(chat.turnId));
+  await s.service.tick();assert.equal(s.engine.workspaceFreezing.control(s.workspaceId).state,"frozen");
+  assert.equal((s.db.prepare("SELECT count(*) n FROM tool_invocations").get() as any).n,0);
+  s.service.connections.toolRound=async()=>round();
+  await workspaceAction(s,"resume","all");await s.service.tick();
+  await s.until(()=>s.engine.task(task.taskId!).status==="completed" && s.engine.task(chat.taskId!).status==="completed");
+  assert.equal((s.db.prepare("SELECT count(*) n FROM tool_invocations").get() as any).n,2);
+});
+
+for(const policy of ["all","skip","latest_per_trigger"] as const) test(`workspace ${policy}: shared cutoff, bounded preparation, restart, barrier and agents created during preparation`,async t=>{
+  const s=await setup(t);
+  await workspaceAction(s,"pause");
+  const first=await s.trigger("a"),second=await s.trigger("b");
+  for(let n=0;n<65;n++) s.service.run(second.id,randomUUID());
+  s.service.run(first.id,randomUUID());
+  await workspaceAction(s,"resume",policy);
+  const cutoffs=s.db.prepare("SELECT cutoff,eventCutoff,occurrenceCutoff FROM agent_freezes ORDER BY agentId").all();
+  assert.deepEqual(cutoffs[0],cutoffs[1]);
+  s.service.run(first.id,randomUUID()); // After confirmation: excluded from the chosen policy.
+  await s.service.tick();
+  assert.equal(s.engine.workspaceFreezing.control(s.workspaceId).state,"resuming");
+  assert.equal(s.engine.freezing.state("a"),"active","a finished its preparation, but must stay held");
+  assert.equal(s.control().state,"resuming");
+  assert.equal(s.engine.freezing.blocked("a"),true);
+  assert.equal((s.db.prepare("SELECT count(*) n FROM agent_tasks").get() as any).n,0);
+  const made=await s.app.inject({method:"POST",url:`/api/workspaces/${s.workspaceId}/agents`,payload:{name:"During preparation"}});
+  const newId=made.json().id;
+  assert.equal(made.json().executionControl.state,"resuming");
+  assert.equal(s.engine.freezing.state(newId),"frozen");
+  await s.reopen();
+  for(let n=0;n<10 && s.engine.workspaceFreezing.control(s.workspaceId).state!=="active";n++) await s.service.tick();
+  assert.equal(s.engine.workspaceFreezing.control(s.workspaceId).state,"active");
+  assert.equal(s.engine.requiredAgent(newId).executionControl.state,"active");
+  const skipped=(s.db.prepare("SELECT count(*) n FROM trigger_occurrences WHERE state='skipped'").get() as any).n;
+  assert.equal(skipped,policy==="skip"?66:policy==="latest_per_trigger"?64:0);
+  assert.ok(s.service.occurrences(s.workspaceId,first.id).items.some(o=>o.state!=="skipped"));
+});
+
+test("pausing during individual resume preparation is rejected without acquiring a workspace hold",async t=>{
+  const s=await setup(t);await s.action("freeze");await s.action("resume","all");
+  const r=await s.app.inject({method:"POST",url:`/api/workspaces/${s.workspaceId}/pause`,payload:{requestId:randomUUID(),expectedRevision:1}});
+  assert.equal(r.statusCode,409);assert.match(r.body,/agent is preparing/);
+  assert.equal(s.engine.workspaceFreezing.control(s.workspaceId).state,"active");
+});
+
+for(const policy of ["all","skip","latest_per_trigger"] as const) test(`workspace ${policy} covers uncollected cron and event backlog without changing individually frozen queues`,async t=>{
+  const s=await setup(t);await s.action("freeze");
+  const source=s.service.saveSource(s.workspaceId,{name:"Events"}).source;
+  const cron=await s.service.save("b",{name:"Cron",instructions:"Handle cron",when:{kind:"cron",expression:"* * * * *",timezone:"UTC"},enabled:true,paused:false,requiredSkillIds:[]});
+  const eventInput={name:"Events",instructions:"Handle event",when:{kind:"event" as const,eventType:"fixture.changed",sourceId:source.id},enabled:true,paused:false,requiredSkillIds:[]};
+  const event=await s.service.save("b",eventInput),individual=await s.service.save("a",eventInput);
+  await workspaceAction(s,"pause");
+  const accept=(id:string)=>s.service.accept(s.workspaceId,source.id,source.id,s.service.eventInput({eventId:id,eventType:"fixture.changed",data:{id}}));
+  const old=[accept("before-one"),accept("before-two")];
+  s.advance(5*60000);
+  assert.equal(s.engine.workspaceFreezing.control(s.workspaceId).backlogPending,true);
+  await workspaceAction(s,"resume",policy);
+  // Exercise a shared future cutoff with the deterministic scheduler clock.
+  s.db.prepare("UPDATE agent_freezes SET cutoff=? WHERE agentId='b'").run(s.service.now());
+  s.db.prepare("UPDATE workspace_freezes SET cutoff=? WHERE workspaceId=?").run(s.service.now(),s.workspaceId);
+  const newer=accept("after-cutoff");
+  await s.reopen();
+  for(let n=0;n<30 && s.engine.workspaceFreezing.control(s.workspaceId).state!=="active";n++) await s.service.tick();
+  assert.equal(s.engine.workspaceFreezing.control(s.workspaceId).state,"active");
+  const cronRows=s.service.occurrences(s.workspaceId,cron.id).items;
+  assert.equal(cronRows.length,5);
+  assert.equal(cronRows.filter(o=>o.state==="skipped").length,policy==="all"?0:policy==="skip"?5:4);
+  const events=s.service.occurrences(s.workspaceId,event.id).items;
+  assert.equal(events.filter(o=>old.some(r=>r.id===o.eventId) && o.state==="skipped").length,policy==="all"?0:policy==="skip"?2:1);
+  assert.notEqual(events.find(o=>o.eventId===newer.id)?.state,"skipped");
+  const untouched=s.service.occurrences(s.workspaceId,individual.id).items;
+  assert.equal(untouched.length,3);assert.ok(untouched.every(o=>o.state==="queued"));
+  assert.equal(s.control().state,"frozen");
+});
 
 test("freeze control is revisioned, idempotent, local-only and accepts queued Chat/task input",async t=>{
   const s=await setup(t);

@@ -400,7 +400,7 @@ test("newer database versions fail without downgrading schema", async (t) => {
   t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "test.sqlite");
   const db = openDatabase(path);
-  assert.equal(db.pragma("user_version", { simple: true }), 39);
+  assert.equal(db.pragma("user_version", { simple: true }), 40);
   assert.equal(db.pragma("foreign_keys", { simple: true }), 1);
   const unsupportedVersion = (db.pragma("user_version", { simple: true }) as number) + 1;
   db.pragma(`user_version = ${unsupportedVersion}`);

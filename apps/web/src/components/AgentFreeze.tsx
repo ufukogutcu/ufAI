@@ -22,7 +22,7 @@ export function FrozenIndicator({agent}: {agent:Agent}) {
   return <Tooltip content={label}><span className={styles.indicator} role="img" aria-label={label}><Snowflake size={14} aria-hidden="true" /></span></Tooltip>;
 }
 
-const choices: {value:FreezePolicy;label:string;description:string}[] = [
+export const freezeChoices: {value:FreezePolicy;label:string;description:string}[] = [
   {value:"all",label:"Run all",description:"Run every queued occurrence, one at a time."},
   {value:"skip",label:"Skip all",description:"Skip queued triggers and continue interrupted work."},
   {value:"latest_per_trigger",label:"Latest per trigger",description:"Keep only the newest queued occurrence of each trigger."},
@@ -36,7 +36,8 @@ export function useAgentFreeze(agent: Agent | undefined) {
   const [policy,setPolicy] = useState<FreezePolicy>("all");
   const close = useCallback(() => { setOpen(false); setError(""); },[]);
   const state = agent?.executionControl?.state ?? "active";
-  const pending = busy || state === "freezing" || state === "resuming";
+  const held = agent?.executionControl?.workspaceHeld ?? false;
+  const pending = busy || held || state === "freezing" || state === "resuming";
   const submit = useCallback(async (action:"freeze"|"resume",selection?:FreezePolicy) => {
     if (!agent) return;
     setBusy(true); setError("");
@@ -64,18 +65,19 @@ export function useAgentFreeze(agent: Agent | undefined) {
   const dialog = open && agent ? <Dialog title={`Unfreeze ${agent.name}`} onClose={close} busy={busy}>
     <div className={styles.content}>
       {error && <Feedback>{error}</Feedback>}
+      {held && <p role="status">Resume the workspace before unfreezing this agent.</p>}
       {state === "frozen" && <>
         <p>{agent.executionControl?.queuedTriggerCount ?? 0} queued trigger occurrences{agent.executionControl?.backlogPending ? "; additional occurrences are still being collected" : ""}.</p>
         <p>Interrupted work resumes first. New messages stay queued. Choose how to handle triggers pending when you confirm.</p>
-        <fieldset className={styles.choices}><legend>Queued triggers</legend>{choices.map(choice => <label key={choice.value}>
-          <input type="radio" name={`freeze-policy-${agent.id}`} value={choice.value} checked={policy === choice.value} onChange={()=>setPolicy(choice.value)} disabled={busy} />
+        <fieldset className={styles.choices}><legend>Queued triggers</legend>{freezeChoices.map(choice => <label key={choice.value}>
+          <input type="radio" name={`freeze-policy-${agent.id}`} value={choice.value} checked={policy === choice.value} onChange={()=>setPolicy(choice.value)} disabled={busy || held} />
           <span><strong>{choice.label}</strong><small>{choice.description}</small></span>
         </label>)}</fieldset>
       </>}
       <div className={styles.actions}><button className="button" onClick={close} disabled={busy}>Cancel</button>
-        {state === "frozen" && <BusyButton className="button primary" busy={busy} onClick={()=>void submit("resume",policy)}>Unfreeze</BusyButton>}
+        {state === "frozen" && <BusyButton className="button primary" busy={busy} disabled={held} onClick={()=>void submit("resume",policy)}>Unfreeze</BusyButton>}
       </div>
     </div>
   </Dialog> : null;
-  return {activate,dialog,pending,label:state === "active" ? "Freeze Agent" : state === "frozen" ? "Unfreeze Agent…" : freezeLabel(agent!)};
+  return {activate,dialog,pending,label:held ? "Resume the workspace before unfreezing this agent" : state === "active" ? "Freeze Agent" : state === "frozen" ? "Unfreeze Agent…" : freezeLabel(agent!)};
 }
