@@ -27,6 +27,12 @@ const defaultPath = fileURLToPath(
   new URL("../../../data/ufai.sqlite", import.meta.url),
 );
 
+function ensureMessageTransitTiming(database: Database.Database) {
+  const columns = database.pragma("table_info(message_transits)") as { name: string }[];
+  if (!columns.some(column => column.name === "normalArrivesAt"))
+    database.exec("ALTER TABLE message_transits ADD COLUMN normalArrivesAt TEXT");
+}
+
 export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
   const databasePath = path === ":memory:" ? path : resolve(path);
   if (databasePath !== ":memory:")
@@ -37,7 +43,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 41)
+    if (version > 42)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -405,10 +411,14 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
 
     if (version < 41) database.transaction(() => {
       migrateWorkspacePacing(database);
-      const columns = database.pragma("table_info(message_transits)") as { name: string }[];
-      if (!columns.some(column => column.name === "normalArrivesAt"))
-        database.exec("ALTER TABLE message_transits ADD COLUMN normalArrivesAt TEXT");
+      ensureMessageTransitTiming(database);
       database.pragma("user_version = 41");
+    })();
+
+    if (version < 42) database.transaction(() => {
+      // Some version-41 databases were created without the transit timing column.
+      ensureMessageTransitTiming(database);
+      database.pragma("user_version = 42");
     })();
 
   } catch (error) {

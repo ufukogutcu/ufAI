@@ -277,7 +277,7 @@ test("OAuth failures expose only safe actionable categories", () => {
 test("MCP migration, shared library, agent enablement, encrypted and redacted secrets, revisions", async (t) => {
   const f = await fixture(t),
     server = await f.mcp.create("a", local);
-  assert.equal(f.db.pragma("user_version", { simple: true }), 41);
+  assert.equal(f.db.pragma("user_version", { simple: true }), 42);
   assert.equal(server.enabled, true);
   assert.equal(f.mcp.list("b").items[0]!.enabled, false);
   assert.deepEqual(server.envKeys, ["MCP_VALUE"]);
