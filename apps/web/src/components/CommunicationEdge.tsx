@@ -6,7 +6,7 @@ import type { CommunicationLink } from "../../../server/src/contracts";
 import { circlePoint, radialPath, ringCenter } from "../connection-geometry";
 import { effectiveAnchorAngle } from "../connection-appearance";
 import { ConnectionGrip, useConnectionRings } from "./ConnectionRings";
-import { Mail } from "lucide-react";
+import { MessageEnvelope } from "./MessageEnvelope";
 import { useMessageTransits, type VisualTransit } from "../message-transit-store";
 import styles from "./CommunicationEdge.module.scss";
 
@@ -39,7 +39,7 @@ function Envelopes({ path, source, transits }: { path: string; source: string; t
         nextExpiry = Math.min(nextExpiry, transit.localArrivesAt);
         const fraction = motion.matches ? 0.5 : transit.senderAgentId === source ? progress : 1 - progress;
         const point = line.getPointAtLength(length * fraction);
-        icon.setAttribute("transform", `translate(${point.x - 12} ${point.y - 10})`);
+        icon.setAttribute("transform", `translate(${point.x} ${point.y})`);
       }
       if (active && !motion.matches) frame = requestAnimationFrame(draw);
       else if (active) expiry = setTimeout(draw, Math.max(1, nextExpiry - now));
@@ -56,10 +56,9 @@ function Envelopes({ path, source, transits }: { path: string; source: string; t
   }, [path, source, transits]);
   return <g className={styles.transits} aria-hidden="true">
     <path ref={route} d={path} fill="none" stroke="none" />
-    <g ref={envelopes}>{transits.map(transit => <g key={transit.messageId} className={styles.envelope}>
-      <rect x="0" y="0" width="24" height="20" rx="4" />
-      <Mail x="3" y="1" width="18" height="18" strokeWidth={1.75} />
-    </g>)}</g>
+    <g ref={envelopes}>{transits.map(transit => (
+      <MessageEnvelope key={transit.messageId} className={styles.envelope} />
+    ))}</g>
   </g>;
 }
 

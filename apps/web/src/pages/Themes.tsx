@@ -41,6 +41,7 @@ import ringStyles from "../components/ConnectionRings.module.scss";
 import taskBubbleStyles from "../components/AgentTaskBubble.module.scss";
 import { RichText } from "../components/RichText";
 import { SkillSwitch } from "../components/SkillSwitch";
+import { MessageEnvelope } from "../components/MessageEnvelope";
 
 const sampleRingPaths = connectionRingPaths([0, 180], { x: 97, y: 112 });
 const characterPreviewColors = [
@@ -277,8 +278,7 @@ function ThemePreview({
                   <svg width="100" height="32" role="img" aria-label="Communication link and message envelope preview">
                     <path d="M4 12H96" stroke="var(--communication-edge)" strokeWidth="2" />
                     <path d="M4 28H96" stroke="var(--communication-edge-selected)" strokeWidth="2" />
-                    <rect x="38" y="3" width="24" height="18" rx="3" fill="var(--communication-envelope-surface)" stroke="var(--communication-envelope-foreground)" />
-                    <path d="M40 6L50 13L60 6" fill="none" stroke="var(--communication-envelope-foreground)" />
+                    <MessageEnvelope transform="translate(50 12)" />
                   </svg>
                   <small>Workspace canvas</small>
                   <svg width="220" height="58" viewBox="0 0 220 58" role="img" aria-label="Character prototype colors and props">

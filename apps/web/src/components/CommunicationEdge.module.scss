@@ -4,11 +4,4 @@
 
 .envelope {
   visibility: hidden;
-  color: var(--communication-envelope-foreground);
-
-  > rect {
-    fill: var(--communication-envelope-surface);
-    stroke: var(--communication-envelope-foreground);
-    stroke-width: 1;
-  }
 }
