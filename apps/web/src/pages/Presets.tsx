@@ -28,10 +28,12 @@ function PresetEditor({
   preset,
   onSaved,
   onCancel,
+  onDelete,
 }: {
   preset?: ModelPreset;
   onSaved: (preset: ModelPreset) => void;
   onCancel: () => void;
+  onDelete: (preset: ModelPreset) => void;
 }) {
   const [draft, setDraft] = useState(() => draftFromPreset(preset));
   const [baseline, setBaseline] = useState(() => JSON.stringify(draft));
@@ -271,19 +273,31 @@ function PresetEditor({
             {error}
           </Feedback></Appearance>
         )}
-        <div className={styles.footerActions}>
-          <div />
-          <button
-            type="button"
-            className="button secondary"
-            disabled={busy}
-            onClick={onCancel}
-          >
-            Cancel
-          </button>
-          <BusyButton busy={busy} className="button primary" disabled={busy}>
-            {busy ? "Saving…" : "Save preset"}
-          </BusyButton>
+        <div className={styles.presetActions}>
+          {preset && (
+            <button
+              type="button"
+              className="button danger"
+              disabled={busy}
+              onClick={() => onDelete(preset)}
+            >
+              <Trash2 size={14} aria-hidden="true" />
+              Delete preset
+            </button>
+          )}
+          <div className={styles.presetSaveActions}>
+            <button
+              type="button"
+              className="button secondary"
+              disabled={busy}
+              onClick={onCancel}
+            >
+              Cancel
+            </button>
+            <BusyButton busy={busy} className="button primary" disabled={busy}>
+              {busy ? "Saving…" : "Save preset"}
+            </BusyButton>
+          </div>
         </div>
       </footer>
     </form>
@@ -360,6 +374,10 @@ export default function Presets() {
   }
   function clearCreatedAppearance() {
     setCreatedId(null);
+  }
+  function beginDelete(preset: ModelPreset) {
+    setDeleteError("");
+    setDeleting(preset);
   }
   async function handleDelete() {
     if (!deleting) return;
@@ -456,29 +474,15 @@ export default function Presets() {
         <Appearance kind="selection" trigger={selection}><div className={styles.detail}>
           {selection && (selection === "new" || selected) ? (
             <>
-              <div className={styles.inlineActions}>
-                {presets.length > 0 && (
-                  <button
-                    className={`textButton ${styles.backButton}`}
-                    onClick={() => choose(null)}
-                  >
-                    <ArrowLeft size={14} aria-hidden="true" />
-                    Preset library
-                  </button>
-                )}
-                {selected && (
-                  <button
-                    className="textButton"
-                    onClick={() => {
-                      setDeleteError("");
-                      setDeleting(selected);
-                    }}
-                  >
-                    <Trash2 size={14} aria-hidden="true" />
-                    Delete preset
-                  </button>
-                )}
-              </div>
+              {presets.length > 0 && (
+                <button
+                  className={`textButton ${styles.backButton}`}
+                  onClick={() => choose(null)}
+                >
+                  <ArrowLeft size={14} aria-hidden="true" />
+                  Preset library
+                </button>
+              )}
               {selection !== "new" &&
                 !presets.some((p) => p.id === selection) && (
                   <Appearance kind="fade"><p className={styles.modelStatus} role="status">
@@ -491,6 +495,7 @@ export default function Presets() {
                 preset={selected}
                 onSaved={saved}
                 onCancel={() => choose(null)}
+                onDelete={beginDelete}
               />
             </>
           ) : (
@@ -507,6 +512,7 @@ export default function Presets() {
           title="Delete agent preset?"
           onClose={() => setDeleting(null)}
           busy={busy}
+          initialFocusSelector=".secondary"
         >
           <p>
             Permanently delete <strong>{deleting.name}</strong>?

@@ -359,6 +359,17 @@
     flex: 1;
   }
 }
+.presetActions,
+.presetSaveActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.presetSaveActions {
+  margin-inline-start: auto;
+  justify-content: flex-end;
+}
 .connectionForm {
   fieldset {
     display: grid;
@@ -463,6 +474,9 @@
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 6px;
+  }
+  .footerActions,
+  .presetActions {
     :global(.button) {
       padding-left: 10px;
       padding-right: 10px;
