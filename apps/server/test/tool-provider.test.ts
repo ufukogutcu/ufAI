@@ -290,9 +290,11 @@ for (const provider of [
     assert.deepEqual(first.calls[0]!.arguments, { path: "a.txt" });
     const second = await adapter.round({
       ...mediaRequest,
+      refreshConnectionContext: () => "Updated roster after the freeze gate",
       continuation: [
         {
           response: first.continuation,
+          serverObservations: ["Restored roster after tool delivery"],
           results: [
             {
               call: first.calls[0],
@@ -326,6 +328,8 @@ for (const provider of [
       if (provider === "ollama") assert.equal(body.options.num_predict, -1);
     }
     const replay = JSON.stringify(bodies[1]);
+    assert.ok(replay.indexOf("Restored roster after tool delivery") > replay.indexOf("collaborator-message"));
+    assert.ok(replay.indexOf("Updated roster after the freeze gate") > replay.indexOf("Restored roster after tool delivery"));
     assert.match(replay,/collaborator-message/);
     assert.match(replay,/Which version/);
     assert.match(replay, /contents/);

@@ -17,6 +17,7 @@ import { ConnectionError } from "./model-providers.js";
 type Step = {
   response: any;
   results: { call: ToolCall; result: ToolResult }[];
+  serverObservations?: string[];
 };
 export class ToolProvider {
   constructor(
@@ -60,6 +61,7 @@ export class ToolProvider {
               output: JSON.stringify(result),
             })),
             ...media.after(s.results),
+            ...(s.serverObservations ?? []).map(content => ({ role: "user", content })),
           ]),
         ],
         tools: tools.map((t) => ({
@@ -84,15 +86,18 @@ export class ToolProvider {
             { role: "assistant", content: s.response },
             {
               role: "user",
-              content: s.results.map(({ call, result }) => ({
-                type: "tool_result",
-                tool_use_id: call.id,
-                content: [
-                  { type: "text", text: JSON.stringify(result) },
-                  ...media.parts(result.media),
-                ],
-                is_error: !result.ok,
-              })),
+              content: [
+                ...s.results.map(({ call, result }) => ({
+                  type: "tool_result",
+                  tool_use_id: call.id,
+                  content: [
+                    { type: "text", text: JSON.stringify(result) },
+                    ...media.parts(result.media),
+                  ],
+                  is_error: !result.ok,
+                })),
+                ...(s.serverObservations ?? []).map(media.text),
+              ],
             },
           ]),
         ],
@@ -126,6 +131,7 @@ export class ToolProvider {
                   },
                 })),
                 ...media.parts(s.results.flatMap((v) => v.result.media ?? [])),
+                ...(s.serverObservations ?? []).map(media.text),
               ],
             },
           ]),
@@ -169,6 +175,7 @@ export class ToolProvider {
               content: JSON.stringify(result),
             })),
             ...media.after(s.results),
+            ...(s.serverObservations ?? []).map(content => ({ role: "user", content })),
           ]),
         ],
         ...(p === "openrouter" && media.hasPdf
@@ -248,11 +255,33 @@ export class ToolProvider {
       google = p === "google",
       ollama = p === "ollama";
     const { body, headers, path } = await this.build(r);
+    let outputLimit: {count: number; maximum: number} | undefined;
     if (anthropic) {
       const maximum = await (this.outputMaximum?.(r) ??
         anthropicOutputMaximum(this.endpoint, this.key, r, this.fetcher));
       const count = await this.countTokens(r) ?? Buffer.byteLength(JSON.stringify(body));
-      body.max_tokens = remainingOutput(r, count, maximum);
+      outputLimit = { count, maximum };
+    }
+    await r.beforeModelRequest?.();
+    // A freeze can span body preparation. Append once after its final gate,
+    // without uploading media or counting the existing conversation again.
+    const latest = r.refreshConnectionContext?.();
+    if (latest) {
+      if (responses) (body.input as unknown[]).push({ role: "user", content: latest });
+      else if (google) {
+        const contents = body.contents as { role: string; parts: unknown[] }[];
+        if (r.continuation?.length) contents.at(-1)!.parts.push({text: latest});
+        else contents.push({role: "user", parts: [{text: latest}]});
+      }
+      else if (anthropic && r.continuation?.length) {
+        const messages = body.messages as {content: unknown[]}[];
+        messages.at(-1)!.content.push({type: "text", text: latest});
+      }
+      else (body.messages as unknown[]).push({ role: "user", content: latest });
+    }
+    if (outputLimit) {
+      const extra = latest ? Buffer.byteLength(JSON.stringify(latest)) + 128 : 0;
+      body.max_tokens = remainingOutput(r, outputLimit.count + extra, outputLimit.maximum);
     }
     const encoded = JSON.stringify(body);
     if (
@@ -265,7 +294,6 @@ export class ToolProvider {
       );
     let response: Response;
     try {
-      await r.beforeModelRequest?.();
       response = await this.fetcher(this.endpoint + path, {
         method: "POST",
         headers,

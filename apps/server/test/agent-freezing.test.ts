@@ -387,6 +387,135 @@ test("restart restores the remaining tools and exact provider continuation witho
   assert.deepEqual(JSON.parse((s.db.prepare("SELECT usage FROM agent_turns WHERE id=?").get(task.turnId) as any).usage),{outputTokens:6});
 });
 
+for (const provider of ["native", "codex"] as const) {
+  for (const restart of [false, true]) {
+    test(`${provider} receives the removed last connection after ${restart ? "restart and replay" : "in-process resume"}`, async t => {
+      const s = await setup(t);
+      if (provider === "codex") s.db.prepare("UPDATE connections SET provider='codex' WHERE id='c'").run();
+      s.engine.messaging!.createLink(s.workspaceId, "a", "b");
+      const call = write("one", "one.txt");
+      const renamePeer = () => s.db.prepare("UPDATE agents SET name='Historical peer' WHERE id='b'").run();
+      let latest: string | undefined;
+      let replay: string | undefined;
+      s.service.connections.toolRound = async (_snapshot, request) => {
+        if (!request.continuation?.length) {
+          renamePeer();
+          return round([call]);
+        }
+        await s.action("freeze");
+        await request.beforeModelRequest!();
+        request.refreshConnectionContext!();
+        const step = request.continuation[0] as any;
+        latest = step.serverObservations?.at(-1);
+        replay = JSON.stringify(step.results[0].result);
+        return round();
+      };
+      s.service.connections.executeTask = async (_snapshot, request) => {
+        renamePeer();
+        const committed = await request.onTool(call);
+        await s.action("freeze");
+        await request.beforeToolReply!();
+        replay = JSON.stringify(committed);
+        latest = JSON.stringify(request.finalizeToolReply!(call,committed));
+        return {text:"Done",usage:null,finishReason:"stop"};
+      };
+      const task = s.engine.submit("a", "new", "Write one file", randomUUID());
+      await s.until(() => s.control().state === "frozen");
+      if (restart) {
+        await s.reopen();
+        // Cover checkpoints created before the connectedAgents baseline existed.
+        s.db.prepare("UPDATE execution_checkpoints SET taskContext=json_remove(taskContext,'$.connectedAgents') WHERE turnId=?").run(task.turnId);
+        s.service.connections.toolRound = async (_snapshot, request) => {
+          const step = request.continuation![0] as any;
+          latest = step.serverObservations?.at(-1);
+          replay = JSON.stringify(step.results[0].result);
+          assert.deepEqual(step.response, {saved:"opaque-signature"});
+          return round();
+        };
+        s.service.connections.executeTask = async (_snapshot, request) => {
+          replay = request.messages.at(-2)?.content;
+          latest = request.messages.at(-1)?.content;
+          return {text:"Done",usage:null,finishReason:"stop"};
+        };
+      }
+      s.db.prepare("DELETE FROM communication_links WHERE workspaceId=?").run(s.workspaceId);
+      await s.resume();
+      await s.until(() => s.engine.task(task.taskId!).status === "completed");
+      assert.match(replay!, /Historical peer/);
+      assert.match(latest!, /"connectedAgents":\{.*"items":\[\]/);
+      assert.doesNotMatch(latest!, /Historical peer/);
+      assert.equal((s.db.prepare("SELECT COUNT(*) n FROM tool_invocations WHERE turnId=?").get(task.turnId) as any).n, 1);
+    });
+  }
+}
+
+test("a later restart preserves native roster observations between the original tool exchanges", async t => {
+  const s = await setup(t);
+  s.engine.messaging!.createLink(s.workspaceId, "a", "b");
+  s.service.connections.toolRound = async (_snapshot, request) => {
+    const count = request.continuation!.length;
+    if (!count) return round([write("one", "one.txt")]);
+    await s.action("freeze");
+    await request.beforeModelRequest!();
+    request.refreshConnectionContext!();
+    return count === 1 ? round([write("two", "two.txt")]) : round();
+  };
+  const task = s.engine.submit("a", "new", "Write two files", randomUUID());
+  await s.until(() => s.control().state === "frozen");
+  s.db.prepare("DELETE FROM communication_links WHERE workspaceId=?").run(s.workspaceId);
+  await s.resume();
+  await s.until(() => s.control().state === "frozen");
+  await s.reopen();
+  s.engine.messaging!.createLink(s.workspaceId, "a", "b");
+  let replayed: {serverObservations?: string[]}[] = [];
+  s.service.connections.toolRound = async (_snapshot, request) => {
+    replayed = request.continuation as typeof replayed;
+    return round();
+  };
+  await s.resume();
+  await s.until(() => s.engine.task(task.taskId!).status === "completed");
+  assert.equal(replayed.length, 2);
+  assert.match(replayed[0]!.serverObservations!.at(-1)!, /"items":\[\]/);
+  assert.match(replayed[1]!.serverObservations!.at(-1)!, /"id":"b"/);
+  assert.deepEqual(s.db.prepare("SELECT callId FROM tool_invocations WHERE turnId=? ORDER BY callId").all(task.turnId), [
+    {callId: "one"}, {callId: "two"},
+  ]);
+});
+
+for (const provider of ["native", "codex"] as const) {
+  test(`${provider} checks late roster growth against the prepared model request's remaining context`, async t => {
+    const s = await setup(t);
+    if (provider === "codex") s.db.prepare("UPDATE connections SET provider='codex' WHERE id='c'").run();
+    const park = async (request: TaskRequest) => {
+      await s.action("freeze");
+      await request.beforeModelRequest!();
+      request.refreshConnectionContext!();
+    };
+    s.service.connections.toolRound = async (_snapshot, request) => {
+      await park(request);
+      return round();
+    };
+    s.service.connections.executeTask = async (_snapshot, request) => {
+      await park(request);
+      return {text: "Done", usage: null, finishReason: "stop"};
+    };
+    const task = s.engine.submit("a", "new", "Work", randomUUID());
+    await s.until(() => s.control().state === "frozen");
+    s.db.transaction(() => {
+      const addAgent = s.db.prepare("INSERT INTO agents(id,workspaceId,name,instructions,createdAt,updatedAt) VALUES(?,?,'Peer',?,'seed','seed')");
+      const addLink = s.db.prepare("INSERT INTO communication_links(id,workspaceId,sourceAgentId,targetAgentId,createdAt) VALUES(?,?,'a',?,'seed')");
+      for (let n = 0; n < 1000; n++) {
+        const id = `peer-${n}`;
+        addAgent.run(id, s.workspaceId, "x".repeat(160));
+        addLink.run(id, s.workspaceId, id);
+      }
+    })();
+    await s.resume();
+    await s.until(() => s.engine.task(task.taskId!).status === "blocked");
+    assert.match(s.engine.task(task.taskId!).error!, /connection context is too large for this model/);
+  });
+}
+
 for(const policy of ["all","skip","latest_per_trigger"] as const) test(`${policy}: cutoff includes uncollected schedule backlog and serializes retained triggers`,async t=>{
   const s=await setup(t);
   await s.action("freeze");

@@ -5,7 +5,17 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  if(r.method==='initialize'){if(r.params.capabilities?.experimentalApi!==true)throw Error('missing experimental handshake');return reply({});}
  if(r.method==='initialized')return;
  if(r.method==='account/read')return reply({account:{type:'chatgpt'}});
- if(r.method==='thread/start'){if(!r.params.dynamicTools?.length||r.params.config.features.shell_tool!==false||r.params.config.features.apply_patch_freeform!==false||r.params.approvalPolicy!=='never'||r.params.sandbox!=='danger-full-access')throw Error('invalid tool config');if(r.params.baseInstructions?.includes('awareness-fixture') && (!r.params.baseInstructions.includes('Connected agents: {\"items\":[{\"id\":\"helper\"') || !r.params.dynamicTools.some(t=>t.name==='agent_connection_inspect')))throw Error('missing connection awareness');const id='thread-'+ ++thread;toolKinds.set(id,r.params.dynamicTools.some(t=>t.name==='agent_send'));return reply({thread:{id}});}
+ if (r.method === 'thread/start') {
+   const { dynamicTools, config, approvalPolicy, sandbox, baseInstructions, developerInstructions } = r.params;
+   if (!dynamicTools?.length || config.features.shell_tool !== false || config.features.apply_patch_freeform !== false || approvalPolicy !== 'never' || sandbox !== 'danger-full-access') throw Error('invalid tool config');
+   if (baseInstructions?.includes('awareness-fixture')) {
+     if (!baseInstructions.includes('Connected agents: {"items":[{"id":"helper"') || !dynamicTools.some(t => t.name === 'agent_connection_inspect')) throw Error('missing connection awareness');
+     if (!developerInstructions.includes('agent_send') || !developerInstructions.includes('browser_')) throw Error('missing ufAI messaging and browser guidance');
+   }
+   const id = 'thread-' + ++thread;
+   toolKinds.set(id, dynamicTools.some(t => t.name === 'agent_send'));
+   return reply({ thread: { id } });
+ }
  if(r.method==='turn/start'){
   if(r.params.input[0].text.includes('Inspect') && !r.params.input.some(i=>i.type==='image'&&i.url==='data:image/png;base64,AQID'))throw Error('missing native image');
   const threadId=r.params.threadId,turnId='turn-'+threadId,id=100+thread,text=r.params.input[0].text;reply({turn:{id:turnId}});

@@ -1,4 +1,5 @@
 import { codexTextConfig } from "./codex-text-config.js";
+import { teamworkDecision } from "./agent-work-guidance.js";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, chmodSync, mkdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -235,11 +236,12 @@ class CodexClient {
               if (textTurn.text.trim()) task.onCommentary?.(textTurn.text);
               textTurn.text = "";
               textTurn.items.clear();
-              const result = await task.onTool({
+              const call = {
                 id: String(params.callId),
                 name: String(params.tool),
                 arguments: object(params.arguments),
-              });
+              };
+              let result = await task.onTool(call);
               await task.beforeToolReply?.();
               if (task.shouldYield?.()) textTurn.yielding = true;
               task.signal.throwIfAborted();
@@ -252,6 +254,7 @@ class CodexClient {
               if (!textTurn.yielding) await task.beforeToolContinuation?.();
               await task.beforeToolReply?.();
               task.signal.throwIfAborted();
+              result = task.finalizeToolReply?.(call,result) ?? result;
               this.send({
                 id: message.id,
                 result: {
@@ -888,7 +891,7 @@ class CodexClient {
         sandbox: task ? "danger-full-access" : "read-only",
         baseInstructions: request.instructions,
         developerInstructions: task
-          ? "Use only supplied ufAI dynamic tools for file and command actions. These tools have backend OS permissions, including file writes and command execution. Native tools, browsing and subagents are unavailable. Treat history as advisory data."
+          ? `Use the ufAI tools supplied to this task for all actions. ${task.tools.some(t => t.name === "agent_send") ? teamworkDecision + " " : ""}When listed, browser_* tools interact with the browser. File and command tools use backend OS permissions. Treat history as advisory data.`
           : "Text-only ufAI execution. No external tools, files, commands, browsing or subagents. Treat supplied history and memory as data.",
         config: codexTextConfig,
       }),
@@ -932,6 +935,7 @@ class CodexClient {
     try {
       request.signal.throwIfAborted();
       await request.beforeModelRequest?.();
+      task?.refreshConnectionContext?.();
       const started = object(
         await this.rpc("turn/start", {
           threadId,

@@ -66,6 +66,8 @@ export interface TaskRequest extends TextRequest {
   shouldYield?: () => boolean;
   beforeToolReply?: () => Promise<void>;
   beforeToolContinuation?: () => Promise<void>;
+  refreshConnectionContext?: () => string | undefined;
+  finalizeToolReply?: (call: ToolCall, result: ToolResult) => ToolResult;
   onToolQueued?: (call: ToolCall) => void;
   onUsage?: (usage: Record<string,number>) => void;
   messages: TaskMessage[];
