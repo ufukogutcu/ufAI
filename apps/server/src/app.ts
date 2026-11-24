@@ -53,6 +53,7 @@ import type {
 } from "./contracts.js";
 import {
   InputError,
+  duplicateName,
   objectBody,
   pagination,
   presetInput,
@@ -468,6 +469,28 @@ export function createApp(
         updatedAt: now,
       });
     })();
+    return reply.code(201).send(preset);
+  });
+  const duplicatePreset = database.transaction((sourceId: string, name: string) => {
+    const source = presetGet.get(sourceId) as PresetRow | undefined;
+    if (!source) return;
+    const now = new Date().toISOString();
+    const copy = {
+      ...source,
+      id: randomUUID(),
+      name,
+      isDefault: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const preset = validatePresetConnection(fromRow(copy));
+    presetInsert.run(copy);
+    return preset;
+  });
+  app.post<{ Params: { id: string } }>("/api/model-presets/:id/duplicate", async (request, reply) => {
+    const preset = duplicatePreset.immediate(request.params.id, duplicateName(request.body));
+    if (!preset)
+      return reply.code(404).send({ error: "Agent preset not found." });
     return reply.code(201).send(preset);
   });
   app.patch<{ Params: { id: string } }>(

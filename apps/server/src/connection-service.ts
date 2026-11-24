@@ -37,8 +37,15 @@ export class ConnectionService {
   readonly secrets: ConnectionSecrets;
   readonly codex: CodexAdapter;
   readonly models: ProviderModels;
+  private getCodexSession: Database.Statement<[string], { codexSessionId: string | null }>;
+
+  codexSession(id: string) {
+    return this.getCodexSession.get(id)?.codexSessionId ?? id;
+  }
+
   private pins = new Map<string, number>();
   pin(id: string) {
+    id = this.codexSession(id);
     this.pins.set(id, (this.pins.get(id) ?? 0) + 1);
     let released = false;
     return () => {
@@ -62,11 +69,17 @@ export class ConnectionService {
     this.secrets = new ConnectionSecrets(this.memory ? null : this.directory);
     this.codex = codex ?? new CodexRuntime(join(this.directory, "codex"));
     this.models = new ProviderModels(db);
+    this.getCodexSession = db.prepare("SELECT codexSessionId FROM connections WHERE id = ?");
   }
   busy(id: string) {
+    id = this.codexSession(id);
     return !!this.operations.get(id)?.size || !!this.pins.get(id);
   }
+  exclusive(id: string) {
+    return [...(this.operations.get(this.codexSession(id))?.values() ?? [])].includes("exclusive");
+  }
   claim(id: string, lane: "work" | "chat" | "exclusive") {
+    id = this.codexSession(id);
     const active = this.operations.get(id) ??
       new Map<symbol, "work" | "chat" | "exclusive">();
     if (
@@ -223,7 +236,7 @@ export class ConnectionService {
         503,
       );
     return this.codex.executeText(
-      snapshot.connectionId, request,
+      this.codexSession(snapshot.connectionId), request,
       usePresetOptions ? snapshot.providerOptions : undefined,
     );
   }
@@ -357,7 +370,7 @@ export class ConnectionService {
         "This Codex adapter does not support task tools.",
         503,
       );
-    return this.codex.executeTask(snapshot.connectionId, request, snapshot.providerOptions);
+    return this.codex.executeTask(this.codexSession(snapshot.connectionId), request, snapshot.providerOptions);
   }
   async countTokens(snapshot: ExecutionSnapshot, request: TextRequest) {
     const provider = this.provider(snapshot);

@@ -41,6 +41,7 @@ export interface CodexAdapter {
   executeText?(id: string, request: TextRequest, options?: ProviderPresetOptions): Promise<TextResult>;
   executeTask?(id: string, request: TaskRequest, options?: ProviderPresetOptions): Promise<TextResult>;
   hasCredential(id: string): boolean;
+  isSigningIn(id: string): boolean;
   remove(id: string): Promise<void>;
   usage(
     id: string,
@@ -676,6 +677,9 @@ class CodexClient {
       this.textRequests > 0
     );
   }
+  get signingIn() {
+    return this.loginStarting || this.loginResult.status === "pending";
+  }
   async accountUsage(details: boolean): Promise<CodexUsageSnapshot> {
     await this.ready;
     const deadline = Date.now() + this.rpcTimeout;
@@ -1146,6 +1150,9 @@ export class CodexRuntime implements CodexAdapter {
   }
   hasCredential(id: string) {
     return existsSync(join(this.directory, id, "auth.json"));
+  }
+  isSigningIn(id: string) {
+    return this.clients.get(id)?.signingIn ?? false;
   }
   status(id: string) {
     return this.withClient(id, (client) => client.status());

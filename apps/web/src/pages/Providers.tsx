@@ -47,6 +47,8 @@ import { useNavigationGuard, useUnsavedChanges } from "../navigation-guard";
 import { useCodexUsage } from "../codex-usage-store";
 import { refreshOnFocus } from "../focus-refresh";
 import { Dialog } from "../components/Dialog";
+import { LibraryRow } from "../components/LibraryRow";
+import { LibraryDuplicateDialog } from "../components/LibraryDuplicateDialog";
 import { Appearance, AppearanceGroup } from "../components/Appearance";
 import { Field } from "../components/FormField";
 import shared from "./Presets.module.scss";
@@ -418,18 +420,40 @@ function ModelEditor({
     </Dialog>
   );
 }
+function ProviderDeleteDialog({ name, busy, error, onClose, onDelete, returnFocusFallbackRef }: {
+  name: string;
+  busy: boolean;
+  error: string;
+  onClose: () => void;
+  onDelete: () => void;
+  returnFocusFallbackRef?: React.RefObject<HTMLElement | null>;
+}) {
+  return <Dialog title="Delete Provider?" busy={busy} initialFocusSelector=".secondary"
+    returnFocusFallbackRef={returnFocusFallbackRef} onClose={onClose}>
+    <p>Delete <strong>{name}</strong> and its saved models and credentials?
+      Linked presets will have their Provider and model selections cleared.</p>
+    {error && <Feedback role="alert">{error}</Feedback>}
+    <div className="dialogActions">
+      <button className="button secondary" disabled={busy} onClick={onClose}>Cancel</button>
+      <BusyButton className="button danger" busy={busy} onClick={onDelete}>Delete Provider</BusyButton>
+    </div>
+  </Dialog>;
+}
+
 function ProviderEditor({
   connection,
   onSaved,
   onCreated,
   onClose,
   onDeleted,
+  onDelete,
 }: {
   connection?: ProviderConnection;
-  onSaved: (id: string) => void;
+  onSaved: (connection: ProviderConnection) => void;
   onCreated: (id: string) => void;
   onClose: () => void;
   onDeleted: () => void;
+  onDelete: (connection: ProviderConnection) => void;
 }) {
   const invalidateUsage = useCodexUsage((state) => state.invalidate);
   const [id, setId] = useState(connection?.id ?? null);
@@ -783,7 +807,7 @@ function ProviderEditor({
       setSelectionImpact(null);
       refreshLocal();
       await loadPresets();
-      onSaved(saved.id);
+      onSaved(saved);
     } catch (error) {
       if (error instanceof RequestError && error.selectionImpact) setSelectionImpact(error.selectionImpact);
       else {
@@ -891,7 +915,7 @@ function ProviderEditor({
     <>
       <form className={shared.editor} onSubmit={finish} noValidate>
         <header className={shared.editorHeading} data-appearance-content>
-          <h2>{draft ? "Set up Provider" : "Edit Provider"}</h2>
+          <h2 tabIndex={-1}>{draft ? "Set up Provider" : "Edit Provider"}</h2>
         </header>
         <fieldset className={shared.fields} disabled={busy || !!testing} data-appearance-content>
           <section className={shared.formSection}>
@@ -1260,7 +1284,7 @@ function ProviderEditor({
                 type="button"
                 className="button deleteButton"
                 disabled={busy || !!testing}
-                onClick={() => setConfirmDelete(true)}
+                onClick={() => connection ? onDelete(connection) : setConfirmDelete(true)}
               >
                 <Trash2 size={14} aria-hidden="true" />
                 Delete
@@ -1306,34 +1330,9 @@ function ProviderEditor({
         />
       )}
       {confirmDelete && (
-        <Dialog
-          title="Delete Provider?"
+        <ProviderDeleteDialog name={name} busy={busy} error={error}
           onClose={() => setConfirmDelete(false)}
-          busy={busy}
-        >
-          <p>
-            Delete <strong>{name}</strong> and its saved models and credentials?
-            Linked presets will have their Provider and model selections
-            cleared.
-          </p>
-          {error && (
-            <Appearance kind="fade"><Feedback role="alert">
-              {error}
-            </Feedback></Appearance>
-          )}
-          <div className="dialogActions">
-            <button
-              className="button secondary"
-              disabled={busy}
-              onClick={() => setConfirmDelete(false)}
-            >
-              Cancel
-            </button>
-            <button className="button danger" disabled={busy} onClick={remove}>
-              Delete Provider
-            </button>
-          </div>
-        </Dialog>
+          onDelete={remove} />
       )}
     </>
   );
@@ -1341,6 +1340,9 @@ function ProviderEditor({
 export default function Providers() {
   const connections = useConnections((state) => state.connections);
   const load = useConnections((state) => state.load);
+  const remove = useConnections((state) => state.remove);
+  const duplicate = useConnections((state) => state.duplicate);
+  const loadPresets = useDashboard((state) => state.loadPresets);
   const status = useConnections((state) => state.status);
   const error = useConnections((state) => state.error);
   useNotice(error && connections.length ? { id: "providers", title: "Providers could not refresh", message: error,
@@ -1352,7 +1354,16 @@ export default function Providers() {
   const [selection, setSelection] = useState<string | null>();
   const [opened, setOpened] = useState(false);
   const [createdId, setCreatedId] = useState<string | null>(null);
+  const [duplicating, setDuplicating] = useState<ProviderConnection | null>(null);
+  const [copied, setCopied] = useState<ProviderConnection | null>(null);
+  useNotice(copied ? { id: "provider-copy", title: "Provider duplicated", message: copied.name,
+    tone: "success", episode: copied.id } : null, "provider-copy");
+  const [deleting, setDeleting] = useState<ProviderConnection | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const attempt = useNavigationGuard();
+  const heading = useRef<HTMLHeadingElement>(null);
+  const detail = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let active = true;
     void load().then(() => {
@@ -1385,10 +1396,10 @@ export default function Providers() {
       if (id && id !== "new") rememberOpened(id);
     });
   }
-  function saved(id: string) {
-    setSnapshot(connections.find((connection) => connection.id === id));
-    setSelection(id);
-    rememberOpened(id);
+  function saved(connection: ProviderConnection) {
+    setSnapshot(connection);
+    setSelection(connection.id);
+    rememberOpened(connection.id);
   }
   function deleted() {
     setSnapshot(undefined);
@@ -1397,6 +1408,36 @@ export default function Providers() {
   function clearCreatedAppearance() {
     setCreatedId(null);
   }
+  function beginDelete(connection: ProviderConnection) {
+    setDeleteError("");
+    setDeleting(connection);
+  }
+  async function handleDelete() {
+    if (!deleting || deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteError("");
+    try {
+      await remove(deleting.id);
+      if (selection === deleting.id) deleted();
+      setDeleting(null);
+      void loadPresets();
+    } catch (failure) {
+      setDeleteError(errorMessage(failure));
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+  async function handleDuplicate(name: string) {
+    if (!duplicating) return;
+    const copy = await duplicate(duplicating.id, name);
+    setDuplicating(null);
+    setCopied(copy);
+    setCreatedId(copy.id);
+    attempt(() => {
+      saved(copy);
+      requestAnimationFrame(() => detail.current?.querySelector("h2")?.focus());
+    });
+  }
   const selected =
     connections.find((connection) => connection.id === selection) ??
     (snapshot?.id === selection ? snapshot : undefined);
@@ -1404,7 +1445,7 @@ export default function Providers() {
     <section className={shared.page} aria-label="Providers">
       <header className="pageHeader">
         <div>
-          <h1>
+          <h1 ref={heading} tabIndex={-1}>
             Providers
             <span className="count">
               {connections.length}
@@ -1449,11 +1490,14 @@ export default function Providers() {
           )}
           <div className={shared.presetList}>
             {connections.map((connection) => (
-              <Appearance key={connection.id} kind="fade" ready={connection.id === createdId}><button
+              <Appearance key={connection.id} kind="fade" ready={connection.id === createdId}><LibraryRow
+                name={connection.name}
+                selected={selection === connection.id}
                 onAnimationEnd={clearCreatedAppearance}
                 className={`${shared.presetItem} ${selection === connection.id ? styles.selected : ""}`}
-                aria-current={selection === connection.id ? "true" : undefined}
-                onClick={() => choose(connection.id)}
+                onEdit={() => choose(connection.id)}
+                onDuplicate={() => setDuplicating(connection)}
+                onDelete={() => beginDelete(connection)}
               >
                 <Server size={17} aria-hidden="true" />
                 <span>
@@ -1463,11 +1507,11 @@ export default function Providers() {
                       ?.label ?? connection.provider}
                   </small>
                 </span>
-              </button></Appearance>
+              </LibraryRow></Appearance>
             ))}
           </div>
         </aside>
-        <Appearance kind="selection" trigger={selection}><div className={shared.detail}>
+        <Appearance kind="selection" trigger={selection}><div ref={detail} className={shared.detail}>
           {selection &&
           (selection === "new" || selected) ? (
             <>
@@ -1487,6 +1531,7 @@ export default function Providers() {
                 onCreated={setCreatedId}
                 onClose={() => setSelection(null)}
                 onDeleted={deleted}
+                onDelete={beginDelete}
               />
             </>
           ) : (
@@ -1501,6 +1546,11 @@ export default function Providers() {
           )}
         </div></Appearance>
       </div>
+      {duplicating && <LibraryDuplicateDialog kind="Provider" sourceName={duplicating.name}
+        hint={duplicating.provider === "codex" ? "If the original is signed in, the copy uses the same ChatGPT sign-in." : undefined}
+        onDuplicate={handleDuplicate} onClose={() => setDuplicating(null)} />}
+      {deleting && <ProviderDeleteDialog name={deleting.name} busy={deleteBusy} error={deleteError}
+        onClose={() => setDeleting(null)} onDelete={handleDelete} returnFocusFallbackRef={heading} />}
     </section>
   );
 }

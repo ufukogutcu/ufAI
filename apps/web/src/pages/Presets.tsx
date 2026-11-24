@@ -1,6 +1,6 @@
 import { Feedback, BusyButton, LoadingState } from "../components/Feedback";
 import { useNotice } from "../components/FeedbackProvider";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowLeft, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import { useDashboard } from "../store";
 import { useConnections } from "../connection-store";
@@ -20,6 +20,8 @@ import {
 } from "../preset-form";
 import { Field } from "../components/FormField";
 import { Dialog } from "../components/Dialog";
+import { LibraryRow } from "../components/LibraryRow";
+import { LibraryDuplicateDialog } from "../components/LibraryDuplicateDialog";
 import { ModelSelect } from "../components/ModelSelect";
 import { CodexPresetFields } from "../components/CodexPresetFields";
 import { refreshOnFocus } from "../focus-refresh";
@@ -117,7 +119,7 @@ function PresetEditor({
     <AppearanceGroup>
     <form className={styles.editor} onSubmit={handleSave} noValidate>
       <header className={styles.editorHeading} data-appearance-content>
-        <h2>{preset ? "Edit agent preset" : "New agent preset"}</h2>
+        <h2 tabIndex={-1}>{preset ? "Edit agent preset" : "New agent preset"}</h2>
       </header>
       <fieldset className={styles.fields} disabled={busy} data-appearance-content>
         <section className={styles.formSection}>
@@ -340,6 +342,7 @@ export default function Presets() {
   useNotice(error && presets.length ? { id: "presets", title: "Presets could not refresh", message: error,
     actionLabel: "Reload presets", action: () => load() } : null, "presets");
   const remove = useDashboard((state) => state.deletePreset);
+  const duplicate = useDashboard((state) => state.duplicatePreset);
   const lastOpenedId = useDashboard((state) => state.lastOpenedPresetId);
   const rememberOpened = useDashboard((state) => state.rememberOpenedPreset);
   const loadConnections = useConnections((state) => state.load);
@@ -350,9 +353,15 @@ export default function Presets() {
   const [revision, setRevision] = useState(0);
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<ModelPreset | null>(null);
+  const [duplicating, setDuplicating] = useState<ModelPreset | null>(null);
+  const [copied, setCopied] = useState<ModelPreset | null>(null);
+  useNotice(copied ? { id: "preset-copy", title: "Agent preset duplicated", message: copied.name,
+    tone: "success", episode: copied.id } : null, "preset-copy");
   const [deleteError, setDeleteError] = useState("");
   const [busy, setBusy] = useState(false);
   const attempt = useNavigationGuard();
+  const heading = useRef<HTMLHeadingElement>(null);
+  const detail = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let active = true;
     void load().then(() => {
@@ -405,6 +414,17 @@ export default function Presets() {
     setDeleteError("");
     setDeleting(preset);
   }
+  async function handleDuplicate(name: string) {
+    if (!duplicating) return;
+    const copy = await duplicate(duplicating.id, name);
+    setDuplicating(null);
+    setCopied(copy);
+    setCreatedId(copy.id);
+    attempt(() => {
+      saved(copy);
+      requestAnimationFrame(() => detail.current?.querySelector("h2")?.focus());
+    });
+  }
   async function handleDelete() {
     if (!deleting) return;
     setBusy(true);
@@ -431,7 +451,7 @@ export default function Presets() {
     <section className={styles.page} aria-label="Agent Presets">
       <header className="pageHeader">
         <div>
-          <h1>
+          <h1 ref={heading} tabIndex={-1}>
             Agent Presets<span className="count">{total}</span>
           </h1>
           <p>Reusable agent configurations across your workspaces.</p>
@@ -471,11 +491,14 @@ export default function Presets() {
           )}
           <div className={styles.presetList}>
             {presets.map((preset) => (
-              <Appearance key={preset.id} kind="fade" ready={preset.id === createdId}><button
+              <Appearance key={preset.id} kind="fade" ready={preset.id === createdId}><LibraryRow
+                name={preset.name}
+                selected={selection === preset.id}
                 onAnimationEnd={clearCreatedAppearance}
                 className={`${styles.presetItem} ${selection === preset.id ? styles.selected : ""}`}
-                aria-current={selection === preset.id ? "true" : undefined}
-                onClick={() => choose(preset.id)}
+                onEdit={() => choose(preset.id)}
+                onDuplicate={() => setDuplicating(preset)}
+                onDelete={() => beginDelete(preset)}
               >
                 <span>
                   <strong>{preset.name}</strong>
@@ -484,7 +507,7 @@ export default function Presets() {
                     <small className={styles.defaultLabel}>Default</small>
                   )}
                 </span>
-              </button></Appearance>
+              </LibraryRow></Appearance>
             ))}
           </div>
           {offset < total && (
@@ -497,7 +520,7 @@ export default function Presets() {
             </button>
           )}
         </aside>
-        <Appearance kind="selection" trigger={selection}><div className={styles.detail}>
+        <Appearance kind="selection" trigger={selection}><div ref={detail} className={styles.detail}>
           {selection && (selection === "new" || selected) ? (
             <>
               {presets.length > 0 && (
@@ -533,12 +556,15 @@ export default function Presets() {
           )}
         </div></Appearance>
       </div>
+      {duplicating && <LibraryDuplicateDialog kind="agent preset" sourceName={duplicating.name}
+        onDuplicate={handleDuplicate} onClose={() => setDuplicating(null)} />}
       {deleting && (
         <Dialog
           title="Delete agent preset?"
           onClose={() => setDeleting(null)}
           busy={busy}
           initialFocusSelector=".secondary"
+          returnFocusFallbackRef={heading}
         >
           <p>
             Permanently delete <strong>{deleting.name}</strong>?

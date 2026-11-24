@@ -89,6 +89,39 @@ async function setup(t: TestContext) {
   return { app, engine, post, patch, connectionId, connectionPath, models, refresh, presets, createPreset, createAgent, setModels, turnsPath };
 }
 
+test("preset duplication preserves saved configuration and keeps the original default", async (t) => {
+  const { app, post, patch, connectionId, connectionPath, models, presets, createAgent } = await setup(t);
+  const sourceResponse = await post(presets, {
+    name: "Default Codex", isDefault: true, connectionId, modelId: "first",
+    compaction: { mode: "percentage", value: 85 }, providerOptions: fast,
+  });
+  assert.equal(sourceResponse.statusCode, 201, sourceResponse.body);
+  const source = sourceResponse.json<ModelPreset>();
+  await createAgent("Existing agent", source.id);
+
+  const response = await post(`${presets}/${source.id}/duplicate`, { name: "Codex copy" });
+  assert.equal(response.statusCode, 201, response.body);
+  const copy = response.json<ModelPreset>();
+  assert.notEqual(copy.id, source.id);
+  assert.deepEqual(copy, {
+    ...source, name: "Codex copy", id: copy.id, isDefault: false,
+    createdAt: copy.createdAt, updatedAt: copy.updatedAt,
+  });
+  assert.equal((await app.inject(`${presets}/default`)).json().preset.id, source.id);
+  const workspace = (await app.inject("/api/workspaces")).json().items[0].id;
+  const agents = (await app.inject(`/api/workspaces/${workspace}/agents`)).json().items;
+  assert.deepEqual(agents.map(({ presetId }: { presetId: string }) => presetId), [source.id]);
+  assert.equal((await patch(`${presets}/${copy.id}`, { compaction: null })).statusCode, 200);
+  assert.deepEqual((await app.inject(`${presets}/default`)).json().preset, source);
+  assert.equal((await post(`${presets}/missing/duplicate`, { name: "Missing" })).statusCode, 404);
+  assert.equal((await post(`${presets}/${source.id}/duplicate`, { name: "Other", isDefault: true })).statusCode, 400);
+
+  const providerCopy = await post(`${connectionPath}/duplicate`, { name: "Catalog copy" });
+  assert.equal(providerCopy.statusCode, 201, providerCopy.body);
+  const catalog = (await app.inject(`/api/connections/${providerCopy.json().id}/models`)).json().items;
+  assert.deepEqual(catalog, models.map(model => ({ ...model, connectionId: providerCopy.json().id })));
+});
+
 test("Codex model metadata controls which preset choices can be saved", async (t) => {
   const { app, post, patch, connectionId, connectionPath, models, refresh, presets, createPreset, createAgent, engine, setModels } =
     await setup(t);
@@ -222,7 +255,7 @@ test("v42 migration preserves existing Codex presets and models with defaults", 
     assert.equal((await app.inject("/api/connections/c/models/m")).json().presetCapabilities, undefined);
     const db = openDatabase(path);
     try {
-      assert.equal(db.pragma("user_version", { simple: true }), 43);
+      assert.equal(db.pragma("user_version", { simple: true }), 44);
     } finally { db.close(); }
   } finally { await app.close(); }
 });

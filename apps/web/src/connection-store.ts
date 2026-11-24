@@ -18,6 +18,7 @@ interface ConnectionState {
     id: string | null,
     input: Partial<ConnectionInput>,
   ) => Promise<ProviderConnection>;
+  duplicate: (id: string, name: string) => Promise<ProviderConnection>;
   remove: (id: string) => Promise<void>;
 }
 export function createConnectionStore() {
@@ -83,6 +84,18 @@ export function createConnectionStore() {
           ...state.connections.filter((item) => item.id !== saved.id),
           ...(saved.draft ? [] : [saved]),
         ],
+        status: "ready",
+        error: "",
+      }));
+      await inFlight;
+      await get().load();
+      return saved;
+    },
+    duplicate: async (id, name) => {
+      const saved = await request<ProviderConnection>(`/connections/${id}/duplicate`, "POST", { name });
+      revision++;
+      set((state) => ({
+        connections: [...state.connections.filter(item => item.id !== saved.id), saved],
         status: "ready",
         error: "",
       }));

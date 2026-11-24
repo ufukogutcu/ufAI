@@ -52,6 +52,7 @@ interface DashboardState {
   updateWorkspace: (id: string, input: WorkspaceInput) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
   savePreset: (id: string | null, input: PresetInput) => Promise<ModelPreset>;
+  duplicatePreset: (id: string, name: string) => Promise<ModelPreset>;
   deletePreset: (id: string) => Promise<void>;
 }
 
@@ -65,6 +66,24 @@ function merge<T extends { id: string; createdAt: string }>(
     (a, b) =>
       a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
   );
+}
+
+function savedPresetState(state: DashboardState, preset: ModelPreset, created: boolean) {
+  const added = created && !state.presets.some(item => item.id === preset.id);
+  return {
+    presetError: "",
+    defaultPreset: preset.isDefault ? preset
+      : state.defaultPreset?.id === preset.id ? null : state.defaultPreset,
+    presets: merge(
+      state.presets.map(item => preset.isDefault && item.isDefault && item.id !== preset.id
+        ? { ...item, isDefault: false, updatedAt: preset.updatedAt }
+        : item),
+      [preset],
+    ),
+    presetTotal: state.presetTotal + Number(added),
+    presetOffset: added && state.presetOffset === state.presetTotal
+      ? state.presetOffset + 1 : state.presetOffset,
+  };
 }
 
 function mergeWorkspaces(old: Workspace[], items: Workspace[]): Workspace[] {
@@ -481,46 +500,28 @@ export function createDashboardStore(settings: SettingsStore) {
         input,
       );
       presetRevision++;
-      set((state) => ({
-        presetError: "",
-        defaultPreset: preset.isDefault
-          ? preset
-          : state.defaultPreset?.id === preset.id
-            ? null
-            : state.defaultPreset,
-        presets: merge(
-          state.presets.map((item) =>
-            preset.isDefault && item.isDefault && item.id !== preset.id
-              ? { ...item, isDefault: false, updatedAt: preset.updatedAt }
-              : item,
-          ),
-          [preset],
-        ),
-        presetTotal: state.presetTotal + (id ? 0 : 1),
-        presetOffset:
-          !id && state.presetOffset === state.presetTotal
-            ? state.presetOffset + 1
-            : state.presetOffset,
-      }));
+      set(state => savedPresetState(state, preset, !id));
+      return preset;
+    },
+    duplicatePreset: async (id, name) => {
+      const preset = await request<ModelPreset>(`/model-presets/${id}/duplicate`, "POST", { name });
+      presetRevision++;
+      set(state => savedPresetState(state, preset, true));
       return preset;
     },
     deletePreset: async (id) => {
       await request(`/model-presets/${id}`, "DELETE");
       presetRevision++;
-      set((state) => ({
-        defaultPreset: state.defaultPreset?.id === id ? null : state.defaultPreset,
-        presets: state.presets.filter((p) => p.id !== id),
-        lastOpenedPresetId:
-          state.lastOpenedPresetId === id ? null : state.lastOpenedPresetId,
-        presetTotal: state.presetTotal - 1,
-        presetOffset: Math.max(
-          0,
-          state.presetOffset -
-            (state.presets.findIndex((p) => p.id === id) < state.presetOffset
-              ? 1
-              : 0),
-        ),
-      }));
+      set((state) => {
+        const index = state.presets.findIndex(preset => preset.id === id);
+        return {
+          defaultPreset: state.defaultPreset?.id === id ? null : state.defaultPreset,
+          presets: state.presets.filter((p) => p.id !== id),
+          lastOpenedPresetId: state.lastOpenedPresetId === id ? null : state.lastOpenedPresetId,
+          presetTotal: state.presetTotal - 1,
+          presetOffset: state.presetOffset - Number(index >= 0 && index < state.presetOffset),
+        };
+      });
     },
   }));
 }

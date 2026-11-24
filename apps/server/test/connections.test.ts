@@ -516,6 +516,7 @@ test("Codex routes handle sign-in, device fallback, cancellation, logout and san
     consumeReset: async () => "noCredit",
     status: async () => ({ status: "disconnected" }),
     hasCredential: () => false,
+    isSigningIn: () => false,
     login: async (id, device) => {
       actions.push(`login:${id}:${device}`);
       return {
@@ -657,7 +658,7 @@ test("migration 7 removes provider defaults and preserves configuration, catalog
   for (let attempt = 0; attempt < 2; attempt++) {
     db = openDatabase(path);
     try {
-      assert.equal(db.pragma("user_version", { simple: true }), 43);
+      assert.equal(db.pragma("user_version", { simple: true }), 44);
       assert.deepEqual(db.pragma("foreign_key_check"), []);
       assert.equal(
         db

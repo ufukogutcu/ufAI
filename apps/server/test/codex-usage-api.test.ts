@@ -13,6 +13,7 @@ test("usage endpoints guard provider/draft/origin, validate input, and lock auth
   const codex: CodexAdapter = {
     status: async () => ({ status: "connected" }), login: async () => ({ status: "connected" }),
     cancel: async () => {}, logout: async () => {}, remove: async () => {}, close: async () => {}, hasCredential: () => true,
+    isSigningIn: () => false,
     models: async () => [], test: async () => "OK",
     usage: async () => new Promise<CodexUsageSnapshot>((resolve) => { read = () => resolve(snapshot); }),
     consumeReset: async (_id, input) => { attempts.push(input); return new Promise((resolve) => { finishReset = resolve; }); },

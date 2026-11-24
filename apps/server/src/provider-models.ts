@@ -36,6 +36,25 @@ export class SelectionConfirmationError extends Error {
 }
 export class ProviderModels {
   constructor(private db: Database.Database) {}
+  // The caller inserts the new Provider and copies its catalog in one transaction.
+  copyCatalog(sourceId: string, targetId: string) {
+    this.db.prepare(`
+      INSERT INTO provider_models (
+        connectionId, id, name, discoveredContextWindow, contextWindowOverride,
+        manual, available, legacyLimits, enabled, presetCapabilities
+      )
+      SELECT ?, id, name, discoveredContextWindow, contextWindowOverride,
+        manual, available, legacyLimits, enabled, presetCapabilities
+      FROM provider_models WHERE connectionId = ?
+    `).run(targetId, sourceId);
+    this.db.prepare(`
+      INSERT INTO model_media_capabilities (
+        connectionId, modelId, image, pdf, imageOverride, pdfOverride
+      )
+      SELECT ?, modelId, image, pdf, imageOverride, pdfOverride
+      FROM model_media_capabilities WHERE connectionId = ?
+    `).run(targetId, sourceId);
+  }
   private public(row: Row): ProviderModel {
     const { presetCapabilities, ...model } = row;
     const caps = this.db

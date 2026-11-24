@@ -8,6 +8,7 @@ export interface ContextMenuAnchor {
   x: number;
   y: number;
   returnFocus: HTMLElement;
+  toggle?: boolean;
 }
 export type ContextMenuDismissal = "escape" | "tab" | "outside" | "action" | "invalidated";
 export type ContextMenuItem = { id: string; separator: true } | {
@@ -66,7 +67,8 @@ export function ContextMenu({ anchor, label, items, onClose }: {
       onClose(reason);
     }
     const outside = (event: Event) => {
-      if (event.target instanceof Node && !element.contains(event.target)) close("outside");
+      if (event.target instanceof Node && !element.contains(event.target) &&
+        !(anchor.toggle && anchor.returnFocus.contains(event.target))) close("outside");
     };
     const scroll = (event: Event) => {
       if (!(event.target instanceof Node) || !element.contains(event.target)) close("invalidated");

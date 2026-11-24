@@ -710,7 +710,8 @@ test("ordinary work on different connections runs concurrently and the same agen
   t.after(() => f.close());
   f.db
     .prepare(
-      "INSERT INTO connections SELECT 'connection2',provider,name,endpoint,credential,createdAt,updatedAt,draft FROM connections WHERE id='connection'",
+      `INSERT INTO connections(id,provider,name,endpoint,credential,createdAt,updatedAt,draft)
+       SELECT 'connection2',provider,name,endpoint,credential,createdAt,updatedAt,draft FROM connections WHERE id='connection'`,
     )
     .run();
   f.db

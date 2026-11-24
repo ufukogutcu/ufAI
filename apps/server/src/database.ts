@@ -23,6 +23,8 @@ import { migrateCheckIns, migrateCheckInRoutes } from "./checkin-schema.js";
 import { migrateMedia } from "./media-schema.js";
 import { migrateTools } from "./tools-schema.js";
 
+const schemaVersion = 44;
+
 const defaultPath = fileURLToPath(
   new URL("../../../data/ufai.sqlite", import.meta.url),
 );
@@ -43,7 +45,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 43)
+    if (version > schemaVersion)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -431,6 +433,17 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
           database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT`);
       }
       database.pragma("user_version = 43");
+    })();
+
+    if (version < 44) database.transaction(() => {
+      const columns = database.pragma("table_info(connections)") as { name: string }[];
+      if (!columns.some(({ name }) => name === "codexSessionId"))
+        database.exec("ALTER TABLE connections ADD COLUMN codexSessionId TEXT");
+      database.exec(`
+        CREATE INDEX IF NOT EXISTS connections_codex_session ON connections(coalesce(codexSessionId, id))
+          WHERE provider = 'codex';
+      `);
+      database.pragma("user_version = 44");
     })();
 
   } catch (error) {

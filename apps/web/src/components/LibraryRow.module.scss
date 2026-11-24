@@ -1,0 +1,20 @@
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px;
+  align-items: center;
+  padding-inline: 2px;
+}
+
+.row .overflow {
+  align-self: stretch;
+  height: auto;
+  min-inline-size: var(--control-height);
+}
+
+@media (any-pointer: coarse) {
+  .row .overflow {
+    min-inline-size: 44px;
+    min-block-size: 44px;
+  }
+}

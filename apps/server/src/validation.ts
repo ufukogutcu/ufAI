@@ -34,6 +34,16 @@ function text(
   return value.trim();
 }
 
+export function duplicateName(body: unknown): string {
+  const input = objectBody(body);
+  const fields: Record<string, string> = {};
+  for (const key of Object.keys(input))
+    if (key !== "name") fields[key] = "Unknown field.";
+  const name = text(input.name, "name", 120, fields);
+  if (Object.keys(fields).length) throw new InputError(fields);
+  return name;
+}
+
 export function workspaceInput(
   body: unknown,
   existing?: WorkspaceInput,

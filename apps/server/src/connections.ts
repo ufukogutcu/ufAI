@@ -19,11 +19,12 @@ import {
 } from "./model-providers.js";
 import { ProviderModels } from "./provider-models.js";
 import { discoverOllama, testApiModel } from "./provider-inference.js";
-import { InputError, objectBody, pagination } from "./validation.js";
+import { duplicateName, InputError, objectBody, pagination } from "./validation.js";
 
 type Row = Omit<ProviderConnection, "hasCredential" | "draft"> & {
   draft: number;
   credential: string | null;
+  codexSessionId: string | null;
 };
 export interface ConnectionOptions {
   fetcher?: typeof fetch;
@@ -64,13 +65,20 @@ export function registerConnections(
   const testCompletions = new Map<string, Promise<void>>();
   const deleting = new Set<string>();
   const inFlight = new Map<string, Promise<DiscoveredModel[]>>();
-  const usageWork = new Map<string, Promise<unknown>>();
+  const usageWork = new Map<string, Set<Promise<unknown>>>();
   const resetting = new Set<string>();
   const get = database.prepare("SELECT * FROM connections WHERE id = ?");
   const list = database.prepare(
     "SELECT * FROM connections ORDER BY createdAt, id LIMIT ? OFFSET ?",
   );
   const count = database.prepare("SELECT count(*) AS total FROM connections");
+  const sessionCount = database.prepare<[string], { total: number }>(`
+    SELECT count(*) AS total FROM connections
+    WHERE provider = 'codex' AND coalesce(codexSessionId, id) = ?
+  `);
+  const updateSession = database.prepare("UPDATE connections SET codexSessionId = ? WHERE id = ?");
+  const sessionId = (row: Row) => row.codexSessionId ?? row.id;
+  const sharedSession = (row: Row) => sessionCount.get(sessionId(row))!.total > 1;
   const publicRow = (row: Row): ProviderConnection => ({
     id: row.id,
     provider: row.provider,
@@ -78,7 +86,7 @@ export function registerConnections(
     endpoint: row.endpoint,
     draft: !!row.draft,
     hasCredential:
-      row.provider === "codex" ? codex.hasCredential(row.id) : !!row.credential,
+      row.provider === "codex" ? codex.hasCredential(sessionId(row)) : !!row.credential,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
@@ -93,9 +101,9 @@ export function registerConnections(
     return row;
   }
   function editable(id: string) {
-    if (service.busy(id) || inFlight.has(id) || tests.has(id) || usageWork.has(id))
+    if (service.busy(id) || inFlight.has(id) || tests.has(id) || usageWork.has(service.codexSession(id)))
       throw new ConnectionError(
-        "Model discovery is still running. Please retry shortly.",
+        "This Provider is busy. Retry when its current work finishes.",
         409,
       );
   }
@@ -203,13 +211,14 @@ export function registerConnections(
         typeof patch.apiKey === "string"
           ? secrets.encrypt(patch.apiKey.trim(), id)
           : (existing?.credential ?? null),
+      codexSessionId: existing?.codexSessionId ?? null,
       createdAt: existing?.createdAt ?? new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
   }
   const upsert =
-    database.prepare(`INSERT INTO connections (id, provider, name, endpoint, credential, draft, createdAt, updatedAt)
-    VALUES (@id, @provider, @name, @endpoint, @credential, @draft, @createdAt, @updatedAt)
+    database.prepare(`INSERT INTO connections (id, provider, name, endpoint, credential, draft, codexSessionId, createdAt, updatedAt)
+    VALUES (@id, @provider, @name, @endpoint, @credential, @draft, @codexSessionId, @createdAt, @updatedAt)
     ON CONFLICT(id) DO UPDATE SET name=@name, endpoint=@endpoint, credential=@credential, draft=@draft, updatedAt=@updatedAt`);
   function save(row: Row, selection?: unknown, confirmationToken?: unknown): ProviderConnection {
     return database.transaction(() => {
@@ -238,13 +247,45 @@ export function registerConnections(
       total: (count.get() as { total: number }).total,
     };
   });
-  app.post("/api/connections", async (request, reply) => {
+  function requireCapacity() {
     if ((count.get() as { total: number }).total >= 100)
       throw new ConnectionError(
         "Keep at most 100 saved connections. Remove an unused connection first.",
         409,
       );
+  }
+  app.post("/api/connections", async (request, reply) => {
+    requireCapacity();
     return reply.code(201).send(save(validate(request.body)));
+  });
+  const duplicate = database.transaction((sourceId: string, name: string) => {
+    const source = required(sourceId);
+    if (source.draft)
+      throw new ConnectionError("Save this Provider before duplicating it.", 409);
+    requireCapacity();
+    let codexSessionId: string | null = null;
+    if (source.provider === "codex") {
+      editable(source.id);
+      const session = sessionId(source);
+      if (codex.isSigningIn(session))
+        throw new ConnectionError("Finish or cancel Codex sign-in before duplicating this Provider.", 409);
+      // Both Providers use one runtime to keep rotating credentials in sync.
+      if (codex.hasCredential(session)) codexSessionId = session;
+    }
+    const id = randomUUID();
+    const apiKey = key(source);
+    const now = new Date().toISOString();
+    const copy: Row = {
+      ...source, name, id, codexSessionId,
+      credential: apiKey ? secrets.encrypt(apiKey, id) : null,
+      createdAt: now, updatedAt: now,
+    };
+    upsert.run(copy);
+    models.copyCatalog(sourceId, id);
+    return publicRow(copy);
+  });
+  app.post<{ Params: { id: string } }>("/api/connections/:id/duplicate", async (request, reply) => {
+    return reply.code(201).send(duplicate.immediate(request.params.id, duplicateName(request.body)));
   });
   app.patch<{ Params: { id: string } }>(
     "/api/connections/:id",
@@ -263,15 +304,17 @@ export function registerConnections(
     async (request, reply) => {
       const row = required(request.params.id);
       if (!row.draft) editable(row.id);
+      const release = row.draft ? undefined : service.claim(row.id, "exclusive");
       deleting.add(row.id);
       try {
         tests.get(row.id)?.abort();
         await Promise.allSettled([
           inFlight.get(row.id),
           testCompletions.get(row.id),
-          usageWork.get(row.id),
+          ...(usageWork.get(sessionId(row)) ?? []),
         ]);
-        if (row.provider === "codex") await codex.remove(row.id);
+        if (row.provider === "codex" && !sharedSession(row))
+          await codex.remove(sessionId(row));
         database.transaction(() => {
           database
             .prepare(
@@ -282,6 +325,7 @@ export function registerConnections(
         })();
       } finally {
         deleting.delete(row.id);
+        release?.();
       }
       return reply.code(204).send();
     },
@@ -354,7 +398,7 @@ export function registerConnections(
           try {
           const discovered =
             row.provider === "codex"
-              ? await codex.models(row.id)
+              ? await codex.models(sessionId(row))
               : row.provider === "ollama"
                 ? await discoverOllama(
                     endpoint(row),
@@ -472,7 +516,7 @@ export function registerConnections(
       try {
         const text =
           row.provider === "codex"
-            ? await codex.test(row.id, model.id, controller.signal)
+            ? await codex.test(sessionId(row), model.id, controller.signal)
             : await testApiModel(
                 row.provider,
                 endpoint(row),
@@ -519,10 +563,13 @@ export function registerConnections(
       });
     return row;
   };
-  function trackUsage<T>(id: string, promise: Promise<T>): Promise<T> {
-    usageWork.set(id, promise);
+  function trackUsage<T>(session: string, promise: Promise<T>): Promise<T> {
+    const pending = usageWork.get(session) ?? new Set<Promise<unknown>>();
+    pending.add(promise);
+    usageWork.set(session, pending);
     void promise.finally(() => {
-      if (usageWork.get(id) === promise) usageWork.delete(id);
+      pending.delete(promise);
+      if (!pending.size && usageWork.get(session) === pending) usageWork.delete(session);
     }).catch(() => {});
     return promise;
   }
@@ -535,19 +582,21 @@ export function registerConnections(
     "/api/connections/:id/usage",
     async (request, reply) => {
       const row = usageRow(request.params.id);
+      const session = sessionId(row);
       const { details, refresh } = request.query;
       if ([details, refresh].some((value) => value !== undefined && value !== "true" && value !== "false"))
         throw new InputError({ usage: "Use true or false for details and refresh." });
-      if (inFlight.has(row.id) || tests.has(row.id) || resetting.has(row.id))
+      if (service.exclusive(row.id) || resetting.has(session))
         throw new ConnectionError("This Provider is busy. Retry usage shortly.", 409);
       reply.header("Cache-Control", "no-store");
-      return trackUsage(row.id, codex.usage(row.id, details === "true", refresh === "true"));
+      return trackUsage(session, codex.usage(session, details === "true", refresh === "true"));
     },
   );
   app.post<{ Params: { id: string } }>(
     "/api/connections/:id/usage/resets/consume",
     async (request, reply) => {
       const row = usageRow(request.params.id);
+      const session = sessionId(row);
       editable(row.id);
       const body = objectBody(request.body);
       const valid = (value: unknown, max: number) => typeof value === "string" && !!value.trim() && value.length <= max;
@@ -555,62 +604,81 @@ export function registerConnections(
           !valid(body.idempotencyKey, 200) || (body.creditId !== undefined && !valid(body.creditId, 500)))
         throw new InputError({ reset: "Supply an idempotency key and an optional reset ID." });
       reply.header("Cache-Control", "no-store");
-      resetting.add(row.id);
+      resetting.add(session);
       try {
-        const outcome = await trackUsage(row.id, codex.consumeReset(row.id, {
+        const outcome = await trackUsage(session, codex.consumeReset(session, {
           idempotencyKey: body.idempotencyKey as string,
           ...(body.creditId !== undefined ? { creditId: body.creditId as string } : {}),
         }));
         return { outcome };
-      } finally { resetting.delete(row.id); }
+      } finally { resetting.delete(session); }
     },
   );
   app.get<{ Params: { id: string } }>(
     "/api/connections/:id/login",
     async (request) => {
-      runtimeRow(request.params.id);
-      return codex.status(request.params.id);
+      return codex.status(sessionId(runtimeRow(request.params.id)));
     },
   );
   app.post<{ Params: { id: string } }>(
     "/api/connections/:id/login",
     async (request) => {
-      runtimeRow(request.params.id);
+      const row = runtimeRow(request.params.id);
       const body = objectBody(request.body);
       if (
         Object.keys(body).some((key) => key !== "deviceCode") ||
         (body.deviceCode !== undefined && typeof body.deviceCode !== "boolean")
       )
         throw new InputError({ deviceCode: "Choose true or false." });
-      editable(request.params.id);
-      models.invalidate(request.params.id);
-      return codex.login(request.params.id, body.deviceCode === true);
+      return changeAuthentication(row, (session, detached) => {
+        if (!detached) models.invalidate(row.id);
+        return codex.login(session, body.deviceCode === true);
+      });
     },
   );
   app.delete<{ Params: { id: string } }>(
     "/api/connections/:id/login",
     async (request, reply) => {
-      runtimeRow(request.params.id);
-      await codex.cancel(request.params.id);
+      const row = runtimeRow(request.params.id);
+      if (!sharedSession(row)) await codex.cancel(sessionId(row));
       return reply.code(204).send();
     },
   );
   app.post<{ Params: { id: string } }>(
     "/api/connections/:id/logout",
     async (request, reply) => {
-      runtimeRow(request.params.id);
-      editable(request.params.id);
-      await codex.logout(request.params.id);
-      models.invalidate(request.params.id);
+      const row = runtimeRow(request.params.id);
+      await changeAuthentication(row, async (session, detached) => {
+        if (detached) return;
+        await codex.logout(session);
+        models.invalidate(row.id);
+      });
       return reply.code(204).send();
     },
   );
+  async function changeAuthentication<T>(row: Row, change: (session: string, detached: boolean) => Promise<T>) {
+    editable(row.id);
+    const detached = sharedSession(row);
+    const session = detached ? randomUUID() : sessionId(row);
+    if (detached) {
+      database.transaction(() => {
+        updateSession.run(session, row.id);
+        models.invalidate(row.id);
+      })();
+    }
+    const release = service.claim(row.id, "exclusive");
+    try {
+      return await change(session, detached);
+    } finally {
+      release();
+    }
+  }
   app.addHook("onClose", async () => {
     for (const controller of tests.values()) controller.abort();
     await Promise.allSettled([
       ...inFlight.values(),
       ...testCompletions.values(),
-      ...usageWork.values(),
+      ...[...usageWork.values()].flatMap(pending => [...pending]),
     ]);
     await service.close();
   });
