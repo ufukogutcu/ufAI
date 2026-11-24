@@ -1,4 +1,5 @@
 import { taskTools } from "../src/agent-tools.js";
+import { finalAnswerDelivery } from "../src/agent-work-guidance.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ToolProvider } from "../src/tool-provider.js";
@@ -268,6 +269,7 @@ for (const provider of [
       ),
       mediaRequest: TaskRequest = {
         ...base,
+        instructions: finalAnswerDelivery({ replyKind: "result", requestId: "request" }, { kind: "task", source: "agent" }, "Chief"),
         messages: [
           {
             role: "user",
@@ -319,6 +321,8 @@ for (const provider of [
     assert.equal(second.text, "Done");
     assert.equal(second.calls.length, 0);
     for (const body of bodies) {
+      const instructions = body.instructions ?? body.system ?? body.systemInstruction?.parts[0]?.text ?? body.messages[0].content;
+      assert.equal(instructions, mediaRequest.instructions);
       if (provider === "anthropic") assert.equal(body.max_tokens, 16000);
       else {
         assert.equal(body.max_tokens, undefined);

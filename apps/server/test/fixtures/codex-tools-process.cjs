@@ -11,6 +11,8 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
    if (baseInstructions?.includes('awareness-fixture')) {
      if (!baseInstructions.includes('Connected agents: {"items":[{"id":"helper"') || !dynamicTools.some(t => t.name === 'agent_connection_inspect')) throw Error('missing connection awareness');
      if (!developerInstructions.includes('agent_send') || !developerInstructions.includes('browser_')) throw Error('missing ufAI messaging and browser guidance');
+     if (!/requesting agent "Chief"/.test(baseInstructions) || !/notification/i.test(developerInstructions)) throw Error('missing reply destination or one-way messaging guidance');
+     if (!/Final-answer delivery/i.test(developerInstructions) || !developerInstructions.includes('user_notify')) throw Error('missing delivery reminder in Codex developer instructions');
    }
    const id = 'thread-' + ++thread;
    toolKinds.set(id, dynamicTools.some(t => t.name === 'agent_send'));

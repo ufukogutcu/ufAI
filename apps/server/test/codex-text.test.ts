@@ -1,4 +1,5 @@
 import { taskTools } from "../src/agent-tools.js";
+import { finalAnswerDelivery } from "../src/agent-work-guidance.js";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -125,13 +126,17 @@ test("Codex retains final message items that arrive without deltas and reports u
   assert.deepEqual(answer.usage, { inputTokens: 12, outputTokens: 8 });
 });
 
-test("Codex transports initial connection awareness and replacement observations on failed dynamic results", async t => {
+test("Codex transports the reply destination, connection awareness and replacement observations", async t => {
   const directory = await mkdtemp(join(tmpdir(), "ufai-codex-awareness-"));
   const runtime = new CodexRuntime(directory, () => spawn(process.execPath, [fileURLToPath(new URL("./fixtures/codex-tools-process.cjs", import.meta.url))], { stdio: ["pipe", "pipe", "pipe"] }), 1000, 1000);
   t.after(async () => { await runtime.close(); await rm(directory, { recursive: true, force: true }); });
   const result = await runtime.executeTask("connection", {
     ...base,
-    instructions: 'awareness-fixture\nConnected agents: {"items":[{"id":"helper","name":"Helper","description":"Research"}]}',
+    instructions: [
+      "awareness-fixture",
+      finalAnswerDelivery({ replyKind: "result", requestId: "request" }, { kind: "task", source: "agent" }, "Chief"),
+      'Connected agents: {"items":[{"id":"helper","name":"Helper","description":"Research"}]}',
+    ].join("\n"),
     messages: [{ role: "user", content: "awareness-fixture" }],
     tools: taskTools,
     onTool: async () => ({ ok: false, error: "The connection was removed.", connectedAgents: { capturedAt: new Date().toISOString(), items: [] } }),

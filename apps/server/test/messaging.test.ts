@@ -29,6 +29,11 @@ async function until(fn: () => boolean) {
   }
   assert.fail("Timed out");
 }
+function deliveryCue(request: TaskRequest) {
+  const line = request.instructions.split("\n").find(line => line.startsWith("Final-answer delivery: "));
+  assert.ok(line, "The acting model must receive a human-readable return destination");
+  return line;
+}
 // Advance durable transmissions without wall-clock sleeps in routing-only fixtures.
 function arrive(s: { db: ReturnType<typeof openDatabase>; messaging: MessagingService }) {
   s.db.prepare("UPDATE message_transits SET arrivesAt='2000-01-01T00:00:00.000Z' WHERE state='in_flight'").run();
@@ -663,6 +668,43 @@ test("notification finishes without reply; Inbox notifications preserve delibera
   assert.equal(JSON.parse(turn.envelope).source, "user");
   assert.equal(JSON.parse(turn.envelope).replyKind, "inbox");
 });
+test("one-way recipients get a task-only cue and only an explicit user_notify reaches Inbox", async t => {
+  const s = await setup(t);
+  const sends = [
+    { agentId: "b", content: "The user says hi!" },
+    { agentId: "c", content: "FYI only. No reply needed." },
+  ].map(({ agentId, content }) => {
+    s.messaging.createLink(s.workspaceId, "a", agentId);
+    return s.messaging.send(s.owner, { agentId, content, kind: "notification" }, randomUUID());
+  });
+  arrive(s);
+  const cues = new Map<string, string>();
+  s.connections.toolRound = async (_snapshot, request) => {
+    const input = request.messages.at(-1)!.content.split("\n").at(-1)!;
+    cues.set(input, deliveryCue(request));
+    const notify = input === "The user says hi!" && !request.continuation?.length;
+    return {
+      text: notify ? "" : "Done",
+      calls: notify ? [{ id: "reply-directly", name: "user_notify", arguments: { content: "Hello back!" } }] : [],
+      usage: null,
+      continuation: [],
+    };
+  };
+  (s.engine as any).options.autoStart = true;
+  s.engine.wake();
+  await until(() => sends.every(send => s.engine.task(send.taskId).status === "completed") && s.engine.task(s.owner.taskId).status === "completed");
+  for (const input of ["The user says hi!", "FYI only. No reply needed."]) {
+    const cue = cues.get(input);
+    assert.ok(cue);
+    assert.match(cue, /one-way notification/i);
+    assert.match(cue, /stays in this task/i);
+    assert.match(cue, /user_notify/);
+    assert.match(cue, /local note/i);
+  }
+  assert.match(cues.get("Root work") ?? "", /requested deliverable/i);
+  assert.deepEqual(s.db.prepare("SELECT agentId,content FROM workspace_inbox").all(), [{ agentId: "b", content: "Hello back!" }]);
+  assert.deepEqual(s.db.prepare("SELECT kind FROM communication_messages ORDER BY sequence").all(), [{ kind: "notification" }, { kind: "notification" }]);
+});
 test("unbounded helper requests retain ancestor checks and complete-before-wait atomicity", async (t) => {
   const s = await setup(t);
   s.messaging.createLink(s.workspaceId, "a", "b");
@@ -722,107 +764,69 @@ test("unbounded helper requests retain ancestor checks and complete-before-wait 
     /choice/,
   );
 });
-test("automatic tool loop yields requester, runs helper and unrelated work, then routes one result to user task", async (t) => {
-  const s = await setup(t, true);
-  s.messaging.createLink(s.workspaceId, "a", "b");
-  const ran: string[] = [];
-  let sawWaiting = false,
-    sawResumedEvent = false;
-  s.engine.events.on("change", () => {
-    const turn = s.db
-      .prepare("SELECT status FROM agent_turns WHERE id=?")
-      .get(s.owner.turnId) as { status: string };
-    if (s.engine.task(s.owner.taskId).status === "waiting") sawWaiting = true;
-    if (sawWaiting && s.engine.task(s.owner.taskId).status === "running")
-      sawResumedEvent = true;
-  });
-  s.connections.toolRound = async (_snapshot, request) => {
-    const agent = request.instructions.includes("You are a.") ? "a" : "b";
-    ran.push(agent);
-    const steps = request.continuation as any[];
-    if (agent === "b") {
-      await until(() => s.engine.task(s.owner.taskId).status === "waiting");
-      assert.equal(s.engine.requiredAgent("a").runningTaskCount, 0);
-      return {
-        text: "Helper result",
-        calls: [],
-        continuation: [],
-        usage: null,
-      };
-    }
-    if (request.messages.some((m) => m.content.includes("Helper result"))) {
-      assert.ok(sawResumedEvent);
-      return {
-        text: "User final with helper result",
-        calls: [],
-        continuation: [],
-        usage: null,
-      };
-    }
-    if (!steps.length)
-      return {
-        text: "Delegating",
-        calls: [
-          {
-            id: "send",
-            name: "agent_send",
-            arguments: { agentId: "b", content: "Help" },
-          },
-        ],
-        continuation: [],
-        usage: null,
-      };
-    if (steps.length === 1)
-      return {
-        text: "Waiting",
-        calls: [
-          {
-            id: "wait",
-            name: "task_yield",
-            arguments: {
-              summary: "Independent work complete; resume with helper result.",
-            },
-          },
-        ],
-        continuation: [],
-        usage: null,
-      };
-    assert.ok(
-      sawResumedEvent,
-      "messaging resumption must invalidate activity before the next model round",
-    );
-    return {
-      text: "User final with helper result",
-      calls: [],
-      continuation: [],
-      usage: null,
+for (const lane of ["chat", "task", "background"] as const) {
+  test(`${lane}: a helper's greeting reaches the user once after yield`, async t => {
+    const s = await setup(t);
+    await s.engine.cancelTask(s.owner.taskId);
+    const greeting = s.engine.submit("a", lane === "chat" ? "chat" : "new", "Say hello to b for me", randomUUID(), [], "[]", {
+      source: lane === "background" ? "system" : "user",
+    });
+    const taskId = greeting.taskId!;
+    s.messaging.createLink(s.workspaceId, "a", "b");
+    const helperReply = "Say hello back from me.";
+    const userReply = "b says hello back!";
+    const ownerCues = new Set<string>();
+    let helperCue = "", sawWaiting = false, sawResumedEvent = false;
+    s.engine.events.on("change", () => {
+      const { status } = s.engine.task(taskId);
+      if (status === "waiting") sawWaiting = true;
+      if (sawWaiting && status === "running") sawResumedEvent = true;
+    });
+    s.connections.toolRound = async (_snapshot, request) => {
+      const cue = deliveryCue(request);
+      if (request.instructions.includes("You are b.")) {
+        helperCue = cue;
+        await until(() => s.engine.task(taskId).status === "waiting");
+        if (lane !== "chat") assert.equal(s.engine.requiredAgent("a").runningTaskCount, 0);
+        return { text: helperReply, calls: [], continuation: [], usage: null };
+      }
+      ownerCues.add(cue);
+      const steps = request.continuation ?? [];
+      if (request.messages.some(m => m.content.includes(helperReply))) {
+        assert.ok(sawResumedEvent, "The helper result must resume the requester");
+        if (lane !== "chat" && !steps.length) {
+          const call = { id: "notify", name: "user_notify", arguments: { content: userReply } };
+          return { text: "", calls: [call], continuation: [], usage: null };
+        }
+        return { text: userReply, calls: [], continuation: [], usage: null };
+      }
+      assert.ok(steps.length < 2, "A user-facing response needs the actual helper result");
+      const call = steps.length === 0
+        ? { id: "send", name: "agent_send", arguments: { agentId: "b", content: "The user says hello!" } }
+        : { id: "wait", name: "task_yield", arguments: { summary: "Relay the helper's greeting when it arrives." } };
+      return { text: "", calls: [call], continuation: [], usage: null };
     };
-  };
-  (s.engine as any).options.autoStart = true;
-  s.engine.wake();
-  await until(() => s.engine.task(s.owner.taskId).status === "completed");
-  assert.ok(ran.includes("b"));
-  assert.equal(
-    (
-      s.db
-        .prepare(
-          "SELECT count(*) n FROM communication_messages WHERE kind='result'",
-        )
-        .get() as any
-    ).n,
-    1,
-  );
-  const transcript = s.db
-    .prepare(
-      "SELECT * FROM agent_messages WHERE conversationId=? AND role='assistant' AND state='complete'",
-    )
-    .all(s.engine.task(s.owner.taskId).conversationId) as any[];
-  assert.equal(transcript.at(-1).content, "User final with helper result");
-  assert.equal(
-    (s.db.prepare("SELECT count(*) n FROM workspace_inbox").get() as any).n,
-    0,
-  );
-});
+    (s.engine as any).options.autoStart = true;
+    s.engine.wake();
+    await until(() => s.engine.task(taskId).status === "completed");
+    assert.match(helperCue, /returns automatically.*requesting agent.*"a"/i);
+    assert.equal(ownerCues.size, 1, "The incoming helper response must preserve the original user's destination");
+    const [cue] = ownerCues;
+    if (lane === "chat") assert.match(cue, /user in this Chat/i);
+    if (lane === "task") assert.match(cue, /single fact or calculation is a requested deliverable/i);
+    if (lane === "background") assert.match(cue, /routine checks quietly/i);
+    assert.deepEqual(s.db.prepare("SELECT kind, content FROM communication_messages ORDER BY sequence").all(), [
+      { kind: "request", content: "The user says hello!" }, { kind: "result", content: helperReply },
+    ]);
+    const transcript = s.db.prepare(
+      "SELECT content FROM agent_messages WHERE conversationId=? AND role='assistant' AND state='complete' ORDER BY sequence",
+    ).all(s.engine.task(taskId).conversationId) as {content: string}[];
+    assert.equal(transcript.filter(m => m.content === userReply).length, 1);
+    assert.equal(transcript.at(-1)?.content, userReply);
+    assert.deepEqual(s.db.prepare("SELECT agentId,content FROM workspace_inbox").all(),
+      lane === "chat" ? [] : [{ agentId: "a", content: userReply }]);
+  });
+}
 test("v13 upgrade preserves populated records and stable paths while backfilling user identity", async (t) => {
   const s = await setup(t);
   const stamp = new Date().toISOString();
@@ -1364,6 +1368,17 @@ test("a child result wakes its helper with the helper original return route, nev
     )
     .get(child.requestId) as any;
   assert.equal(JSON.parse(delivery.envelope).requestId, parent.requestId);
+  let resumedCue: string | undefined;
+  s.connections.toolRound = async (_snapshot, request) => {
+    if (request.instructions.includes("You are b.") && request.messages.at(-1)?.content.includes("Child completed")) {
+      resumedCue = deliveryCue(request);
+    }
+    return { text: "Done", calls: [], continuation: [], usage: null };
+  };
+  (s.engine as any).options.autoStart = true;
+  s.engine.wake();
+  await until(() => resumedCue !== undefined);
+  assert.match(resumedCue!, /requesting agent "a"/);
 });
 
 test("confirmed pending revocation resumes on startup and requests have no expiry", async (t) => {
@@ -1557,16 +1572,14 @@ test("an Inbox user reply and the helper original request retain independent fin
     content: "User decision",
     requestId: randomUUID(),
   });
-  s.connections.toolRound = async (_snapshot, request) => ({
-    text: request.instructions.includes('"replyKind":"inbox"')
+  const cues = new Map<string, string>();
+  s.connections.toolRound = async (_snapshot, request) => {
+    const text = request.instructions.includes('"replyKind":"inbox"')
       ? "User Inbox answer"
-      : request.instructions.includes("You are b.")
-        ? "Agent-facing result"
-        : "Root response",
-    calls: [],
-    continuation: [],
-    usage: null,
-  });
+      : request.instructions.includes("You are b.") ? "Agent-facing result" : "Root response";
+    cues.set(text, deliveryCue(request));
+    return { text, calls: [], continuation: [], usage: null };
+  };
   (s.engine as any).options.autoStart = true;
   s.engine.wake();
   await until(
@@ -1595,6 +1608,8 @@ test("an Inbox user reply and the helper original request retain independent fin
     "User Inbox answer",
   );
   const arrivals = (await feed.inject(`/api/inbox/notifications?after=${baseline}`)).json();
+  assert.match(cues.get("User Inbox answer") ?? "", /inbox automatically/i);
+  assert.match(cues.get("Agent-facing result") ?? "", /returns automatically.*requesting agent.*"a"/i);
   assert.deepEqual(arrivals.items.map((item: any) => item.preview), ["User question", "User Inbox answer"]);
   assert.equal(arrivals.unreadTotal, 2);
 });

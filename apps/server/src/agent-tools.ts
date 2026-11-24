@@ -119,7 +119,7 @@ const allTaskTools: ToolSpec[] = [
   ),
   spec(
     "agent_send",
-    "Start a separate task with a connected agent. A request (default) returns a result. A notification needs no reply. Acknowledgement means delivered or queued.",
+    "Start a connected agent's task. Use a request (default) for a reply to relay, a question or a deliverable. Use a notification for a one-way FYI. The receipt means queued or delivered. The peer's reply arrives separately on a request.",
     {
       agentId: str("Recipient agent ID", 100),
       kind: { type: "string", enum: ["request", "notification"] },
@@ -130,7 +130,7 @@ const allTaskTools: ToolSpec[] = [
   ),
   spec(
     "agent_message",
-    "Use the existing request for a question, progress update, or answer. Answer with replyToId set to the question message ID. Questions and answers resume the recipient. Progress stays in history. A helper's final answer returns its result automatically.",
+    "Use the existing request for a question, progress update, or answer. Answer with replyToId set to the question message ID. Questions and answers resume the recipient. Progress stays in history. On a request your final returns the result automatically. On a one-way notification your final stays local.",
     {
       requestId: str("Request ID", 100),
       kind: { type: "string", enum: ["question", "progress", "answer"] },
@@ -184,7 +184,7 @@ const allTaskTools: ToolSpec[] = [
     "task_yield",
     "Save progress and end this turn when only replies or check-ins can advance the task. Releases the model session without completing the task. Call alone, after all other tools finish. Replies resume automatically.",
     {
-      summary: str("Progress, outstanding dependencies, and next steps", 2000),
+      summary: str("One brief progress line for the conversation. Name who or what you are waiting for. Omit internal IDs.", 2000),
     },
     ["summary"],
   ),
@@ -196,7 +196,7 @@ const allTaskTools: ToolSpec[] = [
   ),
   spec(
     "user_notify",
-    "Send an informational update to the user's Inbox. For questions or decisions use user_input_request. Final answers go to the immediate requester.",
+    "Deliver information and files directly to the user's workspace Inbox. Use for a user-facing outcome that would otherwise stay in Tasks. Skip duplicate delivery. For user questions or decisions use user_input_request.",
     { content: { type: "string", maxLength: 12000 }, versionIds },
     ["content"],
   ),
