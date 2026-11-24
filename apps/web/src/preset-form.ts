@@ -1,9 +1,10 @@
-import type { Compaction, ModelPreset, PresetInput } from "./api";
+import type { Compaction, ModelPreset, PresetInput, ProviderPresetOptions } from "./api";
 export interface PresetDraft {
   name: string;
   isDefault: boolean;
   modelId: string;
   connectionId: string | null;
+  providerOptions: ProviderPresetOptions | null;
   compactionMode: Compaction["mode"];
   compactionValue: string;
 }
@@ -13,6 +14,7 @@ export function draftFromPreset(preset?: ModelPreset): PresetDraft {
     isDefault: preset?.isDefault ?? false,
     modelId: preset?.modelId ?? "",
     connectionId: preset?.connectionId ?? null,
+    providerOptions: preset?.providerOptions ?? null,
     compactionMode: preset?.compaction?.mode ?? "percentage",
     compactionValue: preset?.compaction?.value.toString() ?? "",
   };
@@ -23,10 +25,27 @@ export function draftToInput(draft: PresetDraft): PresetInput {
     isDefault: draft.isDefault,
     connectionId: draft.connectionId,
     modelId: draft.connectionId ? draft.modelId.trim() || null : null,
+    providerOptions: draft.connectionId && draft.modelId.trim() ? draft.providerOptions : null,
     compaction:
       draft.compactionValue === ""
         ? null
         : { mode: draft.compactionMode, value: Number(draft.compactionValue) },
+  };
+}
+export function setCodexPresetOption(
+  draft: PresetDraft,
+  field: "reasoningEffort" | "serviceTier",
+  value: string,
+): PresetDraft {
+  const reasoningEffort = field === "reasoningEffort" ? value : draft.providerOptions?.reasoningEffort;
+  const serviceTier = field === "serviceTier" ? value : draft.providerOptions?.serviceTier;
+  return {
+    ...draft,
+    providerOptions: reasoningEffort || serviceTier ? {
+      provider: "codex",
+      ...(reasoningEffort ? { reasoningEffort } : {}),
+      ...(serviceTier ? { serviceTier } : {}),
+    } : null,
   };
 }
 export function validateDraft(draft: PresetDraft): Record<string, string> {

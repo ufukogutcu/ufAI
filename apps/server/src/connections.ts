@@ -10,6 +10,7 @@ import type {
 } from "./contracts.js";
 import { ConnectionService } from "./connection-service.js";
 import { type CodexAdapter } from "./codex-runtime.js";
+import { codexPresetOptionErrors } from "./codex-preset-options.js";
 import {
   connectionProviders,
   ConnectionError,
@@ -274,7 +275,7 @@ export function registerConnections(
         database.transaction(() => {
           database
             .prepare(
-              "UPDATE model_presets SET connectionId = NULL, modelId = NULL, provider = NULL, integrationKind = NULL, customProviderName = NULL, contextWindow = NULL WHERE connectionId = ?",
+              "UPDATE model_presets SET connectionId = NULL, modelId = NULL, provider = NULL, integrationKind = NULL, customProviderName = NULL, contextWindow = NULL, providerOptions = NULL WHERE connectionId = ?",
             )
             .run(row.id);
           database.prepare("DELETE FROM connections WHERE id = ?").run(row.id);
@@ -615,8 +616,12 @@ export function registerConnections(
   });
   return function resolvePreset(
     input: PresetConfiguration,
+    validateOptions = false,
   ): PresetConfiguration {
-    if (!input.connectionId)
+    const options = validateOptions ? input.providerOptions : null;
+    const requiresCodexModel = "Choose a Codex model before setting Codex options.";
+    if (!input.connectionId) {
+      if (options) throw new InputError({ providerOptions: requiresCodexModel });
       return {
         ...input,
         connectionId: null,
@@ -626,6 +631,7 @@ export function registerConnections(
         customProviderName: null,
         contextWindow: null,
       };
+    }
     const connection = get.get(input.connectionId) as Row | undefined;
     if (!connection || connection.draft)
       throw new InputError({
@@ -638,6 +644,12 @@ export function registerConnections(
       throw new InputError({
         modelId: "Choose a selected model saved in this Provider.",
       });
+    if (options) {
+      if (connection.provider !== options.provider || !model)
+        throw new InputError({ providerOptions: requiresCodexModel });
+      const fields = codexPresetOptionErrors(options, model.presetCapabilities);
+      if (Object.keys(fields).length) throw new InputError(fields);
+    }
     return {
       ...input,
       provider: connection.provider,

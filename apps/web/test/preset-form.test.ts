@@ -4,6 +4,7 @@ import {
   compactionThreshold,
   draftFromPreset,
   draftToInput,
+  setCodexPresetOption,
   validateDraft,
 } from "../src/preset-form.js";
 test("only a name is required and compaction defaults to empty", () => {
@@ -15,9 +16,25 @@ test("only a name is required and compaction defaults to empty", () => {
     connectionId: null,
     modelId: null,
     compaction: null,
+    providerOptions: null,
   });
   assert.equal(compactionThreshold(1000, null), null);
   assert.ok(validateDraft({ ...draft, name: " " }).name);
+});
+
+test("Codex choices can be set and cleared independently in the preset draft", () => {
+  const draft = { ...draftFromPreset(), name: "Agent", connectionId: "codex", modelId: "model" };
+  const effort = setCodexPresetOption(draft, "reasoningEffort", "xhigh");
+  const both = setCodexPresetOption(effort, "serviceTier", "priority");
+  const speedFirst = setCodexPresetOption(draft, "serviceTier", "priority");
+  assert.equal(JSON.stringify(setCodexPresetOption(speedFirst, "reasoningEffort", "xhigh")), JSON.stringify(both));
+  assert.deepEqual(draftToInput(both).providerOptions, {
+    provider: "codex", reasoningEffort: "xhigh", serviceTier: "priority",
+  });
+  const speed = setCodexPresetOption(both, "reasoningEffort", "");
+  assert.equal(draftToInput(speed).providerOptions?.serviceTier, "priority");
+  assert.equal(draftToInput(setCodexPresetOption(speed, "serviceTier", "")).providerOptions, null);
+  assert.equal(draftToInput({ ...both, modelId: "" }).providerOptions, null);
 });
 test("percentage thresholds round down, clamp to one, and stay exact for safe integers", () => {
   assert.equal(compactionThreshold(101, { mode: "percentage", value: 80 }), 80);

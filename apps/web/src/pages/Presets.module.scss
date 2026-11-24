@@ -183,6 +183,7 @@
   border: 0;
   padding: 0 20px;
   overflow-y: auto;
+  scroll-padding-block: 12px;
   overscroll-behavior: contain;
   margin: 0;
   min-width: 0;
@@ -270,6 +271,14 @@
   flex-wrap: wrap;
   gap: 6px 12px;
   margin-top: 6px;
+}
+.codexOptions {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+.codexOptions .modelStatus {
+  grid-column: 1 / -1;
 }
 .modelStatus {
   color: var(--faint);

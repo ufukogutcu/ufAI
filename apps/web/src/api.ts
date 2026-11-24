@@ -3,6 +3,7 @@ export type {
   Workspace,
   ModelPreset,
   PresetInput,
+  ProviderPresetOptions,
   ProviderId,
   IntegrationKind,
   Compaction,

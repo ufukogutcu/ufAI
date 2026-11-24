@@ -10,6 +10,7 @@ import type {
   CodexUsageSnapshot,
   CodexResetInput,
   CodexResetOutcome,
+  ProviderPresetOptions,
 } from "./contracts.js";
 import type {
   TextRequest,
@@ -26,6 +27,7 @@ import {
 } from "./codex-process.js";
 import { normalizeCodexUsage } from "./codex-usage.js";
 import { readCodexContexts } from "./codex-catalog.js";
+import { codexPresetCapabilities } from "./codex-preset-options.js";
 
 export { launchCodex, type CodexLauncher } from "./codex-process.js";
 
@@ -36,8 +38,8 @@ export interface CodexAdapter {
   logout(id: string): Promise<void>;
   models(id: string): Promise<DiscoveredModel[]>;
   test(id: string, modelId: string, signal: AbortSignal): Promise<string>;
-  executeText?(id: string, request: TextRequest): Promise<TextResult>;
-  executeTask?(id: string, request: TaskRequest): Promise<TextResult>;
+  executeText?(id: string, request: TextRequest, options?: ProviderPresetOptions): Promise<TextResult>;
+  executeTask?(id: string, request: TaskRequest, options?: ProviderPresetOptions): Promise<TextResult>;
   hasCredential(id: string): boolean;
   remove(id: string): Promise<void>;
   usage(
@@ -743,6 +745,7 @@ class CodexClient {
           model.model.length > 200
         )
           continue;
+        const presetCapabilities = codexPresetCapabilities(model);
         models.push({
           id: model.model,
           name:
@@ -750,6 +753,7 @@ class CodexClient {
               ? model.displayName.slice(0, 300)
               : model.model,
           contextWindow: null,
+          ...(presetCapabilities ? { presetCapabilities } : {}),
           ...(Array.isArray(model.inputModalities)
             ? {
                 media: {
@@ -841,24 +845,17 @@ class CodexClient {
       if (!this.textRequests) await this.stop();
     }
   }
-  async generate(request: TextRequest): Promise<TextResult> {
+  async generate(request: TextRequest | TaskRequest, options?: ProviderPresetOptions): Promise<TextResult> {
     this.textRequests++;
     try {
-      return await this.generateText(request);
-    } finally {
-      this.textRequests--;
-    }
-  }
-  async executeTask(request: TaskRequest): Promise<TextResult> {
-    this.textRequests++;
-    try {
-      return await this.generateText(request);
+      return await this.generateText(request, options);
     } finally {
       this.textRequests--;
     }
   }
   private async generateText(
     request: TextRequest | TaskRequest,
+    options?: ProviderPresetOptions,
   ): Promise<TextResult> {
     const task = "tools" in request ? request : undefined;
     request.signal.throwIfAborted();
@@ -941,6 +938,8 @@ class CodexClient {
           threadId,
           model: request.modelId,
           approvalPolicy: "never",
+          ...(options?.reasoningEffort ? { effort: options.reasoningEffort } : {}),
+          ...(options?.serviceTier ? { serviceTierForTurn: options.serviceTier } : {}),
           input: [
             {
               type: "text",
@@ -1186,11 +1185,11 @@ export class CodexRuntime implements CodexAdapter {
     void promise.finally(() => this.discoveries.delete(id)).catch(() => {});
     return promise;
   }
-  executeText(id: string, request: TextRequest) {
-    return this.withClient(id, (client) => client.generate(request));
+  executeText(id: string, request: TextRequest, options?: ProviderPresetOptions) {
+    return this.withClient(id, (client) => client.generate(request, options));
   }
-  executeTask(id: string, request: TaskRequest) {
-    return this.withClient(id, (client) => client.executeTask(request));
+  executeTask(id: string, request: TaskRequest, options?: ProviderPresetOptions) {
+    return this.withClient(id, (client) => client.generate(request, options));
   }
   test(id: string, modelId: string, signal: AbortSignal) {
     return this.withClient(id, (client) => client.test(modelId, signal));

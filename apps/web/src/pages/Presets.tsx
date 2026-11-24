@@ -15,11 +15,13 @@ import {
   compactionThreshold,
   draftFromPreset,
   draftToInput,
+  setCodexPresetOption,
   validateDraft,
 } from "../preset-form";
 import { Field } from "../components/FormField";
 import { Dialog } from "../components/Dialog";
 import { ModelSelect } from "../components/ModelSelect";
+import { CodexPresetFields } from "../components/CodexPresetFields";
 import { refreshOnFocus } from "../focus-refresh";
 import styles from "./Presets.module.scss";
 import { Appearance, AppearanceGroup } from "../components/Appearance";
@@ -60,7 +62,9 @@ function PresetEditor({
   useUnsavedChanges(JSON.stringify(draft) !== baseline);
   const handleModel = useCallback(
     (id: string, selected: ProviderModel | null) => {
-      setDraft((current) => ({ ...current, modelId: id }));
+      setDraft((current) => current.modelId === id
+        ? current : { ...current, modelId: id, providerOptions: null });
+      setFields({});
       setModel(selected);
     },
     [],
@@ -69,12 +73,24 @@ function PresetEditor({
     (selected: ProviderModel | null) => setModel(selected),
     [],
   );
+  function handleCodexOption(field: "reasoningEffort" | "serviceTier", value: string) {
+    setDraft((current) => setCodexPresetOption(current, field, value));
+    setFields((current) => {
+      const key = `providerOptions.${field}`;
+      if (!(key in current)) return current;
+      const { [key]: _, ...remaining } = current;
+      return remaining;
+    });
+  }
+  const selectedConnection = connections.find((item) => item.id === draft.connectionId);
+  const selectedModel = model?.id === draft.modelId && model.connectionId === draft.connectionId
+    ? model : null;
   const input = draftToInput(draft);
   const threshold = compactionThreshold(
-    model?.contextWindow ?? null,
+    selectedModel?.contextWindow ?? null,
     input.compaction,
   );
-  const context = model?.contextWindow;
+  const context = selectedModel?.contextWindow;
   const invalidThreshold =
     input.compaction?.mode === "tokens" &&
     context &&
@@ -152,8 +168,10 @@ function PresetEditor({
                     ...draft,
                     connectionId: event.target.value || null,
                     modelId: "",
+                    providerOptions: null,
                   });
                   setModel(null);
+                  setFields({});
                 }}
               >
                 <option value="">None</option>
@@ -189,8 +207,16 @@ function PresetEditor({
           />
           <p className={styles.modelStatus}>
             Context window:{" "}
-            {model?.contextWindow?.toLocaleString() ?? "Unknown"} tokens
+            {selectedModel?.contextWindow?.toLocaleString() ?? "Unknown"} tokens
           </p>
+          {draft.modelId && (selectedConnection?.provider === "codex" || draft.providerOptions) && (
+            <CodexPresetFields
+              model={selectedModel}
+              options={draft.providerOptions}
+              fields={fields}
+              onChange={handleCodexOption}
+            />
+          )}
           {(!draft.connectionId || !draft.modelId) && (
             <p className={styles.modelStatus}>
               You can save this preset now and choose a Provider and model

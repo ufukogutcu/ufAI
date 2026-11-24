@@ -18,6 +18,16 @@ export type ProviderId =
   | "codex"
   | "custom";
 export type Compaction = { mode: "percentage" | "tokens"; value: number };
+export type ProviderPresetOptions = {
+  provider: "codex";
+  reasoningEffort?: string;
+  serviceTier?: string;
+};
+export type ProviderPresetCapabilities = {
+  provider: "codex";
+  reasoningEfforts?: { id: string; description: string }[];
+  serviceTiers?: { id: string; name: string; description: string }[];
+};
 
 export interface WorkspaceInput {
   name: string;
@@ -60,6 +70,7 @@ export interface PresetInput {
   connectionId?: string | null;
   modelId?: string | null;
   compaction?: Compaction | null;
+  providerOptions?: ProviderPresetOptions | null;
 }
 
 export interface PresetConfiguration {
@@ -72,6 +83,7 @@ export interface PresetConfiguration {
   contextWindow: number | null;
   connectionId: string | null;
   compaction: Compaction | null;
+  providerOptions: ProviderPresetOptions | null;
 }
 
 export interface ModelPreset extends PresetConfiguration {
@@ -117,6 +129,7 @@ export interface ModelMedia {
 }
 export interface DiscoveredModel {
   media?: MediaCapabilities;
+  presetCapabilities?: ProviderPresetCapabilities;
   id: string;
   name: string;
   contextWindow: number | null;

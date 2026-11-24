@@ -607,6 +607,10 @@ test("maintenance resumes from its saved response after restart and preserves me
 test("Codex restart resolves saved pending callbacks before rebuilding the provider session",async t=>{
   const s=await setup(t);
   s.db.prepare("UPDATE connections SET provider='codex' WHERE id='c'").run();
+  const savedOptions = { provider: "codex", reasoningEffort: "high", serviceTier: "priority" };
+  s.db.prepare("UPDATE provider_models SET presetCapabilities=? WHERE connectionId='c' AND id='m'")
+    .run(JSON.stringify({ provider: "codex", reasoningEfforts: [{ id: "high" }], serviceTiers: [{ id: "priority" }] }));
+  s.db.prepare("UPDATE model_presets SET providerOptions=? WHERE id='p'").run(JSON.stringify(savedOptions));
   const tools=(s.engine as any).tools;
   const dispatch=tools.dispatch.bind(tools);
   tools.dispatch=async(...args:any[])=>{
@@ -614,7 +618,8 @@ test("Codex restart resolves saved pending callbacks before rebuilding the provi
     if(args[1].id==="one") await s.action("freeze");
     return outcome;
   };
-  s.service.connections.executeTask=async(_snapshot,request)=>{
+  s.service.connections.executeTask=async(snapshot,request)=>{
+    assert.deepEqual(snapshot.providerOptions, savedOptions);
     const calls=[write("one","one.txt"),write("two","two.txt")];
     calls.forEach(call=>request.onToolQueued?.(call));
     request.onUsage?.({inputTokens:10,outputTokens:5});
@@ -624,10 +629,12 @@ test("Codex restart resolves saved pending callbacks before rebuilding the provi
   const task=s.engine.submit("a","new","Use Codex tools",randomUUID());
   await s.until(()=>s.control().state==="frozen");
   assert.equal((s.db.prepare("SELECT count(*) n FROM execution_results WHERE turnId=?").get(task.turnId) as any).n,2);
+  s.db.prepare("UPDATE model_presets SET providerOptions=NULL WHERE id='p'").run();
   await s.reopen();
   let rebuilt=false;
-  s.service.connections.executeTask=async(_snapshot,request)=>{
+  s.service.connections.executeTask=async(snapshot,request)=>{
     rebuilt=true;
+    assert.deepEqual(snapshot.providerOptions, savedOptions);
     assert.match(request.messages.at(-1)!.content,/Server-restored execution progress/);
     assert.equal((s.db.prepare("SELECT count(*) n FROM tool_invocations WHERE turnId=?").get(task.turnId) as any).n,2);
     request.onUsage?.({inputTokens:2,outputTokens:3});

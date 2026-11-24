@@ -54,9 +54,7 @@ export function ModelSelect({
   }, [connectionId, query, offset, revision]);
   useEffect(() => {
     const controller = new AbortController();
-    setSelected(null);
     setSelectedMessage("");
-    onResolved(null);
     if (connectionId && value)
       void request<ProviderModel>(
         `/connections/${connectionId}/models/${encodeURIComponent(value)}`,
@@ -74,8 +72,14 @@ export function ModelSelect({
         .catch((error) => {
           if (!controller.signal.aborted) setSelectedMessage(errorMessage(error));
         });
+    else {
+      setSelected(null);
+      onResolved(null);
+    }
     return () => controller.abort();
   }, [connectionId, value, onResolved, revision]);
+  const selectedModel = selected?.id === value && selected.connectionId === connectionId
+    ? selected : null;
   return (
     <div className={styles.modelPicker}>
       {connectionId && (
@@ -110,7 +114,7 @@ export function ModelSelect({
           >
             <option value="">None</option>
             {value && !page.items.some((m) => m.id === value) && (
-              <option value={value} disabled={selected?.enabled === false}>{selected?.name ?? value}{selected?.enabled === false ? " (unselected)" : ""}</option>
+              <option value={value} disabled={selectedModel?.enabled === false}>{selectedModel?.name ?? value}{selectedModel?.enabled === false ? " (unselected)" : ""}</option>
             )}
             {page.items.map((model) => (
               <option key={model.id} value={model.id}>

@@ -1,5 +1,5 @@
 import type { MediaReference, NativeMedia } from "./media-service.js";
-import type { Compaction, ConnectionProvider } from "./contracts.js";
+import type { Compaction, ConnectionProvider, ProviderPresetOptions } from "./contracts.js";
 
 export interface TextMessage {
   role: "user" | "assistant";
@@ -21,6 +21,7 @@ export interface TextResult {
 }
 export interface ExecutionSnapshot {
   mediaCapabilities?: import("./contracts.js").MediaCapabilities;
+  providerOptions?: ProviderPresetOptions;
   presetId: string;
   connectionId: string;
   provider: ConnectionProvider;

@@ -43,7 +43,7 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     database.pragma("journal_mode = WAL");
     database.pragma("foreign_keys = ON");
     const version = database.pragma("user_version", { simple: true }) as number;
-    if (version > 42)
+    if (version > 43)
       throw new Error("This database requires a newer version of ufAI.");
     if (version < 1)
       database.transaction(() => {
@@ -419,6 +419,18 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
       // Some version-41 databases were created without the transit timing column.
       ensureMessageTransitTiming(database);
       database.pragma("user_version = 42");
+    })();
+
+    if (version < 43) database.transaction(() => {
+      for (const [table, column] of [
+        ["model_presets", "providerOptions"],
+        ["provider_models", "presetCapabilities"],
+      ]) {
+        const columns = database.pragma(`table_info(${table})`) as { name: string }[];
+        if (!columns.some(({ name }) => name === column))
+          database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT`);
+      }
+      database.pragma("user_version = 43");
     })();
 
   } catch (error) {

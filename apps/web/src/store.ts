@@ -466,11 +466,11 @@ export function createDashboardStore(settings: SettingsStore) {
           state.defaultPreset?.connectionId === connectionId &&
           state.defaultPreset.modelId &&
           disabled.has(state.defaultPreset.modelId)
-            ? { ...state.defaultPreset, modelId: null, contextWindow: null }
+            ? { ...state.defaultPreset, modelId: null, contextWindow: null, providerOptions: null }
             : state.defaultPreset,
         presets: state.presets.map(preset =>
           preset.connectionId === connectionId && preset.modelId && disabled.has(preset.modelId)
-            ? { ...preset, modelId: null, contextWindow: null }
+            ? { ...preset, modelId: null, contextWindow: null, providerOptions: null }
             : preset),
       }));
     },

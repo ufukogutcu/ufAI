@@ -3,6 +3,8 @@
 // tools, including MCP access, through the journaled dynamic-tool bridge.
 export const codexTextConfig = {
   web_search: "disabled",
+  // A model's catalog can select native delegation even with the feature flags off.
+  agents: { enabled: false },
   features: {
     shell_tool: false,
     unified_exec: false,

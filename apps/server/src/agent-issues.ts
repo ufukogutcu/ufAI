@@ -1,6 +1,10 @@
 import type Database from "better-sqlite3";
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import type { AgentIssue } from "./contracts.js";
+import type { AgentIssue, ProviderPresetOptions } from "./contracts.js";
+import {
+  codexPresetOptionErrors,
+  unavailableCodexPresetOptions,
+} from "./codex-preset-options.js";
 
 type Configuration = {
   preset: string | null;
@@ -12,6 +16,8 @@ type Configuration = {
   model: string | null;
   enabled: number | null;
   contextWindow: number | null;
+  providerOptions: string | null;
+  presetCapabilities: string | null;
 };
 
 /** Read-only diagnostics. Never probes a provider or starts a runtime. */
@@ -22,7 +28,7 @@ export class AgentIssues {
   constructor(db: Database.Database) {
     this.configuration = db.prepare(`SELECT p.id AS preset,
       c.id AS connection, c.draft, c.provider, (c.credential IS NOT NULL) AS hasCredential,
-      p.modelId, m.id AS model, m.enabled,
+      p.modelId, m.id AS model, m.enabled, p.providerOptions, m.presetCapabilities,
       coalesce(m.contextWindowOverride,m.discoveredContextWindow) AS contextWindow
       FROM agents a LEFT JOIN model_presets p ON p.id=a.presetId
       LEFT JOIN connections c ON c.id=p.connectionId
@@ -59,6 +65,12 @@ export class AgentIssues {
       add("unknown-context", "The model’s context window is unknown. Set it in Providers.");
     } else if (c.contextWindow < 1024) {
       add("insufficient-context", "Execution requires a context window of at least 1,024 tokens. Update the model in Providers.");
+    }
+    if (c.provider === "codex" && c.model && c.enabled && c.providerOptions) {
+      const options = JSON.parse(c.providerOptions) as ProviderPresetOptions;
+      const capabilities = c.presetCapabilities ? JSON.parse(c.presetCapabilities) : undefined;
+      if (Object.keys(codexPresetOptionErrors(options, capabilities)).length)
+        add("unavailable-codex-preset-options", unavailableCodexPresetOptions);
     }
     return items;
   }

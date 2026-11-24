@@ -335,7 +335,7 @@ test("version 33 migration preserves secret requests, Inbox foreign keys and und
   s.db.exec(`INSERT INTO legacy_inputs(${columns}) SELECT ${columns} FROM user_input_requests; DROP TABLE user_input_requests; ALTER TABLE legacy_inputs RENAME TO user_input_requests; PRAGMA user_version=33`);
   s.db.pragma("foreign_keys=ON");
   const upgraded = openDatabase(s.path); t.after(() => upgraded.close());
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 42);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 43);
   assert.deepEqual(upgraded.pragma("foreign_key_check"), []);
   assert.equal((upgraded.prepare("SELECT secretId FROM user_input_requests WHERE id=?").get(answered.id) as any).secretId, fulfilled.secretId);
   assert.equal((upgraded.prepare("SELECT deliveredTurnId FROM user_input_requests WHERE id=?").get(answered.id) as any).deliveredTurnId, null);

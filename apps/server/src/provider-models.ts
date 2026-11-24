@@ -18,12 +18,14 @@ type Row = Omit<
   | "available"
   | "lastTest"
   | "legacyLimits"
+  | "presetCapabilities"
 > & {
   enabled: number;
   manual: number;
   available: number;
   lastTest: string | null;
   legacyLimits: string;
+  presetCapabilities: string | null;
 };
 export class SelectionConfirmationError extends Error {
   constructor(public impact: SelectionImpact) {
@@ -35,6 +37,7 @@ export class SelectionConfirmationError extends Error {
 export class ProviderModels {
   constructor(private db: Database.Database) {}
   private public(row: Row): ProviderModel {
+    const { presetCapabilities, ...model } = row;
     const caps = this.db
       .prepare(
         "SELECT * FROM model_media_capabilities WHERE connectionId=? AND modelId=?",
@@ -47,7 +50,8 @@ export class ProviderModels {
           ? ("supported" as const)
           : ("unsupported" as const);
     return {
-      ...row,
+      ...model,
+      ...(presetCapabilities ? { presetCapabilities: JSON.parse(presetCapabilities) } : {}),
       mediaSettings: {
         discovered: { image: support(caps?.image), pdf: support(caps?.pdf) },
         overrides: {
@@ -199,7 +203,7 @@ export class ProviderModels {
       throw new SelectionConfirmationError(impact);
     this.db
       .prepare(
-        `UPDATE model_presets SET modelId = NULL, contextWindow = NULL
+        `UPDATE model_presets SET modelId = NULL, contextWindow = NULL, providerOptions = NULL
       WHERE connectionId = ? AND modelId IN (SELECT id FROM provider_models WHERE connectionId = ? AND enabled = 0)`,
       )
       .run(connectionId, connectionId);
@@ -315,11 +319,14 @@ export class ProviderModels {
         )
         .run(connectionId);
       const upsert = this.db
-        .prepare(`INSERT INTO provider_models (connectionId, id, name, discoveredContextWindow) VALUES (?, ?, ?, ?)
+        .prepare(`INSERT INTO provider_models (connectionId, id, name, discoveredContextWindow, presetCapabilities) VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(connectionId, id) DO UPDATE SET name = excluded.name,
-        discoveredContextWindow = excluded.discoveredContextWindow, available = 1`);
+        discoveredContextWindow = excluded.discoveredContextWindow, available = 1,
+        presetCapabilities = CASE WHEN excluded.presetCapabilities IS NULL THEN provider_models.presetCapabilities
+          ELSE json_patch(coalesce(provider_models.presetCapabilities, '{}'), excluded.presetCapabilities) END`);
       for (const m of models) {
-        upsert.run(connectionId, m.id, m.name, m.contextWindow);
+        upsert.run(connectionId, m.id, m.name, m.contextWindow,
+          m.presetCapabilities ? JSON.stringify(m.presetCapabilities) : null);
         const numeric = (s: string | undefined) =>
           s === "supported" ? 1 : s === "unsupported" ? 0 : null;
         this.db
@@ -356,7 +363,7 @@ export class ProviderModels {
         .run(connectionId, id);
       this.db
         .prepare(
-          "UPDATE model_presets SET modelId = NULL, contextWindow = NULL WHERE connectionId = ? AND modelId = ?",
+          "UPDATE model_presets SET modelId = NULL, contextWindow = NULL, providerOptions = NULL WHERE connectionId = ? AND modelId = ?",
         )
         .run(connectionId, id);
     })();

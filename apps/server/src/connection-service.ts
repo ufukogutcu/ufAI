@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rm } from "node:fs/promises";
 import type Database from "better-sqlite3";
-import type { ConnectionProvider } from "./contracts.js";
+import type { ConnectionProvider, ProviderPresetOptions } from "./contracts.js";
 import type {
   ExecutionSnapshot,
   TextRequest,
@@ -15,6 +15,10 @@ import type {
 } from "./execution-types.js";
 import { ConnectionSecrets } from "./connection-secrets.js";
 import { CodexRuntime, type CodexAdapter } from "./codex-runtime.js";
+import {
+  codexPresetOptionErrors,
+  unavailableCodexPresetOptions,
+} from "./codex-preset-options.js";
 import { ProviderModels } from "./provider-models.js";
 import { ConnectionError, providerEndpoints } from "./model-providers.js";
 import { ToolProvider } from "./tool-provider.js";
@@ -116,8 +120,15 @@ export class ConnectionService {
         "Execution requires a context window of at least 1,024 tokens.",
         409,
       );
+    let providerOptions: ProviderPresetOptions | undefined;
+    if (c.provider === "codex" && p.providerOptions) {
+      providerOptions = JSON.parse(p.providerOptions) as ProviderPresetOptions;
+      if (Object.keys(codexPresetOptionErrors(providerOptions, model.presetCapabilities)).length)
+        throw new ConnectionError(unavailableCodexPresetOptions, 409);
+    }
     return {
       mediaCapabilities: effectiveMedia(c.provider, model),
+      ...(providerOptions ? { providerOptions } : {}),
       presetId: p.id,
       connectionId: c.id,
       provider: c.provider,
@@ -202,6 +213,7 @@ export class ConnectionService {
   async generate(
     snapshot: ExecutionSnapshot,
     request: TextRequest,
+    usePresetOptions = false,
   ): Promise<TextResult> {
     const provider = this.provider(snapshot);
     if (provider) return provider.generate(request);
@@ -210,7 +222,10 @@ export class ConnectionService {
         "This Codex adapter does not support text execution.",
         503,
       );
-    return this.codex.executeText(snapshot.connectionId, request);
+    return this.codex.executeText(
+      snapshot.connectionId, request,
+      usePresetOptions ? snapshot.providerOptions : undefined,
+    );
   }
   async toolRound(
     snapshot: ExecutionSnapshot,
@@ -342,7 +357,7 @@ export class ConnectionService {
         "This Codex adapter does not support task tools.",
         503,
       );
-    return this.codex.executeTask(snapshot.connectionId, request);
+    return this.codex.executeTask(snapshot.connectionId, request, snapshot.providerOptions);
   }
   async countTokens(snapshot: ExecutionSnapshot, request: TextRequest) {
     const provider = this.provider(snapshot);

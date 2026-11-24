@@ -1040,7 +1040,7 @@ export class AgentExecution {
       );
     await this.freezeGate(turn,active);
     this.db.prepare("UPDATE execution_checkpoints SET safe=0 WHERE turnId=?").run(turn.id);
-    const result = await this.connections.generate(active.snapshot, r);
+    const result = await this.connections.generate(active.snapshot, r, scope === "answer");
     this.live(turn, active);
     if (result.usage) {
       const old = (

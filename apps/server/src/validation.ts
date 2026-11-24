@@ -1,4 +1,5 @@
 import type { PresetConfiguration, WorkspaceInput } from "./contracts.js";
+import { isPresetOptionId } from "./codex-preset-options.js";
 
 export class InputError extends Error {
   constructor(public fields: Record<string, string>) {
@@ -63,7 +64,7 @@ export function presetInput(
   const input = { ...existing, ...patch };
   const fields: Record<string, string> = {};
   for (const key of Object.keys(patch))
-    if (!["name", "isDefault", "connectionId", "modelId", "compaction"].includes(key))
+    if (!["name", "isDefault", "connectionId", "modelId", "compaction", "providerOptions"].includes(key))
       fields[key] = "Unknown field.";
   const name = text(input.name, "name", 120, fields);
   const isDefault = input.isDefault === undefined ? false : input.isDefault;
@@ -100,6 +101,30 @@ export function presetInput(
     else if (c.mode === "percentage" || c.mode === "tokens")
       compaction = { mode: c.mode, value: c.value };
   }
+  let providerOptions: PresetConfiguration["providerOptions"] = null;
+  if (patch.providerOptions === undefined) {
+    if (existing?.connectionId === connectionId && existing.modelId === modelId)
+      providerOptions = existing.providerOptions;
+  } else if (patch.providerOptions !== null) {
+    const options = patch.providerOptions as Record<string, unknown>;
+    if (!options || typeof options !== "object" || Array.isArray(options) ||
+        options.provider !== "codex" ||
+        Object.keys(options).some((key) => !["provider", "reasoningEffort", "serviceTier"].includes(key))) {
+      fields.providerOptions = "Choose supported options for the selected Provider.";
+    } else {
+      const { reasoningEffort, serviceTier } = options;
+      if (reasoningEffort !== undefined && !isPresetOptionId(reasoningEffort))
+        fields["providerOptions.reasoningEffort"] = "Choose a thinking level or use Codex default.";
+      if (serviceTier !== undefined && !isPresetOptionId(serviceTier))
+        fields["providerOptions.serviceTier"] = "Choose a speed or use Codex default.";
+      if (isPresetOptionId(reasoningEffort) || isPresetOptionId(serviceTier))
+        providerOptions = {
+          provider: "codex",
+          ...(isPresetOptionId(reasoningEffort) ? { reasoningEffort } : {}),
+          ...(isPresetOptionId(serviceTier) ? { serviceTier } : {}),
+        };
+    }
+  }
   if (Object.keys(fields).length) throw new InputError(fields);
   return {
     name,
@@ -111,6 +136,7 @@ export function presetInput(
     customProviderName: null,
     contextWindow: null,
     compaction,
+    providerOptions,
   };
 }
 

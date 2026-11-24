@@ -47,7 +47,7 @@ test("v24 migration backfills facing anchors once without moving agents or repla
   const agents = db.prepare("SELECT * FROM agents ORDER BY id").all();
   removeCommunicationAnchors(db); db.pragma("user_version=24"); db.close();
   db = openDatabase(path);
-  assert.equal(db.pragma("user_version", { simple: true }), 42);
+  assert.equal(db.pragma("user_version", { simple: true }), 43);
   assert.deepEqual(db.prepare("SELECT * FROM agents ORDER BY id").all(), agents);
   assert.deepEqual(db.prepare("SELECT id,sourceAnchorAngle,targetAnchorAngle FROM communication_links ORDER BY id").all(), [
     { id: "coincident", sourceAnchorAngle: 0, targetAnchorAngle: 180 }, { id: "vertical", sourceAnchorAngle: 90, targetAnchorAngle: 270 },
