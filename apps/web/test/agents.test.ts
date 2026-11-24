@@ -12,6 +12,7 @@ const a: Agent = {
   name: "Researcher",
   instructions: "Help",
   presetId: null,
+  customConfiguration: null,
   x: 10,
   y: 20,
   revision: 1,
@@ -423,6 +424,26 @@ test("details refresh updates clean fields and preserves dirty instructions with
   assert.equal(dirty.draft.name, "Renamed");
   assert.equal(dirty.baseline.name, "Renamed");
   assert.equal(dirty.revision, 1);
+});
+
+test("first model setting edit detaches the preset and refreshes preserve the whole custom draft", async () => {
+  const { configurationChanged, customizeDetails, detailsValues, refreshDetails } = await import("../src/agent-details.js");
+  const { modelConfigurationDraft } = await import("../src/preset-form.js");
+  const baseline = detailsValues({ ...a, presetId: "linked" });
+  const inherited = modelConfigurationDraft({
+    connectionId: "saved", modelId: "model", compaction: { mode: "percentage", value: 80 },
+    providerOptions: { provider: "codex", reasoningEffort: "high" },
+  });
+  const draft = customizeDetails(baseline, { ...inherited, compactionValue: "70" });
+  assert.equal(draft.presetId, null);
+  assert.deepEqual(draft.customConfiguration, { ...inherited, compactionValue: "70" });
+  assert.ok(configurationChanged(draft, baseline));
+  const fresh = refreshDetails({ draft, baseline, revision: 1 }, { ...a, presetId: "replaced", name: "Renamed", revision: 2 });
+  assert.equal(fresh.draft.name, "Renamed");
+  assert.equal(fresh.revision, 1);
+  assert.equal(fresh.baseline.presetId, "linked");
+  assert.equal(fresh.draft.presetId, null);
+  assert.deepEqual(fresh.draft.customConfiguration, draft.customConfiguration);
 });
 
 test("stale workspace snapshots cannot replace a newer saved instruction revision", async t => {

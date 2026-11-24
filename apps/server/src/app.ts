@@ -270,7 +270,7 @@ export function createApp(
   registerWorkspaceDuplications(app, duplications);
   registerMessaging(app,messaging,incoming);
   files.bind(execution);
-  registerAgents(app, database, execution, files, incoming);
+  registerAgents(app, database, execution, files, validatePresetConnection, incoming);
   registerLocations(app, database, files);
   registerAgentFiles(app, agentFiles);
   registerTools(app, database, execution, processes, artifacts);
@@ -451,6 +451,11 @@ export function createApp(
       total: (presetCount.get() as { total: number }).total,
     };
   });
+  app.get<{ Params: { id: string } }>("/api/model-presets/:id", async (request, reply) => {
+    const row = presetGet.get(request.params.id) as PresetRow | undefined;
+    if (!row) return reply.code(404).send({ error: "Agent preset not found." });
+    return validatePresetConnection(fromRow(row));
+  });
   app.post("/api/model-presets", async (request, reply) => {
     const input = validatePresetConnection(presetInput(request.body), true);
     const now = new Date().toISOString();
@@ -514,10 +519,15 @@ export function createApp(
       );
     },
   );
+  const deletePreset = database.transaction((id: string) => {
+    database.prepare("UPDATE agents SET revision=revision+1, updatedAt=? WHERE presetId=?")
+      .run(new Date().toISOString(), id);
+    return presetDelete.run(id).changes;
+  });
   app.delete<{ Params: { id: string } }>(
     "/api/model-presets/:id",
     async (request, reply) => {
-      if (!presetDelete.run(request.params.id).changes)
+      if (!deletePreset.immediate(request.params.id))
         return reply.code(404).send({ error: "Agent preset not found." });
       return reply.code(204).send();
     },

@@ -29,6 +29,7 @@ import { ConnectionService } from "./connection-service.js";
 import { ConnectionError } from "./model-providers.js";
 import { maintenanceEvidence } from "./maintenance-evidence.js";
 import { AgentIssues } from "./agent-issues.js";
+import { readCustomConfiguration } from "./agent-model-configuration.js";
 import { readWorkspacePacing } from "./workspace-pacing.js";
 import { connectedAgentSummaries, connectionAwarenessGuidance, type ConnectedAgentSummary } from "./connection-awareness.js";
 import { agentWorkGuidance, finalAnswerDelivery } from "./agent-work-guidance.js";
@@ -146,7 +147,7 @@ export class AgentExecution {
   }
   requiredAgent(id: string, allowDeleting = false): Agent {
     const row = this.db.prepare("SELECT * FROM agents WHERE id = ?").get(id) as
-      | (Omit<Agent, "appearance" | "state" | "queuedCount" | "runningTaskCount" | "unfinishedTaskCount" | "issueCounts" | "pendingUserInputCount"> & { appearance: string })
+      | (Omit<Agent, "appearance" | "customConfiguration" | "state" | "queuedCount" | "runningTaskCount" | "unfinishedTaskCount" | "issueCounts" | "pendingUserInputCount"> & { appearance: string })
       | undefined;
     if (!row) throw new ConnectionError("Agent not found.", 404);
     if (!allowDeleting)
@@ -179,6 +180,7 @@ export class AgentExecution {
       .get(id) as { status: "blocked" | "failed" } | undefined;
     return {
       ...row,
+      customConfiguration: row.presetId ? null : readCustomConfiguration(this.db, id),
       appearance: JSON.parse(row.appearance),
       executionControl: this.freezing.control(id),
       issueCounts: this.issues.counts(id),

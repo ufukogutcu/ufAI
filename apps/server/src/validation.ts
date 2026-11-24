@@ -1,4 +1,4 @@
-import type { PresetConfiguration, WorkspaceInput } from "./contracts.js";
+import type { AgentModelConfiguration, PresetConfiguration, WorkspaceInput } from "./contracts.js";
 import { isPresetOptionId } from "./codex-preset-options.js";
 
 export class InputError extends Error {
@@ -66,6 +66,8 @@ export function workspaceInput(
 }
 
 // Provider identity and context are resolved from saved records, never preset overrides.
+const modelConfigurationFields = ["connectionId", "modelId", "compaction", "providerOptions"];
+
 export function presetInput(
   body: unknown,
   existing?: PresetConfiguration,
@@ -74,12 +76,41 @@ export function presetInput(
   const input = { ...existing, ...patch };
   const fields: Record<string, string> = {};
   for (const key of Object.keys(patch))
-    if (!["name", "isDefault", "connectionId", "modelId", "compaction", "providerOptions"].includes(key))
+    if (key !== "name" && key !== "isDefault" && !modelConfigurationFields.includes(key))
       fields[key] = "Unknown field.";
   const name = text(input.name, "name", 120, fields);
   const isDefault = input.isDefault === undefined ? false : input.isDefault;
   if (typeof isDefault !== "boolean")
     fields.isDefault = "Choose whether this preset is the default.";
+  const configuration = parseModelConfiguration(patch, fields, existing);
+  if (Object.keys(fields).length) throw new InputError(fields);
+  return {
+    ...configuration,
+    name,
+    isDefault: isDefault as boolean,
+    integrationKind: null,
+    provider: null,
+    customProviderName: null,
+    contextWindow: null,
+  };
+}
+
+export function customConfigurationInput(body: unknown): AgentModelConfiguration {
+  const patch = objectBody(body);
+  const fields: Record<string, string> = {};
+  for (const key of Object.keys(patch))
+    if (!modelConfigurationFields.includes(key)) fields[key] = "Unknown field.";
+  const configuration = parseModelConfiguration(patch, fields);
+  if (Object.keys(fields).length) throw new InputError(fields);
+  return configuration;
+}
+
+function parseModelConfiguration(
+  patch: Record<string, unknown>,
+  fields: Record<string, string>,
+  existing?: AgentModelConfiguration,
+): AgentModelConfiguration {
+  const input = { ...existing, ...patch };
   const connectionId = input.connectionId ?? null;
   if (
     connectionId !== null &&
@@ -135,16 +166,9 @@ export function presetInput(
         };
     }
   }
-  if (Object.keys(fields).length) throw new InputError(fields);
   return {
-    name,
-    isDefault: isDefault as boolean,
     connectionId: connectionId as string | null,
     modelId,
-    integrationKind: null,
-    provider: null,
-    customProviderName: null,
-    contextWindow: null,
     compaction,
     providerOptions,
   };

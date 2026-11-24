@@ -191,11 +191,22 @@ test("Codex model metadata controls which preset choices can be saved", async (t
 });
 
 test("Tasks and Chat use their own Codex turn options while maintenance inherits defaults", async (t) => {
-  const { engine, createPreset, createAgent, patch, presets, turnsPath } = await setup(t);
+  const { engine, createPreset, createAgent, patch, presets, turnsPath, connectionId } = await setup(t);
   const taskPreset = await createPreset("Fast Tasks", fast);
   const chatPreset = await createPreset("Standard Chat", standard);
   const taskAgent = await createAgent("Task Agent", taskPreset.id);
   const chatAgent = await createAgent("Chat Agent", chatPreset.id);
+  const customAgent = await createAgent("Custom Agent", taskPreset.id);
+  const invalid = await patch(`/api/agents/${customAgent}`, {
+    customConfiguration: { connectionId, modelId: "second", providerOptions: fast },
+  });
+  assert.equal(invalid.statusCode, 400, invalid.body);
+  assert.ok(invalid.json().fields["customConfiguration.providerOptions.reasoningEffort"]);
+  const detached = await patch(`/api/agents/${customAgent}`, {
+    customConfiguration: { connectionId, modelId: "first", providerOptions: fast },
+  });
+  assert.equal(detached.statusCode, 200, detached.body);
+  assert.equal(detached.json().presetId, null);
   const task = engine.submit(taskAgent, "new", "Hello", "codex_preset_task");
   const chat = engine.submit(chatAgent, "chat", "Hello", "codex_preset_chat");
   const wait = async (ids: string[]) => {
@@ -212,7 +223,8 @@ test("Tasks and Chat use their own Codex turn options while maintenance inherits
   await wait([task.taskId!, chat.taskId!]);
   assert.equal((await patch(`${presets}/${taskPreset.id}`, { providerOptions: null })).statusCode, 200);
   const later = engine.submit(taskAgent, "new", "Run with defaults", "codex_preset_later");
-  await wait([later.taskId!]);
+  const custom = engine.submit(customAgent, "chat", "Use my settings", "codex_custom_chat");
+  await wait([later.taskId!, custom.taskId!]);
   const calls = (await readFile(turnsPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
   assert.deepEqual(calls.filter(({ purpose }) => purpose === "task"), [
     { purpose: "task", effort: "ultra", serviceTierForTurn: "priority" },
@@ -220,9 +232,10 @@ test("Tasks and Chat use their own Codex turn options while maintenance inherits
   ]);
   assert.deepEqual(calls.filter(({ purpose }) => purpose === "chat"), [
     { purpose: "chat", effort: "medium", serviceTierForTurn: "default" },
+    { purpose: "chat", effort: "ultra", serviceTierForTurn: "priority" },
   ]);
   assert.deepEqual(calls.filter(({ purpose }) => purpose === "maintenance"), [
-    { purpose: "maintenance" }, { purpose: "maintenance" }, { purpose: "maintenance" },
+    { purpose: "maintenance" }, { purpose: "maintenance" }, { purpose: "maintenance" }, { purpose: "maintenance" },
   ]);
 });
 
@@ -255,7 +268,7 @@ test("v42 migration preserves existing Codex presets and models with defaults", 
     assert.equal((await app.inject("/api/connections/c/models/m")).json().presetCapabilities, undefined);
     const db = openDatabase(path);
     try {
-      assert.equal(db.pragma("user_version", { simple: true }), 44);
+      assert.equal(db.pragma("user_version", { simple: true }), 45);
     } finally { db.close(); }
   } finally { await app.close(); }
 });

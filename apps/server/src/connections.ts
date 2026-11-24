@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { repairCustomConfigurations } from "./agent-model-configuration.js";
 import type Database from "better-sqlite3";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type {
+  AgentModelConfiguration,
   ConnectionProvider,
   DiscoveredModel,
   PresetConfiguration,
@@ -316,6 +318,7 @@ export function registerConnections(
         if (row.provider === "codex" && !sharedSession(row))
           await codex.remove(sessionId(row));
         database.transaction(() => {
+          repairCustomConfigurations(database, row.id, "provider-removed");
           database
             .prepare(
               "UPDATE model_presets SET connectionId = NULL, modelId = NULL, provider = NULL, integrationKind = NULL, customProviderName = NULL, contextWindow = NULL, providerOptions = NULL WHERE connectionId = ?",
@@ -682,10 +685,10 @@ export function registerConnections(
     ]);
     await service.close();
   });
-  return function resolvePreset(
-    input: PresetConfiguration,
+  return function resolvePreset<T extends AgentModelConfiguration>(
+    input: T,
     validateOptions = false,
-  ): PresetConfiguration {
+  ): T & Pick<PresetConfiguration, "provider" | "integrationKind" | "customProviderName" | "contextWindow"> {
     const options = validateOptions ? input.providerOptions : null;
     const requiresCodexModel = "Choose a Codex model before setting Codex options.";
     if (!input.connectionId) {

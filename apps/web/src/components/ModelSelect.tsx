@@ -6,12 +6,14 @@ import { refreshOnFocus } from "../focus-refresh";
 import styles from "../pages/Presets.module.scss";
 export function ModelSelect({
   connectionId,
+  refreshVersion,
   value,
   onSelect,
   onResolved,
   error,
 }: {
   connectionId: string | null;
+  refreshVersion?: number;
   value: string;
   onSelect: (id: string, model: ProviderModel | null) => void;
   onResolved: (model: ProviderModel | null) => void;
@@ -51,7 +53,7 @@ export function ModelSelect({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [connectionId, query, offset, revision]);
+  }, [connectionId, query, offset, revision, refreshVersion]);
   useEffect(() => {
     const controller = new AbortController();
     setSelectedMessage("");
@@ -77,7 +79,7 @@ export function ModelSelect({
       onResolved(null);
     }
     return () => controller.abort();
-  }, [connectionId, value, onResolved, revision]);
+  }, [connectionId, value, onResolved, revision, refreshVersion]);
   const selectedModel = selected?.id === value && selected.connectionId === connectionId
     ? selected : null;
   return (
@@ -103,6 +105,7 @@ export function ModelSelect({
         {(props) => (
           <select
             {...props}
+            name="modelId"
             disabled={!connectionId}
             value={value}
             onChange={(event) =>

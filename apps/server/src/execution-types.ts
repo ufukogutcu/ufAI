@@ -22,7 +22,7 @@ export interface TextResult {
 export interface ExecutionSnapshot {
   mediaCapabilities?: import("./contracts.js").MediaCapabilities;
   providerOptions?: ProviderPresetOptions;
-  presetId: string;
+  presetId: string | null;
   connectionId: string;
   provider: ConnectionProvider;
   modelId: string;

@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rm } from "node:fs/promises";
 import type Database from "better-sqlite3";
-import type { ConnectionProvider, ProviderPresetOptions } from "./contracts.js";
+import type { Agent, ConnectionProvider, ProviderPresetOptions } from "./contracts.js";
+import { modelConfigurationFromRow, type ModelConfigurationRow } from "./agent-model-configuration.js";
 import type {
   ExecutionSnapshot,
   TextRequest,
@@ -101,26 +102,22 @@ export class ConnectionService {
       if (!active.size) this.operations.delete(id);
     };
   }
-  snapshot(agent: {
-    presetId: string | null;
-    instructions: string;
-    revision: number;
-  }): ExecutionSnapshot {
-    const p = agent.presetId
-      ? (this.db
-          .prepare("SELECT * FROM model_presets WHERE id = ?")
-          .get(agent.presetId) as any)
+  snapshot(agent: Pick<Agent, "presetId" | "customConfiguration" | "instructions" | "revision">): ExecutionSnapshot {
+    const preset = agent.presetId
+      ? this.db.prepare("SELECT * FROM model_presets WHERE id = ?")
+        .get(agent.presetId) as ModelConfigurationRow | undefined
       : undefined;
-    if (!p?.connectionId || !p.modelId)
+    const configuration = preset ? modelConfigurationFromRow(preset) : agent.customConfiguration;
+    if (!configuration?.connectionId || !configuration.modelId)
       throw new ConnectionError(
-        "Choose a complete Agent Preset in Details, then retry.",
+        "Choose a complete Agent Preset or configure a Provider and model in Details, then retry.",
         409,
       );
-    const c = this.connection(p.connectionId);
-    const model = this.models.get(c.id, p.modelId);
+    const c = this.connection(configuration.connectionId);
+    const model = this.models.get(c.id, configuration.modelId);
     if (c.draft || !model?.enabled)
       throw new ConnectionError(
-        "The selected model is disabled or missing. Repair the Agent Preset, then retry.",
+        "The selected model is disabled or missing. Update the model settings in Details, then retry.",
         409,
       );
     if (!model.contextWindow)
@@ -134,23 +131,21 @@ export class ConnectionService {
         409,
       );
     let providerOptions: ProviderPresetOptions | undefined;
-    if (c.provider === "codex" && p.providerOptions) {
-      providerOptions = JSON.parse(p.providerOptions) as ProviderPresetOptions;
+    if (c.provider === "codex" && configuration.providerOptions) {
+      providerOptions = configuration.providerOptions;
       if (Object.keys(codexPresetOptionErrors(providerOptions, model.presetCapabilities)).length)
-        throw new ConnectionError(unavailableCodexPresetOptions, 409);
+        throw new ConnectionError(agent.presetId ? unavailableCodexPresetOptions
+          : "This Codex model no longer offers the selected thinking level or speed. Update the model settings in Details, then retry.", 409);
     }
     return {
       mediaCapabilities: effectiveMedia(c.provider, model),
       ...(providerOptions ? { providerOptions } : {}),
-      presetId: p.id,
+      presetId: agent.presetId,
       connectionId: c.id,
       provider: c.provider,
-      modelId: p.modelId,
+      modelId: configuration.modelId,
       contextWindow: model.contextWindow,
-      compaction:
-        p.compactionMode && p.compactionValue
-          ? { mode: p.compactionMode, value: p.compactionValue }
-          : null,
+      compaction: configuration.compaction,
       instructions: agent.instructions,
       agentRevision: agent.revision,
     };
@@ -161,7 +156,7 @@ export class ConnectionService {
       .get(id) as Connection | undefined;
     if (!c || c.draft)
       throw new ConnectionError(
-        "The Provider was removed or is incomplete. Repair the Agent Preset.",
+        "The Provider was removed or is incomplete. Update the agent’s model settings.",
         409,
       );
     if (
@@ -201,7 +196,7 @@ export class ConnectionService {
     const c = this.connection(snapshot.connectionId);
     if (c.provider !== snapshot.provider)
       throw new ConnectionError(
-        "The Provider changed. Retry with the current preset.",
+        "The Provider changed. Retry with the agent’s current model settings.",
         409,
       );
     let key: string | null = null;

@@ -44,6 +44,7 @@ interface AppearanceSuggestion {
 }
 
 interface AgentState {
+  configurationVersion: number;
   workspaceControls: Record<string, WorkspaceExecutionControl>;
   workspaceControlErrors: Record<string, string>;
   loadWorkspaceControl: (id: string) => Promise<void>;
@@ -334,6 +335,7 @@ export function createAgentStore() {
     }
     return {
       agents: {},
+      configurationVersion: 0,
       chats: {},
       fileDrafts: {},
       setFileDraft(key, files) {

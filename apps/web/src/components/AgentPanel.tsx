@@ -9,7 +9,8 @@ import { useStore } from "zustand";
 import { useSkillsStore } from "../skills-store";
 import { AgentMcp } from "./AgentMcp";
 import { AgentSkills } from "./AgentSkills";
-import { detailsValues, refreshDetails, type DetailsValues } from "../agent-details";
+import { configurationChanged, customizeDetails, detailsValues, refreshDetails, type DetailsValues } from "../agent-details";
+import { modelConfigurationDraft, modelConfigurationInput, validateModelConfiguration } from "../preset-form";
 import type { AgentAppearance } from "../../../server/src/contracts";
 import { defaultAppearance } from "../agent-appearance";
 import { AgentCharacter } from "./AgentCharacter";
@@ -36,6 +37,7 @@ import {
   Send,
   Square,
   RotateCcw,
+  Save,
   Trash2,
   X,
 } from "lucide-react";
@@ -45,6 +47,7 @@ import { useNavigationGuard, useUnsavedChanges } from "../navigation-guard";
 import { request, errorMessage, RequestError } from "../api";
 import type {
   Agent,
+  AgentModelConfiguration,
   AgentMemory,
   AgentMessage,
   AgentTask,
@@ -58,24 +61,31 @@ import { TriggersView } from "./Triggers";
 import { Field } from "./FormField";
 import { Dialog } from "./Dialog";
 import { AgentDeleteDialog } from "./AgentDeleteDialog";
+import { ModelConfigurationFields } from "./LazyModelConfigurationFields";
 import styles from "./AgentPanel.module.scss";
+
+type AgentFormValues = {
+  name: string;
+  presetId?: string | null;
+  customConfiguration?: AgentModelConfiguration | null;
+  appearance?: AgentAppearance;
+  instructions?: string;
+  expectedRevision?: number;
+};
+const customPresetOption = "__custom__";
 
 export function AgentForm({
   agent,
   workspaceId,
   onBusyChange,
+  onDelete,
   onSave,
 }: {
   agent?: Agent;
   workspaceId?: string;
   onBusyChange?: (busy: boolean) => void;
-  onSave: (values: {
-    name: string;
-    presetId: string | null;
-    appearance?: AgentAppearance;
-    instructions?: string;
-    expectedRevision?: number;
-  }) => Promise<Agent | void>;
+  onDelete?: () => void;
+  onSave: (values: AgentFormValues) => Promise<Agent | void>;
 }) {
   const suggestion = useAgents(s => workspaceId ? s.appearanceSuggestions[workspaceId] : undefined);
   const loadAppearance = useAgents(s => s.loadAppearanceSuggestion);
@@ -97,7 +107,9 @@ export function AgentForm({
   const presets = useDashboard((s) => s.presets),
     load = useDashboard((s) => s.loadPresets),
     presetTotal = useDashboard((s) => s.presetTotal),
+    presetError = useDashboard((s) => s.presetError),
     loadDefault = useDashboard((s) => s.loadDefaultPreset);
+  const configurationVersion = useAgents(s => agent ? s.configurationVersion : 0);
   const presetTouched = useRef(false);
   const [defaultReady, setDefaultReady] = useState(!!agent);
   const [defaultError, setDefaultError] = useState("");
@@ -111,6 +123,9 @@ export function AgentForm({
   const [nameAttempt, setNameAttempt] = useState(0);
   const [nameSuggestionError, setNameSuggestionError] = useState("");
   const [nameError, setNameError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const focusInvalid = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
   useEffect(() => {
     if (agent || !workspaceId || nameTouched.current) return;
     let alive = true;
@@ -132,6 +147,31 @@ export function AgentForm({
     return () => { alive = false; };
   }, [agent, workspaceId, nameAttempt]);
   const { draft, baseline } = details;
+  const selectedPresetId = agent ? draft.presetId : null;
+  const [presetResult, setPresetResult] = useState<{ id: string; preset?: ModelPreset; error?: string }>();
+  const [presetAttempt, setPresetAttempt] = useState(0);
+  const linkedResult = presetResult?.id === selectedPresetId ? presetResult : undefined;
+  const linkedPreset = linkedResult?.preset;
+  const displayedConfiguration = draft.customConfiguration ?? modelConfigurationDraft(linkedPreset);
+  const configurationDirty = configurationChanged(draft, baseline);
+  const isEditing = !!agent;
+  useEffect(() => {
+    if (!selectedPresetId) return;
+    const controller = new AbortController();
+    void request<ModelPreset>(`/model-presets/${encodeURIComponent(selectedPresetId)}`, "GET", undefined, controller.signal)
+      .then(preset => {
+        if (!controller.signal.aborted) setPresetResult({ id: selectedPresetId, preset });
+      })
+      .catch(failure => {
+        if (!controller.signal.aborted) setPresetResult(current => ({
+          id: selectedPresetId,
+          preset: current?.id === selectedPresetId && !(failure instanceof RequestError && failure.status === 404)
+            ? current.preset : undefined,
+          error: errorMessage(failure),
+        }));
+      });
+    return () => controller.abort();
+  }, [selectedPresetId, presetAttempt, configurationVersion]);
   const setDraft = useCallback((next: DetailsValues | ((value: DetailsValues) => DetailsValues)) => {
     setDetails(current => ({ ...current, draft: typeof next === "function" ? next(current.draft) : next }));
   }, []);
@@ -141,14 +181,17 @@ export function AgentForm({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   useEffect(() => {
-    if (nameError && !busy) nameInput.current?.focus();
-  }, [nameError, busy]);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(baseline) || (!agent && appearanceTouched.current);
+    if (busy || !focusInvalid.current) return;
+    focusInvalid.current = false;
+    if (nameError) nameInput.current?.focus();
+    else if (Object.keys(fieldErrors).length)
+      formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [nameError, fieldErrors, busy]);
+  const dirty = configurationDirty || draft.name !== baseline.name || draft.instructions !== baseline.instructions ||
+    (!agent && appearanceTouched.current);
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
   useUnsavedChanges(dirty);
-  useEffect(() => {
-    void load().catch(() => {});
-  }, [load]);
+  useEffect(() => { void load(); }, [load, configurationVersion]);
   useEffect(() => {
     if (agent) return;
     let alive = true;
@@ -173,13 +216,30 @@ export function AgentForm({
   useEffect(() => {
     if (agent) setDetails(current => refreshDetails(current, agent));
   }, [agent, dirty]);
-  const stale = !!agent && dirty && details.revision !== agent.revision;
+  const stale = !!agent && dirty && details.revision < agent.revision;
   function reloadDetails() {
     if (!agent) return;
     const saved = detailsValues(agent);
     setDetails({ draft: saved, baseline: saved, revision: agent.revision });
     setError("");
     setNameError("");
+    setFieldErrors({});
+  }
+  function clearConfigurationErrors(...keys: string[]) {
+    setFieldErrors(current => {
+      if (!Object.keys(current).length) return current;
+      return Object.fromEntries(Object.entries(current)
+        .filter(([key]) => !keys.some(field => key === field || key.startsWith(`${field}.`))));
+    });
+  }
+  function switchPreset(value: string) {
+    if (draft.presetId && value !== draft.presetId) setPresetResult(undefined);
+    presetTouched.current = true;
+    setFieldErrors({});
+    if (value === customPresetOption)
+      setDraft(current => customizeDetails(current, displayedConfiguration));
+    else
+      setDraft(current => ({ ...current, presetId: value || null, customConfiguration: null }));
   }
   function retryDefault() {
     setDefaultAttempt((value) => value + 1);
@@ -188,24 +248,45 @@ export function AgentForm({
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy || stale || !defaultReady || (!agent && !appearance)) return;
+    if (!draft.name.trim()) {
+      setNameError("Enter an agent name.");
+      nameInput.current?.focus();
+      return;
+    }
+    const errors = draft.customConfiguration ? validateModelConfiguration(draft.customConfiguration) : {};
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) {
+      focusInvalid.current = true;
+      return;
+    }
     setBusy(true);
     setError("");
     setNameError("");
     try {
-      const saved = await onSave({ name: draft.name, presetId: draft.presetId,
+      const saved = await onSave({ name: draft.name,
+        ...(!agent || configurationDirty ? { presetId: draft.presetId } : {}),
+        ...(agent && configurationDirty ? { customConfiguration: draft.customConfiguration
+          ? modelConfigurationInput(draft.customConfiguration) : null } : {}),
         ...(agent ? { instructions: draft.instructions, expectedRevision: details.revision } : {}),
         ...(!agent && appearance ? { appearance } : {}) });
       const next = saved ? detailsValues(saved) : draft;
       setDetails({ draft: next, baseline: next, revision: saved?.revision ?? details.revision });
     } catch (err) {
-      if (err instanceof RequestError && err.fields.name) setNameError(err.fields.name);
-      else setError(errorMessage(err));
+      if (err instanceof RequestError && err.fields.name) {
+        focusInvalid.current = true;
+        setNameError(err.fields.name);
+      } else if (err instanceof RequestError && Object.keys(err.fields).length) {
+        focusInvalid.current = true;
+        setFieldErrors(Object.fromEntries(Object.entries(err.fields).map(([key, message]) =>
+          [key.replace(/^customConfiguration\./, ""), message])));
+      } else setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
   }
   return (
-    <form onSubmit={submit} className={styles.form}>
+    <form ref={formRef} onSubmit={submit} noValidate={isEditing} className={isEditing ? styles.detailsForm : styles.form}>
+      <div className={isEditing ? `${styles.scroll} ${styles.form} ${styles.detailsFields}` : styles.form}>
       {!agent && <div className={styles.creationCharacter}>
         <div className={styles.creationCharacterPreview}>{appearance ? <AgentCharacter appearance={appearance} paused={paused} /> : <span role="status">{!appearanceError && <LoadingIndicator />}{appearanceError ? "Choose a character" : "Choosing character…"}</span>}</div>
         <button type="button" className="button secondary" disabled={busy} onClick={() => setEditingCharacter(true)}><Pencil size={14} aria-hidden /> Edit character</button>
@@ -238,41 +319,52 @@ export function AgentForm({
         Could not suggest a name: {nameSuggestionError} Enter a name or try again.
         <button type="button" className="textButton" disabled={busy} onClick={() => setNameAttempt(value => value + 1)}>Retry name</button>
       </Feedback>}
+      {agent && <Field label="Instructions" error={fieldErrors.instructions} hint="Sets lasting guidance for future turns. You can also ask the agent to update it in Chat.">
+        {p => <textarea {...p} name="instructions" autoComplete="off" rows={4} maxLength={8000} disabled={busy} value={draft.instructions} onChange={e => {
+          clearConfigurationErrors("instructions");
+          setDraft({ ...draft, instructions: e.target.value });
+        }} />}
+      </Field>}
+      {agent && <h3 className={styles.detailsHeading}>Model settings</h3>}
       <Field
         label="Agent Preset (optional)"
-        hint="You can leave this empty and choose later. A complete preset and known context window are required to run tasks."
+        error={fieldErrors.presetId}
+        hint={agent ? undefined : "You can leave this empty and choose later. A complete preset and known context window are required to run tasks."}
       >
         {(p) => (
           <select
             {...p}
             disabled={busy}
             name="presetId"
-            value={draft.presetId ?? ""}
-            onChange={(e) => {
-              presetTouched.current = true;
-              setDraft({ ...draft, presetId: e.target.value || null });
-            }}
+            value={draft.customConfiguration ? customPresetOption : draft.presetId ?? ""}
+            onChange={(e) => switchPreset(e.target.value)}
+            aria-describedby={agent ? [p["aria-describedby"], "agent-configuration-source"].filter(Boolean).join(" ") : p["aria-describedby"]}
           >
             <option value="">No preset — choose later</option>
+            {agent && <option value={customPresetOption} disabled={!!selectedPresetId && !linkedPreset}>Custom settings</option>}
             {draft.presetId &&
               !presets.some((preset) => preset.id === draft.presetId) && (
                 <option value={draft.presetId}>
-                  {initialPreset?.id === draft.presetId
+                  {linkedPreset?.name ?? (initialPreset?.id === draft.presetId
                     ? initialPreset.name
-                    : "Selected preset"}
+                    : "Selected preset")}
                 </option>
               )}
             {presets.map((v) => (
               <option key={v.id} value={v.id}>
-                {v.name}
+                {linkedPreset?.id === v.id ? linkedPreset.name : v.name}
               </option>
             ))}
           </select>
         )}
       </Field>
-      {agent && <Field label="Instructions" hint="Define this agent’s role and lasting guidance. You can also ask it to update these in Chat. Saved changes apply to subsequent turns; running turns keep their starting instructions.">
-        {p => <textarea {...p} name="instructions" autoComplete="off" rows={6} maxLength={8000} disabled={busy} value={draft.instructions} onChange={e => setDraft({ ...draft, instructions: e.target.value })} />}
-      </Field>}
+      {agent && <p className={styles.configurationSource} id="agent-configuration-source" aria-live="polite">
+        {draft.presetId
+          ? "Follows the selected preset. Editing a setting switches this agent to custom settings."
+          : draft.customConfiguration
+            ? configurationDirty ? "Save to use custom settings for this agent." : "These custom settings apply only to this agent."
+            : "Choose a preset or configure this agent below."}
+      </p>}
       {stale && <Feedback role="alert">Saved details changed while you were editing. Your draft has been kept. Copy any changes you want to keep, then reload before saving.
         <button type="button" className="textButton" disabled={busy} onClick={reloadDetails}>Reload saved details</button>
       </Feedback>}
@@ -300,16 +392,47 @@ export function AgentForm({
           Load more presets
         </button>
       )}
+      {agent && <>
+        {presetError && <Feedback role="alert">
+          {presetError} <button type="button" className="textButton" onClick={() => void load()}>Retry presets</button>
+        </Feedback>}
+        {linkedResult?.error && <Feedback role="alert">
+          {linkedResult.error} <button type="button" className="textButton" onClick={() => {
+            setPresetAttempt(value => value + 1);
+          }}>Retry selected preset</button>
+        </Feedback>}
+        {selectedPresetId && !linkedResult && <LoadingState role="status">Loading preset settings…</LoadingState>}
+        {(!selectedPresetId || linkedPreset) && <fieldset className={styles.configurationFields} disabled={busy}>
+          <ModelConfigurationFields
+            draft={displayedConfiguration}
+            fields={fieldErrors}
+            onChange={changes => {
+              if (selectedPresetId) setPresetResult(undefined);
+              setDraft(current => customizeDetails(current, { ...(current.customConfiguration ?? displayedConfiguration), ...changes }));
+            }}
+            clearErrors={clearConfigurationErrors}
+            incompleteHint="An enabled model and a known context window are required to run tasks."
+            presetContext={linkedPreset?.contextWindow}
+            refreshVersion={configurationVersion}
+          />
+        </fieldset>}
+      </>}
       {error && (
         <Feedback role="alert">
           {error}
         </Feedback>
       )}
-      <div className={styles.actions}>
+      {fieldErrors.customConfiguration && <Feedback role="alert">{fieldErrors.customConfiguration}</Feedback>}
+      </div>
+      <footer className={agent ? styles.detailsFooter : styles.actions}>
+        {agent && onDelete && <button type="button" className="button danger" onClick={onDelete} disabled={busy}>
+          <Trash2 size={15} aria-hidden="true" /> Delete Agent
+        </button>}
         <BusyButton busy={busy} className="button primary" disabled={busy || stale || !defaultReady || (!agent && !appearance)}>
+          {agent && !busy && <Save size={15} aria-hidden="true" />}
           {busy ? "Saving…" : agent ? "Save Agent" : "Create Agent"}
         </BusyButton>
-      </div>
+      </footer>
     </form>
   );
 }
@@ -574,12 +697,7 @@ export function AgentPanel({
     }
   }
   const current = tasks.find((t) => t.id === taskId) ?? details?.task;
-  async function save(values: {
-    name: string;
-    presetId: string | null;
-    instructions?: string;
-    expectedRevision?: number;
-  }) {
+  async function save(values: AgentFormValues) {
     try { return await store.getState().update(agent.id, values); }
     catch (failure) { await store.getState().refreshAgent(agent.id); throw failure; }
   }
@@ -815,22 +933,7 @@ export function AgentPanel({
         </div>
       )}
       {tab === "Details" && (
-        <div className={styles.scroll}>
-          <AgentForm agent={agent} onSave={save} />
-          <hr />
-          <p className={styles.muted}>
-            Deleting this agent removes its conversations and memories, and
-            cancels its work and permanently deletes its working files and
-            history. Published files remain in the workspace.
-          </p>
-          <button
-            className="button"
-            onClick={() => guard(() => setDeleting(true))}
-          >
-            <Trash2 size={15} />
-            Delete Agent
-          </button>
-        </div>
+        <AgentForm agent={agent} onSave={save} onDelete={() => guard(() => setDeleting(true))} />
       )}
       {editingCharacter && <CharacterEditor initial={agent.appearance} onClose={() => setEditingCharacter(false)} onSave={async appearance => { await store.getState().update(agent.id, { appearance }); }} />}
       {deleting && <AgentDeleteDialog agent={agent} onClose={() => setDeleting(false)} />}

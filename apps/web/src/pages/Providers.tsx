@@ -298,7 +298,7 @@ function ModelEditor({
         <>
           <p>
             {confirm === "delete"
-              ? "Remove this model? Linked presets will have their model selection cleared."
+              ? "Remove this model? Presets and custom agent settings using it will have their model selection cleared."
               : "Discard unsaved model changes?"}
           </p>
           {error && (
@@ -431,7 +431,7 @@ function ProviderDeleteDialog({ name, busy, error, onClose, onDelete, returnFocu
   return <Dialog title="Delete Provider?" busy={busy} initialFocusSelector=".secondary"
     returnFocusFallbackRef={returnFocusFallbackRef} onClose={onClose}>
     <p>Delete <strong>{name}</strong> and its saved models and credentials?
-      Linked presets will have their Provider and model selections cleared.</p>
+      Presets and custom agent settings using this Provider will have their Provider and model selections cleared.</p>
     {error && <Feedback role="alert">{error}</Feedback>}
     <div className="dialogActions">
       <button className="button secondary" disabled={busy} onClick={onClose}>Cancel</button>
@@ -1311,9 +1311,17 @@ function ProviderEditor({
       </form>
       {selectionImpact && (
         <Dialog title="Clear linked model choices?" busy={busy} onClose={() => setSelectionImpact(null)}>
-          <p>Saving this Provider will clear the model choice from {selectionImpact.total.toLocaleString()} linked {selectionImpact.total === 1 ? "preset" : "presets"}. Their Provider and compaction settings will be kept.</p>
-          <ul>{selectionImpact.presets.map(preset => <li key={preset.id}>{preset.name}</li>)}</ul>
-          {selectionImpact.total > selectionImpact.presets.length && <p>And {(selectionImpact.total - selectionImpact.presets.length).toLocaleString()} more.</p>}
+          <p>Saving this Provider will clear the model choices below. Their Provider and compaction settings will be kept.</p>
+          {selectionImpact.total > 0 && <>
+            <h3>Agent Presets ({selectionImpact.total.toLocaleString()})</h3>
+            <ul>{selectionImpact.presets.map(preset => <li key={preset.id}>{preset.name}</li>)}</ul>
+            {selectionImpact.total > selectionImpact.presets.length && <p>And {(selectionImpact.total - selectionImpact.presets.length).toLocaleString()} more.</p>}
+          </>}
+          {!!selectionImpact.agentTotal && <>
+            <h3>Agents using custom settings ({selectionImpact.agentTotal.toLocaleString()})</h3>
+            <ul>{selectionImpact.agents?.map(agent => <li key={agent.id}>{agent.name} ({agent.workspaceName})</li>)}</ul>
+            {selectionImpact.agentTotal > (selectionImpact.agents?.length ?? 0) && <p>And {(selectionImpact.agentTotal - (selectionImpact.agents?.length ?? 0)).toLocaleString()} more.</p>}
+          </>}
           <div className="dialogActions">
             <button type="button" className="button secondary" disabled={busy} onClick={() => setSelectionImpact(null)}>Cancel</button>
             <BusyButton busy={busy} type="button" className="button primary" disabled={busy} onClick={() => void saveProvider(selectionImpact.confirmationToken)}>{busy ? "Saving…" : "Save & clear model choices"}</BusyButton>

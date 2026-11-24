@@ -23,7 +23,7 @@ import { migrateCheckIns, migrateCheckInRoutes } from "./checkin-schema.js";
 import { migrateMedia } from "./media-schema.js";
 import { migrateTools } from "./tools-schema.js";
 
-const schemaVersion = 44;
+const schemaVersion = 45;
 
 const defaultPath = fileURLToPath(
   new URL("../../../data/ufai.sqlite", import.meta.url),
@@ -444,6 +444,22 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
           WHERE provider = 'codex';
       `);
       database.pragma("user_version = 44");
+    })();
+
+    if (version < 45) database.transaction(() => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS agent_model_configurations (
+          agentId TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+          connectionId TEXT REFERENCES connections(id) ON DELETE SET NULL,
+          modelId TEXT,
+          compactionMode TEXT,
+          compactionValue INTEGER,
+          providerOptions TEXT
+        );
+        CREATE INDEX IF NOT EXISTS agent_model_configurations_binding
+          ON agent_model_configurations(connectionId, modelId);
+      `);
+      database.pragma("user_version = 45");
     })();
 
   } catch (error) {

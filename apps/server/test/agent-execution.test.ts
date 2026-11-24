@@ -375,7 +375,7 @@ test("missing/disabled configuration blocks tasks and retry resolves the current
   f.db.prepare("UPDATE model_presets SET modelId=NULL WHERE id='preset'").run();
   const x = f.engine.submit("a", "new", "Question", "blocked_request");
   await until(() => f.engine.task(x.taskId!).status === "blocked");
-  assert.equal(f.engine.task(x.taskId!).error, "Choose a complete Agent Preset in Details, then retry.");
+  assert.equal(f.engine.task(x.taskId!).error, "Choose a complete Agent Preset or configure a Provider and model in Details, then retry.");
   f.db
     .prepare("UPDATE model_presets SET modelId='model' WHERE id='preset'")
     .run();

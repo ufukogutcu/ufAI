@@ -73,17 +73,20 @@ export interface PresetInput {
   providerOptions?: ProviderPresetOptions | null;
 }
 
-export interface PresetConfiguration {
+export interface AgentModelConfiguration {
+  connectionId: string | null;
+  modelId: string | null;
+  compaction: Compaction | null;
+  providerOptions: ProviderPresetOptions | null;
+}
+
+export interface PresetConfiguration extends AgentModelConfiguration {
   name: string;
   isDefault: boolean;
   integrationKind: IntegrationKind | null;
   provider: ProviderId | null;
   customProviderName: string | null;
-  modelId: string | null;
   contextWindow: number | null;
-  connectionId: string | null;
-  compaction: Compaction | null;
-  providerOptions: ProviderPresetOptions | null;
 }
 
 export interface ModelPreset extends PresetConfiguration {
@@ -148,6 +151,8 @@ export interface ModelSelection {
 export interface SelectionImpact {
   total: number;
   presets: { id: string; name: string }[];
+  agentTotal?: number;
+  agents?: { id: string; name: string; workspaceName: string }[];
   confirmationToken: string;
 }
 export interface ProviderModel extends DiscoveredModel {
@@ -307,6 +312,7 @@ export interface Agent {
   name: string;
   instructions: string;
   presetId: string | null;
+  customConfiguration: AgentModelConfiguration | null;
   x: number;
   y: number;
   revision: number;

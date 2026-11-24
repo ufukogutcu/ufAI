@@ -7,13 +7,14 @@ import { mountComponent } from "./component-helpers";
 import { AgentContext, createAgentStore, useAgents } from "../src/agent-store";
 import { DashboardContext, createDashboardStore } from "../src/store";
 import { SettingsContext, createSettingsStore } from "../src/settings-store";
+import { ConnectionContext, createConnectionStore } from "../src/connection-store";
 import { UnsavedContext } from "../src/navigation-guard";
 import { initialSettings } from "./helpers";
 import type { Agent } from "../../server/src/contracts";
 const { AgentPanel } = await import("../src/components/AgentPanel");
 
 const agent: Agent = {
-  id: "one", workspaceId: "workspace", name: "Ava", instructions: "", presetId: null,
+  id: "one", workspaceId: "workspace", name: "Ava", instructions: "", presetId: null, customConfiguration: null,
   appearance: { kind: "pebble", color: "sage", accessories: [] },
   x: 0, y: 0, revision: 1, createdAt: "now", updatedAt: "now", state: "idle",
   queuedCount: 0, runningTaskCount: 0, unfinishedTaskCount: 0, pendingUserInputCount: 0, issueCounts: { warning: 0, error: 0 },
@@ -28,7 +29,7 @@ async function setup(t: TestContext) {
     return Response.json({ items: [], total: 0 });
   });
   const store = createAgentStore(), settings = createSettingsStore(initialSettings());
-  const dashboard = createDashboardStore(settings);
+  const dashboard = createDashboardStore(settings), connections = createConnectionStore();
   const skills = createSkillsStore();
   skills.setState({ enabled: { one: {"builtin-browser": true}, two: {"builtin-browser": true} }, load: async () => {} });
   store.setState({
@@ -46,10 +47,11 @@ async function setup(t: TestContext) {
     h(AgentContext.Provider, { value: store },
       h(SettingsContext.Provider, { value: settings },
         h(DashboardContext.Provider, { value: dashboard },
-          h(UnsavedContext.Provider, { value: { setDirty() {}, attempt(action) {
-            if (allowed) action();
-            return allowed;
-          } } }, h(SkillsContext.Provider, { value: skills }, h(TriggerContext.Provider, {value:createTriggerStore()}, h(Probe)))))))));
+          h(ConnectionContext.Provider, { value: connections },
+            h(UnsavedContext.Provider, { value: { setDirty() {}, attempt(action) {
+              if (allowed) action();
+              return allowed;
+            } } }, h(SkillsContext.Provider, { value: skills }, h(TriggerContext.Provider, {value:createTriggerStore()}, h(Probe))))))))));
   return { ...p, store, skills,
     tab: (name: string) => [...p.document.querySelectorAll<HTMLButtonElement>("nav[aria-label='Agent sections'] button")].find(b => b.textContent === name)!,
     active: () => p.document.querySelector("nav [aria-current]")?.textContent,

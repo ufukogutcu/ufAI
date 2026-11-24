@@ -191,6 +191,9 @@ function Board({ workspaceId }: { workspaceId: string }) {
     const invalidateTimeline = () => {
       if (!closed) agentStore.setState(s => ({ timelineVersion: s.timelineVersion + 1 }));
     };
+    const invalidateConfiguration = () => {
+      if (!closed) agentStore.setState(s => ({ configurationVersion: s.configurationVersion + 1 }));
+    };
     const changed = (event: MessageEvent) => {
       try {
         const { kind } = JSON.parse(event.data);
@@ -198,6 +201,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
           refreshPacing();
           return;
         }
+        if (kind === "issues") invalidateConfiguration();
         if (kind === "message-transit") {
           refreshTransits();
           void agentStore.getState().loadWorkspace(workspaceId);
@@ -206,7 +210,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
       invalidateTimeline();
       refresh();
     };
-    const resync = () => { invalidateTimeline(); refreshTransits(); refreshPacing(); refresh(); };
+    const resync = () => { invalidateTimeline(); invalidateConfiguration(); refreshTransits(); refreshPacing(); refresh(); };
     events.addEventListener("change", changed);
     events.addEventListener("resync", resync);
     events.onopen = () => {

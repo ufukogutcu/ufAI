@@ -2,13 +2,15 @@ import { withTaskTrigger } from "./task-trigger.js";
 import { generateAppearance, validateAppearance, workspaceAppearanceCounts } from "./agent-appearance.js";
 import { assertAgentNameAvailable, generateAgentName, workspaceAgentNameKeys } from "./agent-names.js";
 import { randomUUID } from "node:crypto";
+import { writeCustomConfiguration } from "./agent-model-configuration.js";
+import type { Agent, AgentModelConfiguration } from "./contracts.js";
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
 import type { ManagedFiles } from "./managed-files.js";
 import { AgentExecution } from "./agent-execution.js";
 import { guard } from "./connections.js";
 import { ConnectionError } from "./model-providers.js";
-import { objectBody, InputError, pagination } from "./validation.js";
+import { customConfigurationInput, objectBody, InputError, pagination } from "./validation.js";
 import { isWorkspaceDelay, readWorkspacePacing, saveWorkspacePacing } from "./workspace-pacing.js";
 
 const time = () => new Date().toISOString();
@@ -44,6 +46,7 @@ export function registerAgents(
   db: Database.Database,
   execution: AgentExecution,
   files: ManagedFiles,
+  validateConfiguration: (input: AgentModelConfiguration, validateOptions: boolean) => unknown,
   incoming?: import("./submission-media.js").SubmissionMedia,
 ) {
   app.addHook("onRequest", async (request) => {
@@ -96,7 +99,7 @@ export function registerAgents(
     if (saved.revision !== current.revision) execution.workspaceEvent(id, "workspace-pacing");
     return saved;
   });
-  const validate = (body: unknown, existing?: any) => {
+  const validate = (body: unknown, existing?: Agent) => {
     const p = fields(body, [
       "name",
       "instructions",
@@ -104,12 +107,13 @@ export function registerAgents(
       "x",
       "y",
       "appearance",
-      ...(existing ? ["expectedRevision"] : []),
+      ...(existing ? ["expectedRevision", "customConfiguration"] : []),
     ]);
     const v = {
       name: "",
       instructions: "",
       presetId: null,
+      customConfiguration: null,
       x: 0,
       y: 0,
       ...existing,
@@ -119,6 +123,22 @@ export function registerAgents(
       invalid("expectedRevision", "Use a positive saved revision.");
     if (existing && p.expectedRevision !== undefined && p.expectedRevision !== existing.revision)
       throw new ConnectionError("Agent details changed. Reload the saved details before saving again.", 409);
+    if (p.customConfiguration != null) {
+      if (p.presetId != null) invalid("presetId", "Choose either a preset or custom settings.");
+      try {
+        const config = customConfigurationInput(p.customConfiguration);
+        validateConfiguration(config, true);
+        v.customConfiguration = config;
+        v.presetId = null;
+      } catch (error) {
+        if (!(error instanceof InputError)) throw error;
+        throw new InputError(Object.fromEntries(Object.entries(error.fields).map(([field, message]) =>
+          [field === "body" ? "customConfiguration" : `customConfiguration.${field}`, message],
+        )));
+      }
+    } else if (v.presetId !== null) {
+      v.customConfiguration = null;
+    }
     v.name = content(v.name, "name", 120);
     if (typeof v.instructions !== "string" || v.instructions.length > 8000)
       invalid("instructions", "Use at most 8,000 characters.");
@@ -128,7 +148,7 @@ export function registerAgents(
         !db.prepare("SELECT id FROM model_presets WHERE id=?").get(v.presetId))
     )
       invalid("presetId", "Choose an existing preset, or none.");
-    for (const key of ["x", "y"])
+    for (const key of ["x", "y"] as const)
       if (
         typeof v[key] !== "number" ||
         !Number.isFinite(v[key]) ||
@@ -139,7 +159,9 @@ export function registerAgents(
           "Use a finite coordinate between -1,000,000 and 1,000,000.",
         );
     if (Object.hasOwn(p, "appearance")) v.appearance = validateAppearance(p.appearance);
-    return v;
+    return v as Pick<Agent, "name" | "instructions" | "presetId" | "customConfiguration" | "x" | "y"> & {
+      appearance?: Agent["appearance"];
+    };
   };
   app.get<{ Params: { id: string } }>(
     "/api/workspaces/:id/agents",
@@ -222,11 +244,12 @@ export function registerAgents(
     },
   );
   app.patch<{ Params: { id: string } }>("/api/agents/:id", async (req) => {
-    const old = execution.requiredAgent(req.params.id);
-    const v = validate(req.body, old);
-    files.assertAvailable(old.workspaceId, old.id);
     db.transaction(() => {
-      if (["name", "instructions", "presetId"].some(key => Object.hasOwn(req.body as object, key))) {
+      const old = execution.requiredAgent(req.params.id);
+      files.assertAvailable(old.workspaceId, old.id);
+      const v = validate(req.body, old);
+      const customChanged = JSON.stringify(v.customConfiguration) !== JSON.stringify(old.customConfiguration);
+      if (["name", "instructions", "presetId", "customConfiguration"].some(key => Object.hasOwn(req.body as object, key))) {
         assertAgentNameAvailable(db, old.workspaceId, v.name, old.id);
       }
       db.prepare(
@@ -241,14 +264,16 @@ export function registerAgents(
         Number(
           v.name !== old.name ||
             v.instructions !== old.instructions ||
-            v.presetId !== old.presetId,
+            v.presetId !== old.presetId ||
+            customChanged,
         ),
         time(),
         old.id,
       );
+      if (customChanged) writeCustomConfiguration(db, old.id, v.customConfiguration);
     }).immediate();
-    execution.event(old.id);
-    return execution.requiredAgent(old.id);
+    execution.event(req.params.id);
+    return execution.requiredAgent(req.params.id);
   });
   app.delete<{ Params: { id: string } }>(
     "/api/agents/:id",

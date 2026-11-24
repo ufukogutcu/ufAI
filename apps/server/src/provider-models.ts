@@ -9,6 +9,7 @@ import type {
 } from "./contracts.js";
 import { ConnectionError } from "./model-providers.js";
 import { InputError, objectBody } from "./validation.js";
+import { repairCustomConfigurations } from "./agent-model-configuration.js";
 
 type Row = Omit<
   ProviderModel,
@@ -30,7 +31,7 @@ type Row = Omit<
 export class SelectionConfirmationError extends Error {
   constructor(public impact: SelectionImpact) {
     super(
-      "Saving will clear model choices from linked presets. Confirm to continue.",
+      "Saving will clear model choices from linked presets or custom agent settings. Confirm to continue.",
     );
   }
 }
@@ -217,8 +218,20 @@ export class ProviderModels {
       if (impact.presets.length < 20)
         impact.presets.push({ id: row.id, name: row.name });
     }
+    const affectedAgents = this.db.prepare(`SELECT a.id, a.name, w.name AS workspaceName, cfg.modelId
+      FROM agent_model_configurations cfg JOIN agents a ON a.id=cfg.agentId
+      JOIN workspaces w ON w.id=a.workspaceId
+      JOIN provider_models m ON m.connectionId=cfg.connectionId AND m.id=cfg.modelId
+      WHERE cfg.connectionId=? AND m.enabled=0 ORDER BY a.id`);
+    for (const value of affectedAgents.iterate(connectionId)) {
+      const { modelId, ...agent } = value as NonNullable<SelectionImpact["agents"]>[number] & { modelId: string };
+      hash.update(JSON.stringify([agent, modelId]));
+      impact.agentTotal = (impact.agentTotal ?? 0) + 1;
+      const agents = impact.agents ??= [];
+      if (agents.length < 20) agents.push(agent);
+    }
     impact.confirmationToken = hash.digest("hex");
-    if (impact.total && confirmationToken !== impact.confirmationToken)
+    if ((impact.total || impact.agentTotal) && confirmationToken !== impact.confirmationToken)
       throw new SelectionConfirmationError(impact);
     this.db
       .prepare(
@@ -226,6 +239,7 @@ export class ProviderModels {
       WHERE connectionId = ? AND modelId IN (SELECT id FROM provider_models WHERE connectionId = ? AND enabled = 0)`,
       )
       .run(connectionId, connectionId);
+    if (impact.agentTotal) repairCustomConfigurations(this.db, connectionId, "models-disabled");
   }
   save(connectionId: string, body: unknown, id?: string) {
     const patch = objectBody(body);
@@ -375,6 +389,7 @@ export class ProviderModels {
         409,
       );
     this.db.transaction(() => {
+      repairCustomConfigurations(this.db, connectionId, { removedModel: id });
       this.db
         .prepare(
           "DELETE FROM provider_models WHERE connectionId = ? AND id = ?",

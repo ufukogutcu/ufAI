@@ -8,22 +8,18 @@ import {
   errorMessage,
   RequestError,
   type ModelPreset,
-  type ProviderModel,
 } from "../api";
 import { useNavigationGuard, useUnsavedChanges } from "../navigation-guard";
 import {
-  compactionThreshold,
   draftFromPreset,
   draftToInput,
-  setCodexPresetOption,
   validateDraft,
 } from "../preset-form";
 import { Field } from "../components/FormField";
 import { Dialog } from "../components/Dialog";
 import { LibraryRow } from "../components/LibraryRow";
 import { LibraryDuplicateDialog } from "../components/LibraryDuplicateDialog";
-import { ModelSelect } from "../components/ModelSelect";
-import { CodexPresetFields } from "../components/CodexPresetFields";
+import { ModelConfigurationFields } from "../components/LazyModelConfigurationFields";
 import { refreshOnFocus } from "../focus-refresh";
 import styles from "./Presets.module.scss";
 import { Appearance, AppearanceGroup } from "../components/Appearance";
@@ -57,46 +53,13 @@ function PresetEditor({
     if (Object.keys(fields).length)
       document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
   }, [fields]);
-  const [model, setModel] = useState<ProviderModel | null>(null);
   const save = useDashboard((state) => state.savePreset);
-  const connections = useConnections((state) => state.connections);
-  const connectionError = useConnections((state) => state.error);
   useUnsavedChanges(JSON.stringify(draft) !== baseline);
-  const handleModel = useCallback(
-    (id: string, selected: ProviderModel | null) => {
-      setDraft((current) => current.modelId === id
-        ? current : { ...current, modelId: id, providerOptions: null });
-      setFields({});
-      setModel(selected);
-    },
-    [],
-  );
-  const handleResolvedModel = useCallback(
-    (selected: ProviderModel | null) => setModel(selected),
-    [],
-  );
-  function handleCodexOption(field: "reasoningEffort" | "serviceTier", value: string) {
-    setDraft((current) => setCodexPresetOption(current, field, value));
-    setFields((current) => {
-      const key = `providerOptions.${field}`;
-      if (!(key in current)) return current;
-      const { [key]: _, ...remaining } = current;
-      return remaining;
-    });
+  function clearErrors(...keys: string[]) {
+    setFields(current => Object.fromEntries(Object.entries(current)
+      .filter(([key]) => !keys.some(field => key === field || key.startsWith(`${field}.`)))));
   }
-  const selectedConnection = connections.find((item) => item.id === draft.connectionId);
-  const selectedModel = model?.id === draft.modelId && model.connectionId === draft.connectionId
-    ? model : null;
   const input = draftToInput(draft);
-  const threshold = compactionThreshold(
-    selectedModel?.contextWindow ?? null,
-    input.compaction,
-  );
-  const context = selectedModel?.contextWindow;
-  const invalidThreshold =
-    input.compaction?.mode === "tokens" &&
-    context &&
-    input.compaction.value > context;
   async function handleSave(event: FormEvent) {
     event.preventDefault();
     const errors = validateDraft(draft);
@@ -155,145 +118,9 @@ function PresetEditor({
             can still be created without a preset.
           </p>
         </section>
-        <section className={styles.formSection}>
-          <Field
-            label="Provider"
-            error={fields.connectionId}
-            hint="Set up connections and models on the Providers page."
-          >
-            {(props) => (
-              <select
-                {...props}
-                value={draft.connectionId ?? ""}
-                onChange={(event) => {
-                  setDraft({
-                    ...draft,
-                    connectionId: event.target.value || null,
-                    modelId: "",
-                    providerOptions: null,
-                  });
-                  setModel(null);
-                  setFields({});
-                }}
-              >
-                <option value="">None</option>
-                {draft.connectionId &&
-                  !connections.some(
-                    (c) => c.id === draft.connectionId && !c.draft,
-                  ) && (
-                    <option value={draft.connectionId}>
-                      Unavailable Provider
-                    </option>
-                  )}
-                {connections
-                  .filter((c) => !c.draft)
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-              </select>
-            )}
-          </Field>
-          {connectionError && (
-            <Appearance kind="fade"><p className="fieldError" role="status">
-              {connectionError}
-            </p></Appearance>
-          )}
-          <ModelSelect
-            connectionId={draft.connectionId}
-            value={draft.modelId}
-            onSelect={handleModel}
-            onResolved={handleResolvedModel}
-            error={fields.modelId}
-          />
-          <p className={styles.modelStatus}>
-            Context window:{" "}
-            {selectedModel?.contextWindow?.toLocaleString() ?? "Unknown"} tokens
-          </p>
-          {draft.modelId && (selectedConnection?.provider === "codex" || draft.providerOptions) && (
-            <CodexPresetFields
-              model={selectedModel}
-              options={draft.providerOptions}
-              fields={fields}
-              onChange={handleCodexOption}
-            />
-          )}
-          {(!draft.connectionId || !draft.modelId) && (
-            <p className={styles.modelStatus}>
-              You can save this preset now and choose a Provider and model
-              later.
-            </p>
-          )}
-        </section>
-        <section className={styles.formSection}>
-          <h3 className={styles.sectionTitle}>Compaction</h3>
-          <div className={styles.compactionControls}>
-            <Field
-              label="Compact at (optional)"
-              error={fields["compaction.value"] ?? fields.compaction}
-            >
-              {(props) => (
-                <input
-                  {...props}
-                  name="compactionValue"
-                  type="number"
-                  min={1}
-                  max={
-                    draft.compactionMode === "percentage"
-                      ? 100
-                      : Number.MAX_SAFE_INTEGER
-                  }
-                  step={1}
-                  inputMode="numeric"
-                  placeholder="Not configured…"
-                  value={draft.compactionValue}
-                  onChange={(event) =>
-                    setDraft({ ...draft, compactionValue: event.target.value })
-                  }
-                />
-              )}
-            </Field>
-            <Field label="Threshold unit">
-              {(props) => (
-                <select
-                  {...props}
-                  value={draft.compactionMode}
-                  onChange={(event) =>
-                    setDraft({
-                      ...draft,
-                      compactionMode: event.target.value as
-                        | "percentage"
-                        | "tokens",
-                      compactionValue: "",
-                    })
-                  }
-                >
-                  <option value="percentage">Percentage of context</option>
-                  <option value="tokens">Token limit</option>
-                </select>
-              )}
-            </Field>
-          </div>
-          <p className={styles.threshold}>
-            Effective threshold{" "}
-            <strong>
-              {threshold === null
-                ? "Unknown"
-                : `${threshold.toLocaleString()} tokens`}
-            </strong>
-          </p>
-          {invalidThreshold ? (
-            <Appearance kind="fade"><p className={styles.modelStatus} role="status">
-              This threshold exceeds the model’s current context window. Adjust
-              it before using the preset.
-            </p></Appearance>
-          ) : null}
-          <p className={styles.compactionHelp}>
-            Agents compact long task conversations automatically. Leave this empty
-            to use an 80% threshold; execution may compact earlier to fit safely.
-          </p>
-        </section>
+        <ModelConfigurationFields draft={draft} fields={fields}
+          onChange={changes => setDraft(current => ({ ...current, ...changes }))} clearErrors={clearErrors}
+          incompleteHint="You can save this preset now and choose a Provider and model later." />
       </fieldset>
       <footer className={styles.editorFooter}>
         {error && (

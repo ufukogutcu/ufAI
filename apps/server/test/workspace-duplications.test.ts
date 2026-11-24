@@ -55,6 +55,9 @@ test("duplication defaults preserve independent agent setup and settings, with f
   assert.equal(presetResponse.statusCode, 201, presetResponse.body);
   const preset = presetResponse.json();
   await s.app.inject({ method: "PATCH", url: `/api/agents/${a.id}`, payload: { presetId: preset.id } });
+  const customConfiguration = { connectionId: null, modelId: null, compaction: { mode: "tokens", value: 5000 }, providerOptions: null };
+  const customized = await s.app.inject({ method: "PATCH", url: `/api/agents/${b.id}`, payload: { customConfiguration } });
+  assert.equal(customized.statusCode, 200, customized.body);
   db.prepare("INSERT INTO communication_links(id,workspaceId,sourceAgentId,targetAgentId,state,createdAt,sourceAnchorAngle,targetAnchorAngle) VALUES ('link',?,?,?,'active',?,42,222)").run(source.id, a.id, b.id, a.createdAt);
   db.prepare("INSERT INTO agent_skills VALUES (?,'builtin-browser',0)").run(a.id);
   db.prepare("INSERT INTO mcp_servers(id,name,transport,config,secrets,createdAt,updatedAt) VALUES ('mcp','Example','stdio','{}','{}',?,?)").run(a.createdAt, a.createdAt);
@@ -67,7 +70,11 @@ test("duplication defaults preserve independent agent setup and settings, with f
   const copy = agents.find((agent: { name: string }) => agent.name === "A");
   assert.notEqual(copy.id, a.id); assert.deepEqual(copy.appearance, a.appearance);
   assert.equal(copy.instructions, a.instructions); assert.equal(copy.presetId, preset.id); assert.equal(copy.x, a.x);
-  assert.equal(agents.find((agent: { name: string }) => agent.name === "B").presetId, null);
+  const customCopy = agents.find((agent: { name: string }) => agent.name === "B");
+  assert.equal(customCopy.presetId, null);
+  assert.deepEqual(customCopy.customConfiguration, customConfiguration);
+  await s.app.inject({ method: "PATCH", url: `/api/agents/${customCopy.id}`, payload: { customConfiguration: null } });
+  assert.deepEqual((await s.app.inject(`/api/agents/${b.id}`)).json().customConfiguration, customConfiguration);
   assert.equal(copy.revision, 1);
   assert.equal(copy.state, "idle");
   const link = db.prepare("SELECT * FROM communication_links WHERE workspaceId=?").get(done.workspaceId) as any;

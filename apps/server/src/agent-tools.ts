@@ -1,4 +1,5 @@
 import { mcpTools, normalizeMcpDiscoveryArguments } from "./mcp-tools.js";
+import { readCustomConfiguration } from "./agent-model-configuration.js";
 import { triggerTools } from "./trigger-tools.js";
 import { McpAuthError } from "./mcp-auth-errors.js";
 import { vaultTools } from "./vault-tools.js";
@@ -796,6 +797,7 @@ export class AgentTools {
                 "SELECT id,name,connectionId,modelId FROM model_presets WHERE id=?",
               )
               .get(agent.presetId ?? null) ?? null,
+          customConfiguration: agent.presetId ? null : readCustomConfiguration(this.db, owner.agentId),
           memoryCount: (
             this.db
               .prepare(

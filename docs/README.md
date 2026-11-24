@@ -16,10 +16,10 @@ Some terms describe planned capabilities. Check the platform guide before presen
 | Managed folder | A ufAI-created working location whose path can be copied; the agent Files tab browses persistent agent files and downloads them; agents can use folders through file and command tools; folders do not isolate host access |
 | Flowboard | The visual board belonging to a workspace |
 | Agent Preset | A named reusable configuration with optional saved Provider/model choices and compaction settings |
-| Model provider | A service or local endpoint offering model access; ufAI supports connection setup, model discovery, shared model context windows, and short prompt tests; task inference with tools where the selected model supports them is supported through Agent Presets |
+| Model provider | A service or local endpoint offering model access; ufAI supports connection setup, model discovery, shared model context windows, and short prompt tests; agents can use supported models with tools through a linked preset or custom settings |
 | Agent runtime | An existing agent system such as Codex; ufAI currently supports Codex sign-in, model discovery, subscription usage and earned resets, and short prompt tests; task conversations with ufAI-managed tools are supported |
-| Provider | A named saved service/account/endpoint configuration with at least one model; Agent Presets select from these records |
-| Agent | A persistent workspace identity with a customizable character, instructions and a live Agent Preset; Chat and ordinary tasks have host tools and shared skills with per-agent enablement; fine-grained tool permissions remain planned |
+| Provider | A named saved service/account/endpoint configuration with at least one model, available in Agent Presets and Agent Details |
+| Agent | A persistent workspace identity with a customizable character, instructions and model settings from a live preset or custom configuration. Chat and ordinary tasks have host tools and shared skills with per-agent enablement; fine-grained tool permissions remain planned |
 | Agent communication connection | A mutual connection that lets both agents discover each other and initiate requests or notifications; different from a saved Provider account |
 | Session | A conversation or isolated task context belonging to an agent |
 | Attachment | A file sent with a Chat or task message; sending waits for every file to be saved, and visual inspection requires model support |

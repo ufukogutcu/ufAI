@@ -2,6 +2,7 @@ import type { ApiError, Page } from "../../server/src/contracts";
 export type {
   Workspace,
   ModelPreset,
+  AgentModelConfiguration,
   PresetInput,
   ProviderPresetOptions,
   ProviderId,

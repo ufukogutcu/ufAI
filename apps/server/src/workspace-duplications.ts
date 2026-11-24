@@ -13,6 +13,7 @@ import { ConnectionError } from "./model-providers.js";
 import { managedDirectory } from "./host-paths.js";
 import { InputError, objectBody, workspaceInput } from "./validation.js";
 import { nextTime } from "./trigger-schedule.js";
+import { readCustomConfiguration, writeCustomConfiguration } from "./agent-model-configuration.js";
 
 const flags = ["includeConnections", "includeSkills", "includeMcp", "includeMemories", "includeWorkspaceFiles", "includeAgentFiles", "includeTriggers"] as const;
 interface OperationRow {
@@ -24,7 +25,10 @@ type Memory = { agentId: string; key: string; content: string; kind: string };
 type Dependency = { triggerId: string; skillId: string; fingerprint: string; snapshot: string };
 type TriggerRow = { id: string; agentId: string; input: string; dependencyError: string | null; dispatchError: string | null; retryAt: string | null };
 interface Snapshot {
-  agents: (Omit<Agent, "appearance"> & { appearance: string })[];
+  agents: (Omit<Agent, "appearance" | "customConfiguration"> & {
+    appearance: string;
+    customConfiguration?: Agent["customConfiguration"];
+  })[];
   viewport: WorkspaceViewport;
   links: Link[];
   skills: { agentId: string; skillId: string; enabled: number }[];
@@ -74,7 +78,11 @@ export class WorkspaceDuplications {
     this.assertSource(sourceId);
     const rows = <T>(sql: string) => this.db.prepare(sql).all(sourceId) as T[];
     return {
-      agents: rows<Snapshot["agents"][number]>("SELECT * FROM agents WHERE workspaceId=? ORDER BY createdAt,id"),
+      agents: rows<Snapshot["agents"][number]>("SELECT * FROM agents WHERE workspaceId=? ORDER BY createdAt,id")
+        .map(agent => ({
+          ...agent,
+          customConfiguration: agent.presetId ? null : readCustomConfiguration(this.db, agent.id),
+        })),
       viewport: this.db.prepare("SELECT x,y,zoom FROM workspace_viewports WHERE workspaceId=?").get(sourceId) as WorkspaceViewport ?? { x: 0, y: 0, zoom: 1 },
       links: options.includeConnections ? rows<Link>("SELECT * FROM communication_links WHERE workspaceId=? AND state='active'") : [],
       skills: options.includeSkills ? rows("SELECT e.* FROM agent_skills e JOIN agents a ON a.id=e.agentId WHERE a.workspaceId=?") : [],
@@ -223,8 +231,20 @@ export class WorkspaceDuplications {
       this.db.transaction(() => {
         this.assertSource(row.sourceWorkspaceId);
         this.db.prepare("INSERT INTO workspaces(id,name,description,createdAt,updatedAt,sortOrder) VALUES (?,?,?,?,?,(SELECT COALESCE(MAX(sortOrder),-1)+1 FROM workspaces))").run(row.destinationId, options.name, options.description, stamp, stamp);
-        for (const a of snapshot.agents) this.db.prepare("INSERT INTO agents(id,workspaceId,name,instructions,presetId,x,y,appearance,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)")
-          .run(agents.get(a.id), row.destinationId, a.name, a.instructions, a.presetId, a.x, a.y, a.appearance, stamp, stamp);
+        const insertAgent = this.db.prepare("INSERT INTO agents(id,workspaceId,name,instructions,presetId,x,y,appearance,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)");
+        const hasProvider = this.db.prepare("SELECT 1 FROM connections WHERE id=? AND draft=0");
+        const hasModel = this.db.prepare("SELECT 1 FROM provider_models WHERE connectionId=? AND id=? AND enabled=1");
+        for (const a of snapshot.agents) {
+          const agentId = agents.get(a.id)!;
+          insertAgent.run(agentId, row.destinationId, a.name, a.instructions, a.presetId, a.x, a.y, a.appearance, stamp, stamp);
+          const config = a.customConfiguration;
+          if (!config) continue;
+          const connectionId = config.connectionId && hasProvider.get(config.connectionId) ? config.connectionId : null;
+          const modelId = connectionId && config.modelId && hasModel.get(connectionId, config.modelId) ? config.modelId : null;
+          writeCustomConfiguration(this.db, agentId, {
+            ...config, connectionId, modelId, providerOptions: modelId ? config.providerOptions : null,
+          });
+        }
         this.db.prepare("INSERT INTO workspace_viewports(workspaceId,x,y,zoom) VALUES (?,?,?,?)").run(row.destinationId, snapshot.viewport.x, snapshot.viewport.y, snapshot.viewport.zoom);
         for (const link of snapshot.links) this.db.prepare("INSERT INTO communication_links(id,workspaceId,sourceAgentId,targetAgentId,state,createdAt,sourceAnchorAngle,targetAnchorAngle) VALUES (?,?,?,?,'active',?,?,?)")
           .run(randomUUID(), row.destinationId, agents.get(link.sourceAgentId), agents.get(link.targetAgentId), stamp, link.sourceAnchorAngle, link.targetAnchorAngle);
