@@ -33,7 +33,7 @@ async function legacy(t: TestContext) {
     await writeFile(join(folder.path, "keep.txt"), kind);
   }
   const artifacts = new ArtifactService(db, files, () => {});
-  const version = await artifacts.publish({ workspaceId, agentId: "a", taskId: "task" }, {
+  const version = await artifacts.createAttachment({ workspaceId, agentId: "a", taskId: "task" }, {
     stream: Readable.from([Buffer.from("published")]), size: 9, name: "keep.txt",
   }, new AbortController().signal);
   await artifacts.close();
@@ -66,7 +66,7 @@ test("v25 retirement preserves application records, absolute positions and files
   f.db.close();
   const db = openDatabase(f.path);
   try {
-    assert.equal(db.pragma("user_version", { simple: true }), 45);
+    assert.equal(db.pragma("user_version", { simple: true }), 46);
     for (const table of tables) assert.deepEqual(db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(), before[table], table);
     assert.deepEqual(db.prepare("SELECT * FROM managed_locations ORDER BY id").all(), locations);
     assert.deepEqual(db.prepare("SELECT * FROM deletion_operations").all(), deletions);

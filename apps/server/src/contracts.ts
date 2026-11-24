@@ -497,7 +497,7 @@ export interface ProcessOutput {
   state: OwnedProcess["state"];
 }
 export interface ArtifactVersion {
-  origin?: "published" | "user_upload" | "event_upload" | "inspection";
+  origin?: "attachment" | "legacy_output" | "user_upload" | "event_upload" | "inspection";
   id: string;
   artifactId: string;
   workspaceId: string;

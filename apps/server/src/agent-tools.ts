@@ -13,7 +13,7 @@ import type Database from "better-sqlite3";
 import type { ToolCall, ToolSpec, ToolResult } from "./execution-types.js";
 import type { ManagedFiles } from "./managed-files.js";
 import type { ProcessService, ToolOwner } from "./process-service.js";
-import type { ArtifactService } from "./artifact-service.js";
+import { requireTaskAttachment, type ArtifactService } from "./artifact-service.js";
 import { ConnectionError } from "./model-providers.js";
 import {
   normalizeProcessYieldMs,
@@ -191,7 +191,7 @@ const allTaskTools: ToolSpec[] = [
   ),
   spec(
     "task_set_outputs",
-    "Select all immutable file versions for this final answer in order. Without a selection, only files published this turn attach automatically.",
+    "Select the accessible attachments to include in this final answer, in order. Use attachment_create to prepare a local file first.",
     { versionIds },
     ["versionIds"],
   ),
@@ -301,30 +301,29 @@ const allTaskTools: ToolSpec[] = [
     ["processId"],
   ),
   spec(
-    "artifacts_list",
-    "List published versions in this workspace. Use taskOnly for this task's complete output manifest, including older compacted outputs. Does not inspect media content.",
+    "attachments_list",
+    "List ready attachments accessible to this task. Use taskOnly to list only attachments created by this task. Use files_list with the Workspace Folder path for shared working files.",
     { taskOnly: bool, offset: number(0, 1000000), limit: number(1, 100) },
   ),
   spec(
-    "artifact_inspect",
-    "Get metadata for a published version; this does not visually inspect its bytes.",
+    "attachment_info",
+    "Get metadata for an accessible attachment. This does not visually inspect its contents.",
     { versionId: str("Version ID", 100) },
     ["versionId"],
   ),
   spec(
-    "artifact_publish",
-    "Snapshot a stable regular file as an immutable artifact. The ready version is shown as a downloadable output. Publishing again can add a version to an existing artifact.",
+    "attachment_create",
+    "Prepare a stable copy of a local file to attach to a reply or message. Use the returned version ID with task_set_outputs or the relevant messaging tool.",
     {
       path: str("Source file"),
       name: str("Display name", 240),
-      artifactId: str("Existing artifact ID", 100),
       sourceVersionId: str("Source version for provenance", 100),
     },
     ["path"],
   ),
   spec(
-    "artifact_materialize",
-    "Copy a ready artifact version into this task's directory for CLI use. Existing files are never overwritten.",
+    "attachment_copy",
+    "Copy an accessible attachment into this task's directory for CLI use. Existing files are never overwritten.",
     {
       versionId: str("Version ID", 100),
       name: str("Task-local destination filename", 240),
@@ -332,10 +331,17 @@ const allTaskTools: ToolSpec[] = [
     ["versionId"],
   ),
 ];
+const retiredAttachmentTools = new Set(["artifacts_list", "artifact_inspect", "artifact_publish", "artifact_materialize"]);
+const retiredAttachmentToolError = "This tool was retired. Use the Workspace Folder path for shared files and the current attachment tools for messages.";
+export function hasRetiredAttachmentTools(tools: ToolSpec[] | undefined) {
+  return tools?.some(tool => retiredAttachmentTools.has(tool.name)) ?? false;
+}
 // Legacy definitions remain available only to checkpoint recovery, never model discovery.
 allTaskTools.push(...mcpTools);
 export const taskTools = allTaskTools.filter(t => t.name !== "agent_wait");
 export function validateTool(name: string, args: unknown) {
+  if (retiredAttachmentTools.has(name))
+    throw new ConnectionError(retiredAttachmentToolError, 400);
   const definition = allTaskTools.find((t) => t.name === name);
   if (!definition)
     throw new ConnectionError(`${name}: Unknown tool. Use an exact name from the supplied tool definitions.`, 400);
@@ -533,6 +539,8 @@ export class AgentTools {
           409,
         );
       if (this.inflight.has(key)) return this.inflight.get(key)!;
+      if (retiredAttachmentTools.has(call.name) && (!old.result || old.state === "interrupted"))
+        return { ok: false, error: retiredAttachmentToolError };
       return old.result
         ? JSON.parse(old.result)
         : {
@@ -914,11 +922,8 @@ export class AgentTools {
         return { wait: await waitAgent({ ...a, callId }) };
       }
     }
-    if (
-      ["artifact_inspect", "artifact_materialize"].includes(name) ||
-      (name === "media_open" && a.versionId)
-    )
-      messaging?.assertVersion(owner, a.versionId);
+    if (name === "media_open" && a.versionId)
+      requireTaskAttachment(this.db, owner, a.versionId);
     const path = () =>
       resolve(this.files.location("task", owner.taskId).path, a.path);
     if (name === "files_list") {
@@ -1137,22 +1142,8 @@ export class AgentTools {
         return { process: await this.processes.stop(a.processId) };
       if (name === "process_wait") return { process: await wait(a.processId) };
     }
-    if (name === "artifacts_list")
-      return {
-        items: this.db
-          .prepare(
-            "SELECT * FROM artifact_versions WHERE workspaceId=? AND ingestId IS NULL AND (origin='published' OR producerTaskId=? OR EXISTS(SELECT 1 FROM artifact_grants g WHERE g.versionId=artifact_versions.id AND g.taskId=?)) AND (?=0 OR producerTaskId=?) ORDER BY createdAt DESC,id LIMIT ? OFFSET ?",
-          )
-          .all(
-            owner.workspaceId,
-            owner.taskId,
-            owner.taskId,
-            Number(!!a.taskOnly),
-            owner.taskId,
-            a.limit ?? 50,
-            a.offset ?? 0,
-          ),
-      };
+    if (name === "attachments_list")
+      return { items: this.artifacts.listAttachments(owner, a.limit ?? 50, a.offset ?? 0, a.taskOnly) };
     if (name === "media_open") {
       if (!!a.versionId === !!a.path)
         throw new ConnectionError("Supply exactly one versionId or path.", 400);
@@ -1160,7 +1151,7 @@ export class AgentTools {
         throw new ConnectionError("Native media is unavailable.", 409);
       const v = a.versionId
         ? await this.artifacts.ready(a.versionId, owner.workspaceId)
-        : await this.artifacts.publish(
+        : await this.artifacts.createAttachment(
             owner,
             { path: a.path, origin: "inspection" },
             signal,
@@ -1173,31 +1164,15 @@ export class AgentTools {
       );
       return { media: [reference] };
     }
-    if (name === "artifact_inspect") {
-      const v = this.artifacts.get(a.versionId);
-      if ((v as { ingestId?: string }).ingestId)
-        throw new ConnectionError("File transfer has not been committed.", 409);
-      if (v.workspaceId !== owner.workspaceId)
-        throw new ConnectionError(
-          "Artifact belongs to another workspace.",
-          403,
-        );
-      return { version: v };
-    }
-    if (name === "artifact_materialize")
+    if (name === "attachment_info")
+      return { version: requireTaskAttachment(this.db, owner, a.versionId) };
+    if (name === "attachment_copy") {
+      requireTaskAttachment(this.db, owner, a.versionId);
       return this.artifacts.materialize(owner, a.versionId, a.name);
-    if (name === "artifact_publish") {
-      const version = await this.artifacts.publish(owner, a, signal);
-      this.item(owner, "artifact", {
-        versionId: version.id,
-        name: version.name,
-      });
-      return {
-        version,
-        parts: [
-          { type: "artifact", versionId: version.id, name: version.name },
-        ],
-      };
+    }
+    if (name === "attachment_create") {
+      if (a.sourceVersionId) requireTaskAttachment(this.db, owner, a.sourceVersionId);
+      return { version: await this.artifacts.createAttachment(owner, a, signal) };
     }
     throw new ConnectionError("Unknown tool.", 400);
   }

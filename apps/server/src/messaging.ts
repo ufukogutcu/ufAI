@@ -1,3 +1,4 @@
+import { requireTaskAttachment } from "./artifact-service.js";
 import { MessageTransits } from "./message-transits.js";
 import { facingAnchorAngles } from "./communication-anchors.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -153,27 +154,7 @@ export class MessagingService {
       fail("This request no longer permits execution.", 403);
   }
   assertVersion(owner: Pick<ToolOwner, "workspaceId" | "taskId">, id: string) {
-    const v = this.db
-      .prepare("SELECT * FROM artifact_versions WHERE id=?")
-      .get(id) as any;
-    if (!v || v.workspaceId !== owner.workspaceId)
-      fail("Artifact is outside this workspace.", 403);
-    if (v.state !== "ready" || v.ingestId)
-      fail("Artifact bytes are unavailable.");
-    if (
-      v.origin === "published" ||
-      v.producerTaskId === owner.taskId ||
-      this.db
-        .prepare("SELECT 1 FROM artifact_grants WHERE taskId=? AND versionId=?")
-        .get(owner.taskId, id) ||
-      this.db
-        .prepare(
-          "SELECT 1 FROM artifact_references r JOIN agent_messages m ON m.id=r.messageId JOIN agent_tasks t ON t.conversationId=m.conversationId WHERE t.id=? AND r.versionId=?",
-        )
-        .get(owner.taskId, id)
-    )
-      return v;
-    fail("This private file has not been shared with this task.", 403);
+    return requireTaskAttachment(this.db, owner, id);
   }
   private attachments(owner: ToolOwner, ids: unknown = []): string[] {
     if (
@@ -1318,7 +1299,7 @@ export class MessagingService {
       revision: createHash("sha256")
         .update(JSON.stringify(snapshot))
         .digest("hex"),
-      retains: ["messages", "working files", "published artifacts"],
+      retains: ["messages", "working files", "attachments"],
     };
   }
   revoke(id: string, body: any) {

@@ -12,6 +12,7 @@ import { guard } from "./connections.js";
 import { ConnectionError } from "./model-providers.js";
 import { managedDirectory } from "./host-paths.js";
 import { InputError, objectBody, workspaceInput } from "./validation.js";
+import { retiredFileEvent } from "./workspace-folder-migration.js";
 import { nextTime } from "./trigger-schedule.js";
 import { readCustomConfiguration, writeCustomConfiguration } from "./agent-model-configuration.js";
 
@@ -257,6 +258,7 @@ export class WorkspaceDuplications {
         for (const t of snapshot.triggers) {
           const triggerId = randomUUID(), definition = JSON.parse(t.input) as TriggerInput;
           if (definition.when.kind === "event") {
+            if (definition.when.eventType === retiredFileEvent) continue;
             if (definition.when.sourceId) {
               const sourceId = sources.get(definition.when.sourceId);
               if (!sourceId) throw new Error("A trigger's event source is unavailable. Repair the source trigger and retry.");

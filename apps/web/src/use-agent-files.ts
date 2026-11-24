@@ -4,11 +4,12 @@ import { errorMessage, request } from "./api";
 import { refreshOnFocus } from "./focus-refresh";
 
 /** Panel-local reads: each navigation or refresh supersedes the previous request. */
-export function useAgentFiles(agentId: string) {
+export function useWorkingFiles(kind: "agent" | "workspace", ownerId: string) {
+  const base = `/${kind === "agent" ? "agents" : "workspaces"}/${encodeURIComponent(ownerId)}`;
   const [path, setPath] = useState("");
   const [offset, setOffset] = useState(0);
   const [location, setLocation] = useState<ManagedLocation | null>(null);
-  const [page, setPage] = useState<{ agentId: string; offset: number; listing: AgentFileListing } | null>(null);
+  const [page, setPage] = useState<{ base: string; offset: number; listing: AgentFileListing } | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const reading = useRef<AbortController | null>(null);
@@ -22,7 +23,7 @@ export function useAgentFiles(agentId: string) {
     setBusy(true);
     setError("");
     try {
-      const value = await request<ManagedLocation>(`/agents/${agentId}/locations`, "GET", undefined, controller.signal);
+      const value = await request<ManagedLocation>(`${base}/locations`, "GET", undefined, controller.signal);
       if (controller.signal.aborted) return;
       setLocation(value);
       if (value.state === "pending") {
@@ -32,15 +33,15 @@ export function useAgentFiles(agentId: string) {
         setPage(null);
       } else {
         const query = new URLSearchParams({ path, limit: "100", offset: String(offset) });
-        const listing = await request<AgentFileListing>(`/agents/${agentId}/files?${query}`, "GET", undefined, controller.signal);
-        if (!controller.signal.aborted) setPage({ agentId, offset, listing });
+        const listing = await request<AgentFileListing>(`${base}/files?${query}`, "GET", undefined, controller.signal);
+        if (!controller.signal.aborted) setPage({ base, offset, listing });
       }
     } catch (e) {
       if (!controller.signal.aborted) setError(errorMessage(e));
     } finally {
       if (!controller.signal.aborted) setBusy(false);
     }
-  }, [agentId, path, offset]);
+  }, [base, path, offset]);
 
   useEffect(() => {
     void refresh();
@@ -69,7 +70,7 @@ export function useAgentFiles(agentId: string) {
   }
 
   return {
-    path, offset, location: location?.ownerId === agentId ? location : null, busy, error, refresh, navigate, paginate,
-    listing: page?.agentId === agentId && page.offset === offset && page.listing.path === path ? page.listing : null,
+    base, path, offset, location: location?.ownerId === ownerId && location.kind === kind ? location : null, busy, error, refresh, navigate, paginate,
+    listing: page?.base === base && page.offset === offset && page.listing.path === path ? page.listing : null,
   };
 }

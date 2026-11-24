@@ -263,10 +263,14 @@ export const toolLabels: Record<string, ActionCopy> = {
   process_resize: ["Resizing terminal", "Resized terminal"],
   process_stop: ["Stopping process", "Stopped process"],
   process_wait: ["Waiting for process", "Finished waiting for process"],
-  artifacts_list: ["Listing published files", "Listed published files"],
+  attachments_list: ["Listing attachments", "Listed attachments"],
+  attachment_info: ["Checking attachment details", "Checked attachment details"],
+  attachment_create: ["Preparing attachment", "Prepared attachment"],
+  attachment_copy: ["Copying attachment", "Copied attachment"],
+  artifacts_list: ["Listing attachments", "Listed attachments"],
   artifact_inspect: ["Checking file details", "Checked file details"],
-  artifact_publish: ["Publishing file", "Published file"],
-  artifact_materialize: ["Copying published file", "Copied published file"],
+  artifact_publish: ["Preparing attachment", "Prepared attachment"],
+  artifact_materialize: ["Copying attachment", "Copied attachment"],
 };
 export function actionLabel(item: TimelineEntry) {
   const labels = toolLabels[item.name ?? ""] ?? [

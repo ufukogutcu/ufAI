@@ -204,7 +204,7 @@ export class Skills {
 
 Each agent owns one browser shared by Chat and tasks. Do not assume another task or the user has left the page unchanged. The user can watch or Take control; while they control it, do independent work or explain what input is needed and wait for them to hand back control. Never work around control ownership or a disabled browser skill. Enable the skill only when requested.
 
-Website downloads are saved under Files/Downloads. Use artifact_publish to share a downloadable output. Upload only files within the user's requested scope; artifact versions must be accessible to your task. Website actions have external effects; inspect before retrying an interrupted action. Disabling hides this browser without closing pages. Cookies and saved tabs survive backend restart, but unsaved page memory may not.`,
+Website downloads are saved under Files/Downloads. Save files in Workspace Folder when agents need to work with them. Use attachment_create and task_set_outputs to include a download in your reply. Upload only files within the user's requested scope; artifact versions must be accessible to your task. Website actions have external effects; inspect before retrying an interrupted action. Disabling hides this browser without closing pages. Cookies and saved tabs survive backend restart, but unsaved page memory may not.`,
     });
     await this.cleanPackages();
   }

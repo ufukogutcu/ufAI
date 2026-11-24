@@ -157,9 +157,12 @@ export class ManagedFiles {
     )
       throw new Error("Invalid managed file root.");
   }
-  async verifyAgentDirectory(agentId: string) {
+  verifyAgentDirectory(agentId: string) {
+    return this.verifyDirectory("agent", agentId);
+  }
+  async verifyDirectory(kind: LocationKind, ownerId: string) {
     await this.verifyRoot();
-    await this.safeDirectory(this.location("agent", agentId).path, false);
+    await this.safeDirectory(this.location(kind, ownerId).path, false);
   }
   private async safeDirectory(path: string, create: boolean) {
     const full = resolve(path);

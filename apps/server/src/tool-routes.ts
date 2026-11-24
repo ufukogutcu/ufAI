@@ -77,30 +77,17 @@ export function registerTools(
         };
       },
     );
-    app.get<{ Params: { id: string } }>(
-      `/api/${kind}/:id/artifacts`,
-      async (req) => {
-        if (kind === "tasks") execution.task(req.params.id);
-        else workspace(req.params.id);
-        const { limit, offset } = pagination(req.query),
-          key = kind === "tasks" ? "producerTaskId" : "workspaceId";
-        return {
-          items: db
-            .prepare(
-              `SELECT * FROM artifact_versions WHERE ${key}=? AND origin='published' ORDER BY createdAt DESC,id LIMIT ? OFFSET ?`,
-            )
-            .all(req.params.id, limit, offset),
-          total: (
-            db
-              .prepare(
-                `SELECT count(*) AS n FROM artifact_versions WHERE ${key}=? AND origin='published'`,
-              )
-              .get(req.params.id) as { n: number }
-          ).n,
-        };
-      },
-    );
   }
+  app.get<{ Params: { id: string } }>("/api/tasks/:id/artifacts", async (req) => {
+    execution.task(req.params.id);
+    const { limit, offset } = pagination(req.query);
+    const where = "producerTaskId=? AND origin IN ('attachment','legacy_output') AND ingestId IS NULL";
+    return {
+      items: db.prepare(`SELECT * FROM artifact_versions WHERE ${where} ORDER BY createdAt DESC,id LIMIT ? OFFSET ?`)
+        .all(req.params.id, limit, offset),
+      total: (db.prepare(`SELECT count(*) AS n FROM artifact_versions WHERE ${where}`).get(req.params.id) as { n: number }).n,
+    };
+  });
   app.get<{ Params: { id: string } }>("/api/processes/:id", async (req) =>
     processes.get(req.params.id),
   );

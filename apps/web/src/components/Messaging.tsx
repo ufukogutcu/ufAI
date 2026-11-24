@@ -214,7 +214,7 @@ export function PermissionEditor({ workspaceId }: { workspaceId: string }) {
                   receive a permission-revoked result. Unrelated work continues.
                 </p>
                 <p>
-                  Messages, working files, and published artifacts will be
+                  Messages, working files, and attachments will be
                   retained. No files will be deleted.
                 </p>
                 <ul className={styles.list}>

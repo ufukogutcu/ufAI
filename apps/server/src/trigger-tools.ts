@@ -96,7 +96,7 @@ export const triggerTools: ToolSpec[] = [
   ),
   tool(
     "event_emit",
-    "Emit custom JSON input with optional published version references in your workspace. Required eventId,eventType,data. Never spoof reserved ufai events.",
+    "Emit custom JSON input with optional attachment version IDs accessible to this task. Required eventId,eventType,data. Never spoof reserved ufai events.",
     { event: obj },
     ["event"],
   ),

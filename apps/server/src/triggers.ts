@@ -8,13 +8,14 @@ import type Database from "better-sqlite3";
 import type { AgentExecution } from "./agent-execution.js";
 import type { ConnectionService } from "./connection-service.js";
 import type { Skills } from "./skills.js";
-import type { ArtifactService } from "./artifact-service.js";
+import { requireTaskAttachment, type ArtifactService } from "./artifact-service.js";
 import type { ManagedFiles } from "./managed-files.js";
 import type { ToolOwner } from "./process-service.js";
 import type { SkillAutomations } from "./trigger-skills.js";
 import type {
   EventInput,
   EventReceipt,
+  EventAttachment,
   EventSource,
   Trigger,
   TriggerInput,
@@ -568,9 +569,7 @@ export class Triggers {
         null,
         `manual:${id}`,
         input,
-        [],
-        false,
-        false,
+        { fanout: false },
       ).id;
     }
     const occurrenceId = this.occurrence(r, key, "manual", this.now(), eventId);
@@ -748,26 +747,33 @@ export class Triggers {
     sourceId: string | null,
     sourceKey: string,
     input: EventInput,
-    lineage: string[] = [],
-    internal = false,
-    fanout = true,
-    ingestId?: string,
+    options: { lineage?: string[]; internalUpload?: boolean; fanout?: boolean; ingestId?: string; attachmentOwner?: ToolOwner } = {},
   ): EventReceipt {
+    const { lineage = [], internalUpload = false, fanout = true, ingestId, attachmentOwner } = options;
     this.execution.assertWorkspaceAvailable(workspaceId);
     this.files.assertAvailable(workspaceId);
-    const files = (input.attachments ?? []).map((a) => {
+    const existing = this.db.prepare("SELECT * FROM trigger_events WHERE workspaceId=? AND sourceKey=? AND eventId=?")
+      .get(workspaceId, sourceKey, input.eventId) as { id: string; fingerprint: string; attachments: string } | undefined;
+    const acceptedFiles = existing ? parse<EventAttachment[]>(existing.attachments) : [];
+    const externalJson = !internalUpload && !attachmentOwner;
+    if (externalJson && input.attachments?.length && !existing)
+      triggerError("Use multipart uploads to attach files to new events.", 403);
+    if (externalJson && existing && acceptedFiles.length !== (input.attachments?.length ?? 0))
+      triggerError("Event ID was already used for different data or files.", 409);
+    const files = (input.attachments ?? []).map((a, index) => {
       if (!a || ![undefined, "file", "inspect"].includes(a.mode))
         triggerError("Invalid attachment mode.");
-      const v = this.artifacts.get(
-        text(a.versionId, "an artifact version ID", 100),
-      );
-      if (
-        v.workspaceId !== workspaceId ||
-        v.state !== "ready" ||
-        ((v as any).ingestId && (v as any).ingestId !== ingestId) ||
-        (!internal && v.origin !== "published")
-      )
-        triggerError("Use ready published artifacts from this workspace.", 403);
+      const versionId = text(a.versionId, "an attachment version ID", 100);
+      if (externalJson && (acceptedFiles[index]?.versionId !== versionId ||
+        (acceptedFiles[index]?.mode ?? "file") !== (a.mode ?? "file")))
+        triggerError("Event ID was already used for different data or files.", 409);
+      const v = attachmentOwner
+        ? requireTaskAttachment(this.db, attachmentOwner, versionId)
+        : this.artifacts.get(versionId);
+      if (v.workspaceId !== workspaceId ||
+        (!externalJson && (v.state !== "ready" ||
+          ((v as { ingestId?: string }).ingestId && (v as { ingestId?: string }).ingestId !== ingestId))))
+        triggerError("Attachment is unavailable in this workspace.", 403);
       return {
         versionId: v.id,
         mode: a.mode ?? "file",
@@ -787,18 +793,10 @@ export class Triggers {
     const id = randomUUID(),
       stamp = this.now();
     const result = this.db.transaction(() => {
-      const prior = this.db
-        .prepare(
-          "SELECT * FROM trigger_events WHERE workspaceId=? AND sourceKey=? AND eventId=?",
-        )
-        .get(workspaceId, sourceKey, input.eventId) as any;
-      if (prior) {
-        if (prior.fingerprint !== fingerprint)
-          triggerError(
-            "Event ID was already used for different data or files.",
-            409,
-          );
-        return prior.id as string;
+      if (existing) {
+        if (existing.fingerprint !== fingerprint)
+          triggerError("Event ID was already used for different data or files.", 409);
+        return existing.id;
       }
       if (sourceId && !this.source(sourceId).enabled)
         triggerError("Event source is disabled.", 403);
@@ -839,7 +837,7 @@ export class Triggers {
       null,
       `agent:${owner.agentId}`,
       input,
-      parse(envelope.envelope).trigger?.lineage ?? [],
+      { lineage: parse(envelope.envelope).trigger?.lineage, attachmentOwner: owner },
     );
   }
   receipt(id: string): EventReceipt {

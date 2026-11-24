@@ -17,6 +17,7 @@ import { ManagedFiles } from "../src/managed-files.js";
 import { ProcessService, type ToolOwner } from "../src/process-service.js";
 import { ArtifactService } from "../src/artifact-service.js";
 import { AgentTools } from "../src/agent-tools.js";
+import { MessagingService } from "../src/messaging.js";
 import { AgentExecution } from "../src/agent-execution.js";
 import { ConnectionService } from "../src/connection-service.js";
 import type { TaskRequest, ToolRound } from "../src/execution-types.js";
@@ -126,6 +127,10 @@ for (const agentId of ["a", "b"]) {
   for (const target of ["new", "chat"] as const) {
     test(`${agentId} ${target}: commands and text writes produce downloadable files and preserve filesystem errors`, async (t) => {
       const s = await setup(t, { agentId, target });
+      const messaging = new MessagingService(s.db, s.engine, s.connections);
+      s.engine.messaging = messaging;
+      s.tools.messaging = messaging;
+      t.after(() => messaging.close());
       const folder = s.files.location("task", s.owner.taskId).path;
       const text = "A story from an agent with host tools.\n";
       await mkdir(join(folder, "existing-directory"));
@@ -135,7 +140,7 @@ for (const agentId of ["a", "b"]) {
         let call;
         switch (round++) {
           case 0:
-            for (const name of ["process_start", "files_write", "artifact_publish"])
+            for (const name of ["process_start", "files_write", "attachment_create"])
               assert.ok(request.tools.some((tool) => tool.name === name));
             call = { id: "command", name: "process_start", arguments: { command: "printf 'command output' > command.txt" } };
             break;
@@ -156,11 +161,15 @@ for (const agentId of ["a", "b"]) {
             break;
           case 4:
             assert.equal(previous.ok, true);
-            call = { id: "publish", name: "artifact_publish", arguments: { path: "story.txt" } };
+            call = { id: "publish", name: "attachment_create", arguments: { path: "story.txt" } };
+            break;
+          case 5:
+            assert.equal(previous.ok, true);
+            assert.equal(previous.version.state, "ready");
+            call = { id: "select", name: "task_set_outputs", arguments: { versionIds: [previous.version.id] } };
             break;
           default:
             assert.equal(previous.ok, true);
-            assert.equal(previous.version.state, "ready");
             return { text: "Created the downloadable story.", calls: [], continuation: [], usage: null };
         }
         return { text: "", calls: [call], continuation: [], usage: null };
@@ -168,7 +177,7 @@ for (const agentId of ["a", "b"]) {
       (s.engine as any).options.autoStart = true;
       s.engine.wake();
       await until(() => s.engine.task(s.owner.taskId).status === "completed");
-      assert.equal(round, 6);
+      assert.equal(round, 7);
       assert.equal(await readFile(join(folder, "story.txt"), "utf8"), text);
       const invocations = s.db.prepare("SELECT name,state FROM tool_invocations WHERE turnId=? ORDER BY rowid").all(s.owner.turnId);
       assert.deepEqual(invocations, [
@@ -176,11 +185,12 @@ for (const agentId of ["a", "b"]) {
         { name: "process_wait", state: "completed" },
         { name: "files_write", state: "completed" },
         { name: "files_write", state: "completed" },
-        { name: "artifact_publish", state: "completed" },
+        { name: "attachment_create", state: "completed" },
+        { name: "task_set_outputs", state: "completed" },
       ]);
       const failedWrite = s.db.prepare("SELECT result FROM tool_invocations WHERE turnId=? AND callId='invalid-write'").get(s.owner.turnId) as { result: string };
       assert.equal(JSON.parse(failedWrite.result).ok, false);
-      const version = s.db.prepare("SELECT id FROM artifact_versions WHERE producerTaskId=? AND origin='published'").get(s.owner.taskId) as { id: string };
+      const version = s.db.prepare("SELECT id FROM artifact_versions WHERE producerTaskId=? AND origin='attachment'").get(s.owner.taskId) as { id: string };
       const download = await s.artifacts.download(version.id);
       const chunks: Buffer[] = [];
       for await (const chunk of download.stream) chunks.push(Buffer.from(chunk));
@@ -397,10 +407,10 @@ test("artifacts snapshot bytes, publish versions, materialize, and survive produ
   const s = await setup(t),
     file = join(s.files.location("task", s.owner.taskId).path, "report.txt");
   await writeFile(file, "original");
-  const v = await s.artifacts.publish(s.owner, { path: file }, s.signal);
+  const v = await s.artifacts.createAttachment(s.owner, { path: file }, s.signal);
   await writeFile(file, "changed");
   assert.equal(v.sha256, createHash("sha256").update("original").digest("hex"));
-  const next = await s.artifacts.publish(
+  const next = await s.artifacts.createAttachment(
     s.owner,
     { path: file, artifactId: v.artifactId, sourceVersionId: v.id },
     s.signal,
@@ -420,14 +430,14 @@ test("artifact quotas, source links, managed symlinks and failed ingest are expl
   const s = await setup(t, { maxStorageBytes: 8 }),
     file = join(s.files.location("task", s.owner.taskId).path, "small.txt");
   await writeFile(file, "12345678");
-  await s.artifacts.publish(s.owner, { path: file }, s.signal);
+  await s.artifacts.createAttachment(s.owner, { path: file }, s.signal);
   await assert.rejects(
-    () => s.artifacts.publish(s.owner, { path: file }, s.signal),
+    () => s.artifacts.createAttachment(s.owner, { path: file }, s.signal),
     /storage limit/,
   );
   await symlink(file, file + "-link");
   await assert.rejects(
-    () => s.artifacts.publish(s.owner, { path: file + "-link" }, s.signal),
+    () => s.artifacts.createAttachment(s.owner, { path: file + "-link" }, s.signal),
     /regular file/,
   );
 });
@@ -509,7 +519,7 @@ test("populated v11 upgrade retains task content and managed paths", async (t) =
   removeToolTables(s.db);
   s.db.pragma("user_version=11");
   const upgraded = openDatabase(s.path);
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 45);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 46);
   assert.equal(
     (
       upgraded
@@ -669,7 +679,7 @@ test("confirmed agent and workspace deletions quiesce processes and preserve pub
   const s = await setup(t),
     source = join(s.files.location("task", s.owner.taskId).path, "output.txt");
   await writeFile(source, "keep output");
-  const v = await s.artifacts.publish(s.owner, { path: source }, s.signal);
+  const v = await s.artifacts.createAttachment(s.owner, { path: source }, s.signal);
   const p = await s.processes.start(
     s.owner,
     { command: "sleep 60", background: true },
@@ -697,7 +707,7 @@ test("same-size artifact corruption is unavailable and interrupted staging is re
   const s = await setup(t),
     source = join(s.files.location("task", s.owner.taskId).path, "source.txt");
   await writeFile(source, "original");
-  const version = await s.artifacts.publish(
+  const version = await s.artifacts.createAttachment(
     s.owner,
     { path: source },
     s.signal,
@@ -750,7 +760,7 @@ test("managed artifact symlinks cannot publish or clean external data", async (t
   );
   await writeFile(source, "input");
   await assert.rejects(
-    () => s.artifacts.publish(s.owner, { path: source }, s.signal),
+    () => s.artifacts.createAttachment(s.owner, { path: source }, s.signal),
     /linked/,
   );
   assert.equal(await readFile(join(external, "keep"), "utf8"), "outside");
@@ -760,7 +770,7 @@ test("restart resumes confirmed workspace deletion without artifact recovery rac
   const s = await setup(t),
     source = join(s.files.location("task", s.owner.taskId).path, "output.txt");
   await writeFile(source, "ready");
-  const v = await s.artifacts.publish(s.owner, { path: source }, s.signal),
+  const v = await s.artifacts.createAttachment(s.owner, { path: source }, s.signal),
     id = randomUUID(),
     stamp = new Date().toISOString();
   s.db
@@ -802,7 +812,7 @@ test("workspace cleanup closes active artifact streams and forbids new downloads
   const s = await setup(t),
     source = join(s.files.location("task", s.owner.taskId).path, "output.txt");
   await writeFile(source, "published");
-  const v = await s.artifacts.publish(s.owner, { path: source }, s.signal),
+  const v = await s.artifacts.createAttachment(s.owner, { path: source }, s.signal),
     download = await s.artifacts.download(v.id);
   await s.artifacts.settleWorkspace(s.owner.workspaceId);
   assert.equal(download.stream.closed, true);
@@ -1097,4 +1107,18 @@ for (const finalText of ["DONE_TOKEN", ""]) for (const successful of [true,false
   assert.equal(s.engine.task(s.owner.taskId).status,successful ? "completed" : "awaiting_user");
   if(successful) assert.equal(await readFile(join(s.files.location("task",s.owner.taskId).path,"completion.txt"),"utf8"),"EXACT_CONTENT");
   else await assert.rejects(readFile(join(s.files.location("task",s.owner.taskId).path,"completion.txt")),/ENOENT/);
+});
+
+test("retired file tools replay committed results and guide unresolved calls to the Workspace Folder", async t => {
+  const s = await setup(t);
+  const completed = { ok: true, version: { id: "historical-version" } };
+  const insert = s.db.prepare("INSERT INTO tool_invocations VALUES (?,?,?,?,?,?,?,?,?)");
+  const args = { path: "report.txt" }, name = "artifact_publish";
+  insert.run("legacy-completed", s.owner.turnId, "completed", name, JSON.stringify(args), "completed", JSON.stringify(completed), "then", "then");
+  insert.run("legacy-interrupted", s.owner.turnId, "interrupted", name, JSON.stringify(args), "interrupted", JSON.stringify({ ok: false }), "then", "then");
+  const dispatch = (id: string) => s.tools.dispatch(s.owner, { id, name, arguments: args }, s.signal, async () => null);
+  assert.deepEqual(await dispatch("completed"), completed);
+  assert.match((await dispatch("interrupted")).error ?? "", /Workspace Folder/);
+  assert.match((await dispatch("new")).error ?? "", /Workspace Folder/);
+  assert.equal(s.db.prepare("SELECT count(*) FROM artifact_versions").pluck().get(), 0);
 });

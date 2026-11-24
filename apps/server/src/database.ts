@@ -1,3 +1,4 @@
+import { migrateWorkspaceFolder } from "./workspace-folder-migration.js";
 import { migrateFreezing, migrateFreezeCutoffs, migrateExecutionState } from "./agent-freezing.js";
 import { migrateWorkspaceFreezing } from "./workspace-freezing.js";
 import { migrateWorkspacePacing } from "./workspace-pacing.js";
@@ -23,7 +24,7 @@ import { migrateCheckIns, migrateCheckInRoutes } from "./checkin-schema.js";
 import { migrateMedia } from "./media-schema.js";
 import { migrateTools } from "./tools-schema.js";
 
-const schemaVersion = 45;
+const schemaVersion = 46;
 
 const defaultPath = fileURLToPath(
   new URL("../../../data/ufai.sqlite", import.meta.url),
@@ -460,6 +461,11 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
           ON agent_model_configurations(connectionId, modelId);
       `);
       database.pragma("user_version = 45");
+    })();
+
+    if (version < 46) database.transaction(() => {
+      migrateWorkspaceFolder(database);
+      database.pragma("user_version = 46");
     })();
 
   } catch (error) {

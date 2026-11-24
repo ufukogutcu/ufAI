@@ -40,7 +40,7 @@ export async function ingestUpload(
         },
       };
     }
-    const version = await artifacts.publish(
+    const version = await artifacts.createAttachment(
       owner,
       {
         stream: part.file,

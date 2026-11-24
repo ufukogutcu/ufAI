@@ -1297,7 +1297,7 @@ export class McpService {
     const publish = async (bytes: Buffer, name: string) => {
       if (bytes.length > mcpLimits.responseBytes || artifacts.length >= 10)
         badMcp("MCP content exceeds the attachment limit.", 413);
-      const v = await this.artifacts.publish(
+      const v = await this.artifacts.createAttachment(
         owner,
         { stream: Readable.from([bytes]), size: bytes.length, name },
         signal,

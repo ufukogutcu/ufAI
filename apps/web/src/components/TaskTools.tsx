@@ -3,7 +3,6 @@ import { ImagePreview } from "./MessageAttachments";
 import { useEffect, useRef, useState } from "react";
 import {
   Download,
-  Folder,
   Square,
   Terminal as TerminalIcon,
 } from "lucide-react";
@@ -11,11 +10,9 @@ import type {
   ArtifactVersion,
   OwnedProcess,
   ProcessOutput,
-  Page,
 } from "../../../server/src/contracts";
 import { request, errorMessage } from "../api";
 import { useSettings } from "../settings-store";
-import { useAgents } from "../agent-store";
 import { Dialog } from "./Dialog";
 import styles from "./TaskTools.module.scss";
 import type { Terminal } from "@xterm/xterm";
@@ -35,7 +32,7 @@ export function ArtifactCard({ version }: { version: ArtifactVersion }) {
           {new Date(version.createdAt).toLocaleString()}
         </span>
         {!version.producerAgentId && (
-          <span className={styles.meta}>Published by a deleted agent</span>
+          <span className={styles.meta}>Created by a deleted agent</span>
         )}
         {version.error && (
           <span role="status" className={styles.meta}>
@@ -392,87 +389,5 @@ export function ProcessActivity({
         </Feedback>
       )}
     </>
-  );
-}
-export function PublishedFiles({
-  workspaceId,
-  onClose,
-}: {
-  workspaceId: string;
-  onClose: () => void;
-}) {
-  const [items, setItems] = useState<ArtifactVersion[]>([]),
-    [total, setTotal] = useState(0),
-    [error, setError] = useState(""),
-    [offset, setOffset] = useState(0),
-    [busy, setBusy] = useState(false),
-    version = useAgents((s) => s.eventVersion);
-  useEffect(() => {
-    setOffset(0);
-  }, [version]);
-  useEffect(() => {
-    const controller = new AbortController();
-    setBusy(true);
-    void request<Page<ArtifactVersion>>(
-      `/workspaces/${workspaceId}/artifacts?limit=50&offset=${offset}`,
-      "GET",
-      undefined,
-      controller.signal,
-    )
-      .then((p) => {
-        if (controller.signal.aborted) return;
-        setItems((old) =>
-          [
-            ...new Map([...old, ...p.items].map((v) => [v.id, v])).values(),
-          ].sort(
-            (a, b) =>
-              b.createdAt.localeCompare(a.createdAt) ||
-              a.id.localeCompare(b.id),
-          ),
-        );
-        setTotal(p.total);
-        setError("");
-      })
-      .catch((e) => {
-        if (!controller.signal.aborted) setError(errorMessage(e));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setBusy(false);
-      });
-    return () => controller.abort();
-  }, [workspaceId, offset, version]);
-  return (
-    <Dialog title="Published Files" onClose={onClose}>
-      <div className={styles.panel}>
-        <p>
-          Published versions stay in this workspace when their agent is deleted.
-        </p>
-        <div className={styles.list}>
-          {items.map((v) => (
-            <ArtifactCard key={v.id} version={v} />
-          ))}
-        </div>
-        {!items.length && !busy && (
-          <p>
-            <Folder size={16} aria-hidden="true" /> No published files yet.
-          </p>
-        )}
-        {busy && <LoadingState role="status">Loading…</LoadingState>}
-        {items.length < total && (
-          <button
-            className="button"
-            disabled={busy}
-            onClick={() => setOffset(items.length)}
-          >
-            Load more files
-          </button>
-        )}
-        {error && (
-          <Feedback role="alert">
-            {error}
-          </Feedback>
-        )}
-      </div>
-    </Dialog>
   );
 }

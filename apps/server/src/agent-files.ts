@@ -35,11 +35,15 @@ function launch(command: string, args: string[]) {
   });
 }
 
+type FileOwner = { kind: "agent" | "workspace"; ownerId: string };
+
+const ownerKey = ({ kind, ownerId }: FileOwner) => `${kind}:${ownerId}`;
+
 function filePath(value: unknown): string {
   if (typeof value !== "string" || value.length > 4096 || /[\\\0]/.test(value) || /^[a-z]:/i.test(value) ||
     (process.platform === "win32" && /[:<>"|?*]|[. ](?:\/|$)/.test(value)) ||
     (value !== "" && value.split("/").some(p => !p || p === "." || p === "..")))
-    throw new ConnectionError("Choose a path inside the agent's files folder.", 400);
+    throw new ConnectionError("Choose a path inside this folder.", 400);
   return value;
 }
 
@@ -57,33 +61,34 @@ export class AgentFiles {
   private stopped = false;
   private reading = 0;
   private opening = 0;
-  private downloads = new Map<ReadStream, { agentId: string; workspaceId: string; path: string }>();
-  private removing = new Map<string, { workspaceId: string; path: string; promise: Promise<void> }>();
+  private downloads = new Map<ReadStream, { owner: FileOwner; workspaceId: string; path: string }>();
+  private removing = new Map<string, { owner: FileOwner; workspaceId: string; path: string; promise: Promise<void> }>();
   constructor(private files: ManagedFiles, private options: AgentFilesOptions = {}) {}
 
-  private available(agentId: string) {
+  private available(owner: FileOwner) {
     if (this.stopped) throw new ConnectionError("Files are shutting down. Try again shortly.", 503);
-    const location = this.files.location("agent", agentId);
-    this.files.assertAvailable(location.workspaceId, agentId);
+    const location = this.files.location(owner.kind, owner.ownerId);
+    this.files.assertAvailable(location.workspaceId, owner.kind === "agent" ? owner.ownerId : undefined);
     if (location.state !== "ready")
-      throw new ConnectionError(location.state === "pending" ? "Creating the agent's files folder. Retry shortly." : "The agent's files folder is unavailable. Retry folder setup.", 409);
+      throw new ConnectionError(location.state === "pending" ? "Creating the folder. Retry shortly." : "The folder is unavailable. Retry folder setup.", 409);
     return location;
   }
 
-  private assertNotRemoving(agentId: string, path: string) {
-    const operation = this.removing.get(agentId);
+  private assertNotRemoving(owner: FileOwner, path: string) {
+    const operation = this.removing.get(ownerKey(owner));
     if (operation && (path === operation.path || path.startsWith(`${operation.path}/`)))
       throw new ConnectionError("This file or folder is being deleted. Refresh after deletion finishes.", 409);
   }
 
-  private async resolve(agentId: string, value: unknown, directory: boolean, removing = false) {
-    const path = filePath(value), location = this.available(agentId);
-    if (!removing) this.assertNotRemoving(agentId, path);
-    await this.files.verifyAgentDirectory(agentId);
+  private async resolve(owner: FileOwner, value: unknown, directory: boolean, removing = false) {
+    const path = filePath(value), location = this.available(owner);
+    if (!removing) this.assertNotRemoving(owner, path);
+    if (owner.kind === "agent") await this.files.verifyAgentDirectory(owner.ownerId);
+    else await this.files.verifyDirectory(owner.kind, owner.ownerId);
     const full = join(location.path, ...path.split("/"));
     const rel = relative(location.path, full);
     if (rel === ".." || rel.startsWith(`..${sep}`))
-      throw new ConnectionError("Choose a path inside the agent's files folder.", 400);
+      throw new ConnectionError("Choose a path inside this folder.", 400);
     // Check every component without following links, including the leaf.
     let current = location.path;
     for (const part of path ? path.split("/") : []) {
@@ -93,8 +98,8 @@ export class AgentFiles {
       if ((current !== full || directory) && !info.isDirectory())
         throw new ConnectionError("This folder is no longer available. Refresh the folder or go Up.", 404);
     }
-    this.available(agentId);
-    if (!removing) this.assertNotRemoving(agentId, path);
+    this.available(owner);
+    if (!removing) this.assertNotRemoving(owner, path);
     return { full, path, location };
   }
 
@@ -106,9 +111,9 @@ export class AgentFiles {
     finally { this.reading--; }
   }
 
-  list(agentId: string, path: unknown, limit: number, offset: number) {
+  list(owner: FileOwner, path: unknown, limit: number, offset: number) {
     return this.read(async (): Promise<AgentFileListing> => {
-      const target = await this.resolve(agentId, path, true);
+      const target = await this.resolve(owner, path, true);
       const names: { name: string; directory: boolean }[] = [];
       const directory = await opendir(target.full);
       for await (const entry of directory) {
@@ -131,14 +136,14 @@ export class AgentFiles {
           } catch { return { name, path, kind: "unavailable", size: null, modifiedAt: null }; }
         })));
       }
-      await this.resolve(agentId, path, true);
+      await this.resolve(owner, path, true);
       return { path: target.path, items, total: names.length };
     });
   }
 
-  download(agentId: string, path: unknown) {
+  download(owner: FileOwner, path: unknown) {
     return this.read(async () => {
-      const target = await this.resolve(agentId, path, false);
+      const target = await this.resolve(owner, path, false);
       const before = await lstat(target.full);
       if (!before.isFile()) throw new ConnectionError("Only regular files can be downloaded.", 409);
       // NONBLOCK prevents an exchanged FIFO from hanging open; NOFOLLOW rejects leaf links.
@@ -147,60 +152,60 @@ export class AgentFiles {
         const info = await file.stat();
         if (!info.isFile() || info.dev !== before.dev || info.ino !== before.ino)
           throw new ConnectionError("This file changed. Refresh the folder and try again.", 409);
-        await this.resolve(agentId, path, false);
-        this.available(agentId);
-        this.assertNotRemoving(agentId, target.path);
+        await this.resolve(owner, path, false);
+        this.available(owner);
+        this.assertNotRemoving(owner, target.path);
         if (this.downloads.size >= 16) throw new ConnectionError("Too many downloads. Wait for one to finish and retry.", 429);
         const stream = file.createReadStream();
-        this.downloads.set(stream, { agentId, workspaceId: target.location.workspaceId, path: target.path });
+        this.downloads.set(stream, { owner, workspaceId: target.location.workspaceId, path: target.path });
         stream.once("close", () => this.downloads.delete(stream));
         return { stream, name: basename(target.full) };
       } catch (error) { await file.close(); throw error; }
     });
   }
 
-  async openFolder(agentId: string, path: unknown) {
+  async openFolder(owner: FileOwner, path: unknown) {
     if (this.opening >= 2) throw new ConnectionError("The file manager is busy. Retry shortly.", 429);
     this.opening++;
     try {
-      const target = await this.read(() => this.resolve(agentId, path, true));
+      const target = await this.read(() => this.resolve(owner, path, true));
       const platform = this.options.platform ?? process.platform;
       const env = this.options.env ?? process.env;
       if (platform === "linux" && !env.DISPLAY && !env.WAYLAND_DISPLAY)
         throw new ConnectionError("No desktop session is available on the ufAI server. Use Copy path instead.", 503);
       const { command, args } = fileManagerCommand(platform, target.full);
-      this.available(agentId);
-      this.assertNotRemoving(agentId, target.path);
+      this.available(owner);
+      this.assertNotRemoving(owner, target.path);
       try { await (this.options.launch ?? launch)(command, args); }
       catch { throw new ConnectionError("Could not open the file manager on the ufAI server. Check that a desktop file manager is installed, or use Copy path.", 503); }
     } finally { this.opening--; }
   }
 
-  async remove(agentId: string, value: unknown, expectedKind: unknown, confirmed: unknown) {
+  async remove(owner: FileOwner, value: unknown, expectedKind: unknown, confirmed: unknown) {
     const path = filePath(value);
     if (!path || confirmed !== true || (expectedKind !== "file" && expectedKind !== "directory"))
       throw new ConnectionError("Choose a file or folder and confirm its permanent deletion first.", 400);
-    const location = this.available(agentId);
-    this.assertNotRemoving(agentId, path);
-    if (this.removing.has(agentId) || this.removing.size >= 2)
+    const location = this.available(owner);
+    this.assertNotRemoving(owner, path);
+    if (this.removing.has(ownerKey(owner)) || this.removing.size >= 2)
       throw new ConnectionError("File deletion is busy. Wait for a deletion to finish and retry.", 429);
-    const promise = this.removeEntry(agentId, path, expectedKind);
-    this.removing.set(agentId, { workspaceId: location.workspaceId, path, promise });
+    const promise = this.removeEntry(owner, path, expectedKind);
+    this.removing.set(ownerKey(owner), { owner, workspaceId: location.workspaceId, path, promise });
     try { await promise; }
     catch (error) { readableError(error); }
-    finally { this.removing.delete(agentId); }
+    finally { this.removing.delete(ownerKey(owner)); }
   }
 
-  private async removeEntry(agentId: string, path: string, expectedKind: "file" | "directory") {
-    await this.resolve(agentId, path, false, true);
-    await this.closeStreams([...this.downloads].filter(([, owner]) => owner.agentId === agentId &&
-      (owner.path === path || owner.path.startsWith(`${path}/`))).map(([stream]) => stream));
+  private async removeEntry(owner: FileOwner, path: string, expectedKind: "file" | "directory") {
+    await this.resolve(owner, path, false, true);
+    await this.closeStreams([...this.downloads].filter(([, download]) => ownerKey(download.owner) === ownerKey(owner) &&
+      (download.path === path || download.path.startsWith(`${path}/`))).map(([stream]) => stream));
     // Revalidate after settling downloads; do not turn a stale file selection into recursive removal.
-    const target = await this.resolve(agentId, path, false, true);
+    const target = await this.resolve(owner, path, false, true);
     const info = await lstat(target.full);
     if (info.isSymbolicLink() || (expectedKind === "file" ? !info.isFile() : !info.isDirectory()))
       throw new ConnectionError("This file or folder changed. Refresh the folder and try again.", 409);
-    this.available(agentId);
+    this.available(owner);
     // rm does not follow interior symlinks. No force/retry: missing entries and partial failures stay visible.
     await rm(target.full, { recursive: expectedKind === "directory", force: false, maxRetries: 0 });
   }
@@ -213,46 +218,49 @@ export class AgentFiles {
     })));
   }
 
-  async settle(scope?: { kind: "agent" | "workspace"; ownerId: string }) {
-    await Promise.allSettled([...this.removing].filter(([agentId, operation]) => !scope ||
-      (scope.kind === "agent" ? agentId : operation.workspaceId) === scope.ownerId).map(([, operation]) => operation.promise));
-    await this.closeStreams([...this.downloads].filter(([, owner]) => !scope ||
-      (scope.kind === "agent" ? owner.agentId : owner.workspaceId) === scope.ownerId).map(([stream]) => stream));
+  async settle(scope?: FileOwner) {
+    const matches = ({ owner, workspaceId }: { owner: FileOwner; workspaceId: string }) =>
+      !scope || (scope.kind === "workspace" ? workspaceId === scope.ownerId : ownerKey(owner) === ownerKey(scope));
+    await Promise.allSettled([...this.removing.values()].filter(matches).map(operation => operation.promise));
+    await this.closeStreams([...this.downloads].filter(([, download]) => matches(download)).map(([stream]) => stream));
   }
 
   async close() { this.stopped = true; await this.settle(); }
 }
 
 export function registerAgentFiles(app: FastifyInstance, browser: AgentFiles) {
-  app.delete<{ Params: { id: string } }>("/api/agents/:id/files", async (req, reply) => {
-    guard(req);
-    const body = objectBody(req.body);
-    await browser.remove(req.params.id, body.path, body.expectedKind, body.confirmFilesDeletion);
-    return reply.code(204).send();
-  });
-  app.get<{ Params: { id: string }; Querystring: { path?: string } }>("/api/agents/:id/files", async (req, reply) => {
-    guard(req);
-    const { limit, offset } = pagination(req.query);
-    reply.header("Cache-Control", "no-store");
-    return browser.list(req.params.id, req.query.path ?? "", limit, offset);
-  });
-  app.get<{ Params: { id: string }; Querystring: { path?: string } }>("/api/agents/:id/files/download", async (req, reply) => {
-    guard(req);
-    const { stream, name } = await browser.download(req.params.id, req.query.path ?? "");
-    const ascii = name.replace(/[^\x20-\x7e]|["\\]/g, "_");
-    reply.header("Content-Disposition", `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name).replace(/['()*]/g, c => "%" + c.charCodeAt(0).toString(16))}`);
-    reply.header("Cache-Control", "no-store");
-    reply.header("X-Content-Type-Options", "nosniff");
-    // These are live files: do not promise a Content-Length that a concurrent edit can invalidate.
-    const disconnected = () => stream.destroy();
-    reply.raw.once("close", disconnected);
-    stream.once("close", () => reply.raw.off("close", disconnected));
-    return reply.type("application/octet-stream").send(stream);
-  });
-  app.post<{ Params: { id: string } }>("/api/agents/:id/files/open", async (req, reply) => {
-    guard(req);
-    const body = objectBody(req.body);
-    await browser.openFolder(req.params.id, body.path ?? "");
-    return reply.code(204).send();
-  });
+  for (const [segment, kind] of [["agents", "agent"], ["workspaces", "workspace"]] as const) {
+    const route = `/api/${segment}/:id/files`;
+    app.delete<{ Params: { id: string } }>(route, async (req, reply) => {
+      guard(req);
+      const body = objectBody(req.body);
+      await browser.remove({ kind, ownerId: req.params.id }, body.path, body.expectedKind, body.confirmFilesDeletion);
+      return reply.code(204).send();
+    });
+    app.get<{ Params: { id: string }; Querystring: { path?: string } }>(route, async (req, reply) => {
+      guard(req);
+      const { limit, offset } = pagination(req.query);
+      reply.header("Cache-Control", "no-store");
+      return browser.list({ kind, ownerId: req.params.id }, req.query.path ?? "", limit, offset);
+    });
+    app.get<{ Params: { id: string }; Querystring: { path?: string } }>(`${route}/download`, async (req, reply) => {
+      guard(req);
+      const { stream, name } = await browser.download({ kind, ownerId: req.params.id }, req.query.path ?? "");
+      const ascii = name.replace(/[^\x20-\x7e]|["\\]/g, "_");
+      reply.header("Content-Disposition", `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name).replace(/['()*]/g, c => "%" + c.charCodeAt(0).toString(16))}`);
+      reply.header("Cache-Control", "no-store");
+      reply.header("X-Content-Type-Options", "nosniff");
+      // These are live files: do not promise a Content-Length that a concurrent edit can invalidate.
+      const disconnected = () => stream.destroy();
+      reply.raw.once("close", disconnected);
+      stream.once("close", () => reply.raw.off("close", disconnected));
+      return reply.type("application/octet-stream").send(stream);
+    });
+    app.post<{ Params: { id: string } }>(`${route}/open`, async (req, reply) => {
+      guard(req);
+      const body = objectBody(req.body);
+      await browser.openFolder({ kind, ownerId: req.params.id }, body.path ?? "");
+      return reply.code(204).send();
+    });
+  }
 }

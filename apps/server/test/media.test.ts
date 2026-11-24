@@ -145,10 +145,10 @@ test("one multipart Send stores ordered immutable inputs atomically; retry does 
     `/api/artifact-versions/${version}/preview`,
   );
   assert.equal(preview.headers["content-type"], "image/png");
-  const published = await s.app.inject(
+  const removedListing = await s.app.inject(
     `/api/workspaces/${s.workspaceId}/artifacts`,
   );
-  assert.equal(published.json().total, 0);
+  assert.equal(removedListing.statusCode, 404);
   assert.equal(
     (s.db.prepare("SELECT count(*) n FROM agent_turns").get() as any).n,
     1,
@@ -310,7 +310,7 @@ test("v12 upgrade retains existing messages, references and paths; interrupted i
   ).run();
   const oldArtifacts = new ArtifactService(db, oldFiles, () => {}),
     { Readable: Source } = await import("node:stream");
-  const legacyVersion = await oldArtifacts.publish(
+  const legacyVersion = await oldArtifacts.createAttachment(
     { workspaceId, agentId: "a", taskId: priorTask.taskId! },
     { stream: Source.from([png]), size: png.length, name: "legacy.png" },
     new AbortController().signal,
@@ -353,7 +353,7 @@ test("v12 upgrade retains existing messages, references and paths; interrupted i
     (db.prepare("SELECT mode FROM artifact_references").get() as any).mode,
     "file",
   );
-  assert.equal(db.pragma("user_version", { simple: true }), 45);
+  assert.equal(db.pragma("user_version", { simple: true }), 46);
   const files = new ManagedFiles(db, join(root, "files"));
   await files.start();
   const artifacts = new ArtifactService(db, files, () => {});
@@ -361,7 +361,7 @@ test("v12 upgrade retains existing messages, references and paths; interrupted i
     "INSERT INTO submission_ingests VALUES ('abandoned',?,'a','request-123','receiving','now')",
   ).run(workspaceId);
   const { Readable } = await import("node:stream");
-  await artifacts.publish(
+  await artifacts.createAttachment(
     { workspaceId, agentId: "a" },
     {
       stream: Readable.from([png]),
@@ -551,7 +551,7 @@ test("a tool-enabled task receives image content and publishes a document contai
               id: "publish",
               type: "function",
               function: {
-                name: "artifact_publish",
+                name: "attachment_create",
                 arguments: JSON.stringify({ path: "result.html" }),
               },
             },

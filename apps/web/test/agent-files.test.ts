@@ -3,7 +3,7 @@ import { test, type TestContext } from "node:test";
 import { JSDOM } from "jsdom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { useAgentFiles } from "../src/use-agent-files";
+import { useWorkingFiles } from "../src/use-agent-files";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -11,7 +11,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 function listing(path = "", total = 0) { return { path, total, items: [] }; }
-function location(ownerId = "agent", state = "ready") { return { ownerId, path: "/managed/files", state }; }
+function location(ownerId = "agent", state = "ready") { return { kind: "agent", ownerId, path: "/managed/files", state }; }
 
 async function mount(t: TestContext, fetcher: (url: string, init?: RequestInit) => Promise<Response>) {
   const dom = new JSDOM("<div id='root'></div>", { pretendToBeVisual: true });
@@ -24,8 +24,8 @@ async function mount(t: TestContext, fetcher: (url: string, init?: RequestInit) 
   });
   t.mock.method(globalThis, "fetch", (url: string, init?: RequestInit) => fetcher(String(url), init));
   const root = createRoot(dom.window.document.getElementById("root")!);
-  let current!: ReturnType<typeof useAgentFiles>;
-  function Probe({ agentId }: { agentId: string }) { current = useAgentFiles(agentId); return null; }
+  let current!: ReturnType<typeof useWorkingFiles>;
+  function Probe({ agentId }: { agentId: string }) { current = useWorkingFiles("agent", agentId); return null; }
   t.after(async () => {
     await act(async () => root.unmount());
     dom.window.close();

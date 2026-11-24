@@ -2,6 +2,7 @@ import { randomUUID, createHash } from "node:crypto";
 import {
   open,
   lstat,
+  mkdir,
   link,
   rm,
   readdir,
@@ -9,7 +10,7 @@ import {
   copyFile,
 } from "node:fs/promises";
 import { constants, type ReadStream } from "node:fs";
-import { join, basename, resolve, relative, sep } from "node:path";
+import { join, basename, dirname, extname, resolve, relative, sep } from "node:path";
 import type Database from "better-sqlite3";
 import type { ArtifactVersion } from "./contracts.js";
 import type { ManagedFiles } from "./managed-files.js";
@@ -33,6 +34,81 @@ export type ArtifactOwner = {
   taskId?: string;
   turnId?: string;
 };
+// A task can reopen its own attachments and the exact files delivered to it.
+const taskAttachmentAccess = `(
+  v.producerTaskId=@taskId
+  OR EXISTS(SELECT 1 FROM artifact_grants g WHERE g.versionId=v.id AND g.taskId=@taskId)
+  OR EXISTS(SELECT 1 FROM artifact_references r JOIN agent_messages m ON m.id=r.messageId
+    JOIN agent_tasks t ON t.conversationId=m.conversationId WHERE r.versionId=v.id AND t.id=@taskId)
+)`;
+
+export function requireTaskAttachment(db: Database.Database, owner: Pick<ToolOwner, "workspaceId" | "taskId">, id: string) {
+  const v = db.prepare(`SELECT v.*, ${taskAttachmentAccess} AS accessible FROM artifact_versions v WHERE v.id=@id`)
+    .get({ taskId: owner.taskId, id }) as (ArtifactVersion & { accessible: number; ingestId: string | null }) | undefined;
+  if (!v || v.workspaceId !== owner.workspaceId)
+    throw new ConnectionError("Attachment is outside this workspace.", 403);
+  if (v.state !== "ready" || v.ingestId)
+    throw new ConnectionError("Attachment bytes are unavailable.", 409);
+  if (!v.accessible)
+    throw new ConnectionError("This private file has not been shared with this task.", 403);
+  const { accessible: _accessible, ingestId: _ingestId, ...version } = v;
+  return version;
+}
+
+async function entryInfo(path: string) {
+  try { return await lstat(path); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return null;
+  }
+}
+
+async function importDirectory(parent: string, name: string) {
+  for (let index = 1; ; index++) {
+    const path = join(parent, index === 1 ? name : `${name} ${index}`);
+    try { await mkdir(path, { mode: 0o700 }); return path; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if ((await entryInfo(path))?.isDirectory()) return path;
+    }
+  }
+}
+
+function importedFilename(version: ArtifactVersion, index: number) {
+  const name = version.name.replace(/[\x00-\x1f\x7f/\\<>:"|?*]/g, "_").replace(/[. ]+$/g, "") || "File";
+  const extension = extname(name);
+  const keepExtension = Buffer.byteLength(extension) <= 32 ? extension : "";
+  const stem = keepExtension ? name.slice(0, -keepExtension.length) : name;
+  // 40 code points leave room for the full version ID and extension even with four-byte UTF-8.
+  const short = Array.from(stem).slice(0, 40).join("");
+  return `${short} [${version.id}${index > 1 ? `-${index}` : ""}]${keepExtension}`;
+}
+
+async function hasAttachmentBytes(path: string, version: ArtifactVersion) {
+  const info = await managedFile(path);
+  if (info.size !== version.size) return false;
+  const input = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const opened = await input.stat();
+    if (!opened.isFile() || opened.dev !== info.dev || opened.ino !== info.ino) return false;
+    const hash = createHash("sha256");
+    const buffer = Buffer.alloc(65536);
+    let total = 0;
+    while (true) {
+      const { bytesRead } = await input.read(buffer, 0, buffer.length, null);
+      if (!bytesRead) break;
+      total += bytesRead;
+      if (total > version.size) return false;
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+    return total === version.size && hash.digest("hex") === version.sha256;
+  } finally {
+    await input.close();
+  }
+}
+
+type LegacyImport = ArtifactVersion & { destination: string | null; stagingName: string | null };
+
 export class ArtifactService {
   private pending = new Map<
     string,
@@ -99,7 +175,7 @@ export class ArtifactService {
       } catch {}
       this.db
         .prepare(
-          "UPDATE artifact_versions SET state='failed',error='Publication interrupted. Publish a new version explicitly.' WHERE id=?",
+          "UPDATE artifact_versions SET state='failed',error='Attachment creation was interrupted. Attach the file again.' WHERE id=?",
         )
         .run(v.id);
     }
@@ -149,6 +225,93 @@ export class ArtifactService {
       }
       workspaceOffset += workspaces.length;
     }
+    await this.importLegacyFiles();
+  }
+
+  private async importLegacyFiles() {
+    const pending = this.db.prepare(`SELECT v.*,i.destination,i.stagingName
+      FROM workspace_file_imports i JOIN artifact_versions v ON v.id=i.versionId
+      WHERE i.finished=0 AND NOT EXISTS(SELECT 1 FROM deletion_operations d
+        WHERE d.kind='workspace' AND d.ownerId=v.workspaceId AND d.state!='completed')
+      ORDER BY i.versionId LIMIT 16`);
+    const finish = this.db.prepare("UPDATE workspace_file_imports SET finished=1,stagingName=NULL WHERE versionId=?");
+    while (true) {
+      const batch = pending.all() as LegacyImport[];
+      if (!batch.length) return;
+      for (const row of batch) {
+        try {
+          const unavailable = row.state !== "ready" || (await this.check(row, true)).state !== "ready";
+          if (!unavailable || row.stagingName)
+            await this.importLegacyFile(row, unavailable);
+          finish.run(row.id);
+        } catch (error) {
+          if (!this.db.prepare("SELECT 1 FROM workspaces WHERE id=?").get(row.workspaceId) ||
+              this.db.prepare("SELECT 1 FROM deletion_operations WHERE kind='workspace' AND ownerId=? AND state!='completed'").get(row.workspaceId))
+            continue;
+          throw new Error(`Could not import files for workspace ${row.workspaceId}. Check workspace folder permissions and free space, then restart ufAI.`, { cause: error });
+        }
+      }
+      await new Promise<void>(resolve => setImmediate(resolve));
+    }
+  }
+
+  private async importLegacyFile(row: LegacyImport, unavailable: boolean) {
+    const location = await this.files.repair("workspace", row.workspaceId);
+    if (location.state !== "ready") throw new Error("Workspace Folder could not be opened.");
+    await this.files.verifyDirectory("workspace", row.workspaceId);
+    let directory: string;
+    if (row.destination) {
+      directory = dirname(join(location.path, row.destination));
+      await managedDirectory(directory, !unavailable);
+    } else {
+      const imports = await importDirectory(location.path, "Imported files");
+      const month = /^\d{4}-(0[1-9]|1[0-2])/.exec(row.createdAt)?.[0] ?? "Undated";
+      const year = month.slice(0, 4);
+      directory = month === "Undated" ? await importDirectory(imports, month) :
+        await importDirectory(await importDirectory(imports, year), month.slice(5));
+    }
+
+    const stagingName = row.stagingName ?? `.ufai-import-${randomUUID()}`;
+    const stage = join(directory, stagingName);
+    if (unavailable) {
+      await rm(stage, { force: true });
+      return;
+    }
+    const reserve = this.db.prepare("UPDATE workspace_file_imports SET destination=?,stagingName=? WHERE versionId=?");
+    let target = row.destination ? join(location.path, row.destination) : "";
+    for (let index = 1; ; index++) {
+      if (!target) target = join(directory, importedFilename(row, index));
+      const info = await entryInfo(target);
+      if (!info) break;
+      if (row.destination === relative(location.path, target) && info.isFile() && await hasAttachmentBytes(target, row)) {
+        if (row.stagingName) await rm(stage, { force: true });
+        return;
+      }
+      target = "";
+    }
+
+    reserve.run(relative(location.path, target), stagingName, row.id);
+    if (row.stagingName) await rm(stage, { force: true });
+    try {
+      await copyFile(this.path(row), stage, constants.COPYFILE_EXCL);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST")
+        reserve.run(relative(location.path, target), null, row.id);
+      throw error;
+    }
+    try {
+      if (!await hasAttachmentBytes(stage, row))
+        throw new Error("Imported copy did not match the stored attachment.");
+      const file = await open(stage, constants.O_RDONLY | constants.O_NOFOLLOW);
+      try { await file.sync(); } finally { await file.close(); }
+      await this.files.verifyDirectory("workspace", row.workspaceId);
+      await managedDirectory(directory);
+      this.files.assertAvailable(row.workspaceId);
+      // Link the completed temporary copy, so the live file appears in one step.
+      await link(stage, target);
+    } finally {
+      await rm(stage, { force: true });
+    }
   }
 
   get(id: string) {
@@ -158,48 +321,28 @@ export class ArtifactService {
     if (!v) throw new ConnectionError("Artifact version not found.", 404);
     return v;
   }
+  listAttachments(owner: ToolOwner, limit: number, offset: number, taskOnly = false) {
+    return this.db.prepare(`SELECT v.* FROM artifact_versions v WHERE v.workspaceId=@workspaceId
+      AND v.ingestId IS NULL AND v.state='ready' AND ${taskAttachmentAccess}
+      AND (@taskOnly=0 OR v.producerTaskId=@taskId)
+      ORDER BY v.createdAt DESC,v.id LIMIT @limit OFFSET @offset`)
+      .all({ taskId: owner.taskId, workspaceId: owner.workspaceId, taskOnly: Number(taskOnly), limit, offset });
+  }
   private async check(v: ArtifactVersion, checksum = false) {
     try {
-      const s = await managedFile(this.path(v));
-      if (s.size !== v.size) throw new Error();
-      if (checksum) {
-        const input = await open(
-            this.path(v),
-            constants.O_RDONLY | constants.O_NOFOLLOW,
-          ),
-          hash = createHash("sha256"),
-          buffer = Buffer.alloc(65536);
-        try {
-          let total = 0;
-          while (true) {
-            const { bytesRead } = await input.read(
-              buffer,
-              0,
-              buffer.length,
-              null,
-            );
-            if (!bytesRead) break;
-            total += bytesRead;
-            if (total > v.size) throw new Error();
-            hash.update(buffer.subarray(0, bytesRead));
-          }
-          if (total !== v.size || hash.digest("hex") !== v.sha256)
-            throw new Error();
-        } finally {
-          await input.close();
-        }
-      }
+      if (checksum ? !await hasAttachmentBytes(this.path(v), v) : (await managedFile(this.path(v))).size !== v.size)
+        throw new Error();
     } catch {
       this.db
         .prepare(
-          "UPDATE artifact_versions SET state='unavailable',error='Published bytes are missing or unavailable.' WHERE id=? AND state='ready'",
+          "UPDATE artifact_versions SET state='unavailable',error='Attachment bytes are missing or unavailable.' WHERE id=? AND state='ready'",
         )
         .run(v.id);
       this.changed(v.workspaceId);
     }
     return this.get(v.id);
   }
-  publish(
+  createAttachment(
     owner: ArtifactOwner,
     args: Record<string, any>,
     signal: AbortSignal,
@@ -208,7 +351,7 @@ export class ArtifactService {
       throw new ConnectionError("Artifact service is shutting down.", 503);
     if (this.pending.size >= this.maxIngests)
       throw new ConnectionError(
-        "Artifact publication is busy. Retry shortly.",
+        "Attachment storage is busy. Retry shortly.",
         429,
       );
     const token = randomUUID(),
@@ -301,7 +444,7 @@ export class ArtifactService {
           "application/octet-stream",
           expectedSize,
           time(),
-          args.origin ?? "published",
+          args.origin ?? "attachment",
           args.ingestId ?? null,
         );
     })();
@@ -384,7 +527,7 @@ export class ArtifactService {
       } catch {}
       this.db
         .prepare(
-          "UPDATE artifact_versions SET state='failed',error='Publication failed. Check the source, storage, and permissions; publish a new version.' WHERE id=?",
+          "UPDATE artifact_versions SET state='failed',error='Attachment creation failed. Check the source, storage, and permissions.' WHERE id=?",
         )
         .run(id);
       this.changed(owner.workspaceId);

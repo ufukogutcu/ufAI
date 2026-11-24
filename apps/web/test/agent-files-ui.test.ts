@@ -3,12 +3,12 @@ import { test, type TestContext } from "node:test";
 import { act, createElement as h } from "react";
 import { mountComponent } from "./component-helpers";
 import type { AgentFileEntry } from "../../server/src/contracts";
-const { AgentFiles } = await import("../src/components/AgentFiles");
+const { AgentFiles, WorkspaceFolder } = await import("../src/components/AgentFiles");
 
 function file(name: string, kind: AgentFileEntry["kind"] = "file"): AgentFileEntry {
   return { name, path: name, kind, size: 10, modifiedAt: null };
 }
-async function setup(t: TestContext, entries: AgentFileEntry[], root = "/managed/files") {
+async function setup(t: TestContext, entries: AgentFileEntry[], root = "/managed/files", kind: "agent" | "workspace" = "agent") {
   let items = entries;
   const calls: { url: string; method: string; body: Record<string, unknown> }[] = [];
   let deletion: (() => Promise<Response>) | null = null;
@@ -21,13 +21,14 @@ async function setup(t: TestContext, entries: AgentFileEntry[], root = "/managed
       if (response.ok) items = items.filter(item => item.path !== body.path);
       return response;
     }
-    if (url.pathname.endsWith("/locations")) return Response.json({ ownerId: "agent", path: root, state: "ready" });
+    if (url.pathname.endsWith("/locations")) return Response.json({ kind, ownerId: kind, path: root, state: "ready" });
     if (url.pathname.endsWith("/open")) return new Response(null, { status: 204 });
     const path = url.searchParams.get("path") ?? "", offset = Number(url.searchParams.get("offset"));
     const current = items.filter(item => (item.path.includes("/") ? item.path.slice(0, item.path.lastIndexOf("/")) : "") === path);
     return Response.json({ path, total: current.length, items: current.slice(offset, offset + 100) });
   });
-  const p = await mountComponent(t, h(AgentFiles, { agentId: "agent" }));
+  const p = await mountComponent(t, kind === "agent" ? h(AgentFiles, { agentId: "agent" }) :
+    h(WorkspaceFolder, { workspaceId: "workspace", onClose() {} }));
   const row = (name: string) => [...p.document.querySelectorAll<HTMLElement>("[data-file-entry]")].find(el => el.dataset.fileEntry === name)!;
   const menuItem = (label: string) => [...p.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(el => el.textContent === label)!;
   const button = (label: string) => [...p.document.querySelectorAll<HTMLButtonElement>("button")].find(el => el.textContent === label)!;
@@ -114,4 +115,20 @@ test("Files recovers the previous page after deleting its final entry and dismis
   await p.open("file-0.txt");
   await act(async () => p.window.dispatchEvent(new p.window.Event("focus")));
   assert.equal(p.document.querySelector('[role="menu"]'), null);
+});
+
+test("Workspace Folder shares row actions and keeps the confirmation scoped to the workspace", async t => {
+  const p = await setup(t, [file("shared.txt"), file("other.txt")], "/managed/shared", "workspace");
+  assert.match(p.document.querySelector("dialog h2")?.textContent ?? "", /Workspace Folder/);
+  assert.match(p.row("shared.txt").getAttribute("href")!, /^\/api\/workspaces\/workspace\/files\/download/);
+  await p.open("shared.txt", "F10");
+  const remove = p.menuItem("Delete…");
+  assert.ok(remove.closest("dialog[open]"));
+  await p.click(remove);
+  assert.equal(p.document.querySelectorAll("dialog[open]").length, 2);
+  assert.equal(p.document.activeElement, p.button("Cancel"));
+  await p.click(p.button("Delete permanently"));
+  assert.deepEqual(p.calls.filter(call => call.method === "DELETE").map(call => call.url), ["/api/workspaces/workspace/files"]);
+  assert.equal(p.document.querySelectorAll("dialog[open]").length, 1);
+  assert.equal(p.document.activeElement, p.row("other.txt"));
 });

@@ -10,7 +10,7 @@ export const duplicateOptions = [
   ["includeSkills", "Skill settings", true],
   ["includeMcp", "MCP settings", true],
   ["includeMemories", "Learned memories", false],
-  ["includeWorkspaceFiles", "Workspace shared files", false],
+  ["includeWorkspaceFiles", "Workspace Folder files", false],
   ["includeAgentFiles", "Agent working files", false],
   ["includeTriggers", "Triggers", false],
 ] as const;
@@ -96,7 +96,7 @@ export function WorkspaceDuplicate({ source, initialOperation, onClose, onComple
               aria-describedby={key === "includeTriggers" ? `${fieldId}-triggers` : undefined} />{label}
           </label>)}
         </fieldset>
-        <p className={styles.hint}>Presets, skill packages, and MCP server configurations remain shared. Agent enablement settings are independent. Files include working folders only, with no task folders, published outputs, or browser profiles.</p>
+        <p className={styles.hint}>Presets, skill packages, and MCP server configurations remain shared. Agent enablement settings are independent. Files include working folders only, with no task folders, conversation attachments, or browser profiles.</p>
         <p className={styles.hint} id={`${fieldId}-triggers`}>Included triggers keep their enabled and paused states. Enabled triggers can start work when copying finishes. Copied custom event sources need new credentials; rotate them in Triggers.</p>
       </>}
       {running && <LoadingState>{operation.phase === "publishing" ? "Finishing workspace…" : "Copying workspace…"} You can reopen ufAI to check progress if this page closes.</LoadingState>}

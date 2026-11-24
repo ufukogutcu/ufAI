@@ -459,11 +459,11 @@ test("scoped questions, progress and answers share one mutual connection; automa
     1,
   );
 });
-test("private versions require exact grants; published versions remain workspace shared and outputs can forward", async (t) => {
+test("attachments require task ownership or an exact grant and recipients can forward", async (t) => {
   const s = await setup(t);
   const path = join(s.directory, "private.txt");
   await writeFile(path, "private source");
-  const version = await s.artifacts.publish(
+  const version = await s.artifacts.createAttachment(
     s.owner,
     { path, origin: "inspection" },
     new AbortController().signal,
@@ -483,7 +483,7 @@ test("private versions require exact grants; published versions remain workspace
     helper,
     {
       id: "deny",
-      name: "artifact_materialize",
+      name: "attachment_copy",
       arguments: { versionId: version.id },
     },
     new AbortController().signal,
@@ -505,15 +505,13 @@ test("private versions require exact grants; published versions remain workspace
   assert.equal(await readFile(local.path, "utf8"), "private source");
   s.messaging.outputs(helper, [version.id]);
   assert.deepEqual(s.messaging.finalVersions(helper), [version.id]);
-  const published = await s.artifacts.publish(
+  const attachment = await s.artifacts.createAttachment(
     s.owner,
     { path },
     new AbortController().signal,
   );
-  assert.equal(
-    s.messaging.assertVersion(helper, published.id).id,
-    published.id,
-  );
+  assert.throws(() => s.messaging.assertVersion(helper, attachment.id), /not been shared/);
+  assert.deepEqual(s.artifacts.listAttachments(helper, 50, 0).map(item => (item as { id: string }).id), [version.id]);
 });
 test("parent cancellation leaves helpers running; late results never revive a cancelled task", async (t) => {
   const s = await setup(t);
@@ -875,7 +873,7 @@ test("v13 upgrade preserves populated records and stable paths while backfilling
       );
     else assert.deepEqual(rows, retained[table], table);
   }
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 45);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 46);
   assert.deepEqual(
     (upgraded.prepare("SELECT content FROM agent_messages").all() as any[]).map(
       (r) => r.content,
@@ -1069,21 +1067,19 @@ test(`durable messaging wait survives restart with ${awareness} connections and 
   let observedSignature = false;
   s.connections.toolRound = async (_snapshot, request) => {
     const steps = request.continuation as any[];
-    if (request.instructions.includes("You are b.") || request.instructions.includes("You are New name."))
+    if (request.instructions.includes("You are b.") || request.instructions.includes("You are New name.")) {
+      const prepared = steps[0]?.results[0]?.result.version;
       return {
-        text: steps.length ? "Image ready" : "Publishing image",
-        calls: steps.length
-          ? []
-          : [
-              {
-                id: "publish-image",
-                name: "artifact_publish",
-                arguments: { path: imagePath },
-              },
-            ],
+        text: steps.length >= 2 ? "Image ready" : "Preparing image",
+        calls: steps.length === 0 ? [
+          { id: "prepare-image", name: "attachment_create", arguments: { path: imagePath } },
+        ] : steps.length === 1 ? [
+          { id: "select-image", name: "task_set_outputs", arguments: { versionIds: [prepared.id] } },
+        ] : [],
         continuation: { opaque: "helper-signature" },
         usage: null,
       };
+    }
     const step = steps.length;
     if (step === 2) {
       observedSignature = steps[1].response.opaque === "provider-signature";
@@ -1104,7 +1100,7 @@ test(`durable messaging wait survives restart with ${awareness} connections and 
     if (step === 2)
       call = {
         id: "copy-image",
-        name: "artifact_materialize",
+        name: "attachment_copy",
         arguments: { versionId: version, name: "illustration.png" },
       };
     if (step === 3) {
@@ -1126,7 +1122,7 @@ test(`durable messaging wait survives restart with ${awareness} connections and 
     if (step === 4)
       call = {
         id: "publish-document",
-        name: "artifact_publish",
+        name: "attachment_create",
         arguments: {
           path: join(
             s.files.location("task", s.owner.taskId).path,
@@ -1172,7 +1168,7 @@ test(`durable messaging wait survives restart with ${awareness} connections and 
     );
     const versions = s.db
       .prepare(
-        "SELECT * FROM artifact_versions WHERE origin='published' ORDER BY createdAt",
+        "SELECT * FROM artifact_versions WHERE origin='attachment' ORDER BY createdAt",
       )
       .all() as any[];
     const output = versions.find((v) => v.name === "document.html");
@@ -2809,7 +2805,7 @@ test("v20 routing upgrade preserves existing check-ins and installs missing rout
   );
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 45);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 46);
     const row = upgraded
       .prepare("SELECT * FROM task_checkins WHERE id=?")
       .get(reminder.checkinId) as any;
@@ -2984,7 +2980,7 @@ function insertReverseLink(s: Awaited<ReturnType<typeof setup>>, id: string) {
 function upgradeLinks(s: Awaited<ReturnType<typeof setup>>) {
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 45);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 46);
     assert.deepEqual(upgraded.pragma("foreign_key_check"), []);
     assert.deepEqual(upgraded.pragma("integrity_check"), [{ integrity_check: "ok" }]);
   } finally {
@@ -2998,7 +2994,7 @@ test("v21 upgrade merges reverse links and preserves conversations, grants, file
   const single = s.messaging.createLink(s.workspaceId, "c", "d");
   const path = join(s.directory, "shared.txt");
   await writeFile(path, "Shared immutable reference");
-  const version = await s.artifacts.publish(s.owner, { path, origin: "inspection" }, new AbortController().signal);
+  const version = await s.artifacts.createAttachment(s.owner, { path, origin: "inspection" }, new AbortController().signal);
   const forward = s.messaging.send(s.owner, { agentId: "b", content: "Shared", versionIds: [version.id] }, "upgrade-forward");
   const root = s.engine.submit("b", "new", "Independent", randomUUID());
   const b = { ...s.owner, agentId: "b", taskId: root.taskId!, turnId: root.turnId };
@@ -3195,7 +3191,7 @@ test("version 41 missing the transit timing column preserves history and restore
   assert.equal(result.ok, true, JSON.stringify(result));
   assert.deepEqual(readTransit.get(result.messageId), { state: "arrived", arrivesAt: result.arrivesAt });
   assert.equal(s.messaging.readRequest(result.requestId as string).targetAgentId, "b");
-  assert.equal(s.db.pragma("user_version", { simple: true }), 45);
+  assert.equal(s.db.pragma("user_version", { simple: true }), 46);
 });
 
 test("slow Chat handoffs acknowledge queueing while durable ordered travel controls recipient admission", async t => {
@@ -3342,9 +3338,27 @@ test("v22 upgrade preserves old messages without adding retrospective transmissi
   s.db.exec("DROP INDEX communication_deliveries_turn; DROP TABLE message_transits; PRAGMA user_version=22");
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 45);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 46);
     assert.equal((upgraded.prepare("SELECT count(*) n FROM message_transits").get() as any).n, 0);
     assert.equal((upgraded.prepare("SELECT content FROM communication_messages WHERE id=?").get(sent.messageId) as any).content, "Old message");
     assert.deepEqual(upgraded.pragma("foreign_key_check"), []);
   } finally { upgraded.close(); }
+});
+
+test("a workspace file can be attached to Inbox explicitly without becoming a final reply attachment", async t => {
+  const s = await setup(t);
+  const path = join(s.files.location("workspace", s.workspaceId).path, "shared-note.txt");
+  await writeFile(path, "Original shared note");
+  const signal = AbortSignal.timeout(10000);
+  const prepare = await s.tools.dispatch(s.owner, { id: "prepare-workspace-file", name: "attachment_create", arguments: { path } }, signal, async () => null);
+  assert.equal(prepare.ok, true);
+  const { id } = prepare.version as { id: string };
+  assert.deepEqual(s.messaging.finalVersions(s.owner), []);
+  const delivered = await s.tools.dispatch(s.owner, { id: "deliver-workspace-file", name: "user_notify",
+    arguments: { content: "Here is the shared note.", versionIds: [id] } }, signal, async () => null);
+  assert.equal(delivered.ok, true);
+  assert.deepEqual(JSON.parse(s.db.prepare("SELECT attachments FROM workspace_inbox WHERE workspaceId=?").pluck().get(s.workspaceId) as string), [id]);
+  await writeFile(path, "Updated working copy");
+  assert.equal((await s.artifacts.bytes(id, s.workspaceId)).bytes.toString(), "Original shared note");
+  assert.deepEqual(s.messaging.finalVersions(s.owner), []);
 });

@@ -71,7 +71,7 @@ test("downloads preserve bytes and safe Unicode attachment names without publish
   assert.equal(response.headers["cache-control"], "no-store");
   assert.match(String(response.headers["content-disposition"]), /filename="r_sum_ _report_.html"/);
   assert.ok(String(response.headers["content-disposition"]).includes(encodeURIComponent(name)));
-  assert.equal((await f.app.inject(`/api/workspaces/${f.workspace.id}/artifacts`)).json().total, 0);
+  assert.equal((await f.app.inject(`/api/workspaces/${f.workspace.id}/artifacts`)).statusCode, 404);
   assert.equal((await f.app.inject(`${f.base}/download?path=missing`)).statusCode, 404);
   assert.equal((await f.app.inject(`${f.base}/download`)).statusCode, 409);
 });
@@ -189,7 +189,7 @@ test("paused downloads close on deletion and shutdown", async t => {
   const file = await open(join(files.location("agent", "first").path, "large.bin"), "w");
   await file.truncate(16 * 1024 * 1024); await file.close();
   await writeFile(join(files.location("agent", "second").path, "small.txt"), "text");
-  const first = await browser.download("first", "large.bin"), second = await browser.download("second", "small.txt");
+  const first = await browser.download({ kind: "agent", ownerId: "first" }, "large.bin"), second = await browser.download({ kind: "agent", ownerId: "second" }, "small.txt");
   const op = files.requestDeletion("agent", "first", true);
   for (let i = 0; i < 100 && files.deletion(op.id).state !== "completed"; i++) await delay(5);
   assert.equal(files.deletion(op.id).state, "completed");
@@ -200,7 +200,7 @@ test("paused downloads close on deletion and shutdown", async t => {
   assert.equal(files.deletion(workspaceOp.id).state, "completed");
   assert.equal(second.stream.closed, true);
   await browser.close();
-  await assert.rejects(browser.download("second", "small.txt"), /shutting down/);
+  await assert.rejects(browser.download({ kind: "agent", ownerId: "second" }, "small.txt"), /shutting down/);
 });
 
 test("a disconnected HTTP download releases its file stream, and shutdown closes paused downloads", { timeout: 5000 }, async t => {
@@ -231,7 +231,7 @@ test("a disconnected HTTP download releases its file stream, and shutdown closes
   });
   for (let i = 0; i < 100 && !stream.closed; i++) await delay(5);
   assert.equal(stream.closed, true);
-  const paused = await download("agent", "large.bin");
+  const paused = await download({ kind: "agent", ownerId: "agent" }, "large.bin");
   await browser.close();
   assert.equal(paused.stream.closed, true);
 });
@@ -289,15 +289,15 @@ test("entry deletion closes only matching downloads and respects unavailable loc
   await mkdir(join(home, "folder"));
   await writeFile(join(home, "folder", "remove.txt"), "remove");
   await writeFile(join(home, "keep.txt"), "keep");
-  const removed = await browser.download("agent", "folder/remove.txt"), kept = await browser.download("agent", "keep.txt");
-  await browser.remove("agent", "folder", "directory", true);
+  const removed = await browser.download({ kind: "agent", ownerId: "agent" }, "folder/remove.txt"), kept = await browser.download({ kind: "agent", ownerId: "agent" }, "keep.txt");
+  await browser.remove({ kind: "agent", ownerId: "agent" }, "folder", "directory", true);
   assert.equal(removed.stream.closed, true);
   assert.equal(kept.stream.destroyed, false);
   db.prepare("UPDATE managed_locations SET state='error' WHERE kind='agent' AND ownerId='agent'").run();
-  await assert.rejects(browser.remove("agent", "keep.txt", "file", true), /unavailable/);
+  await assert.rejects(browser.remove({ kind: "agent", ownerId: "agent" }, "keep.txt", "file", true), /unavailable/);
   db.prepare("UPDATE managed_locations SET state='ready' WHERE kind='agent' AND ownerId='agent'").run();
   files.requestDeletion("agent", "agent", true);
-  await assert.rejects(browser.remove("agent", "keep.txt", "file", true), /Deletion is in progress/);
+  await assert.rejects(browser.remove({ kind: "agent", ownerId: "agent" }, "keep.txt", "file", true), /Deletion is in progress/);
 });
 
 test("entry deletion limits concurrency, fences subtree actions, and shutdown waits for in-flight removals", async t => {
@@ -332,16 +332,16 @@ test("entry deletion limits concurrency, fences subtree actions, and shutdown wa
   await entered;
   assert.equal((await remove("first", "other")).statusCode, 429);
   assert.equal((await remove("third")).statusCode, 429);
-  await assert.rejects(browser.list("first", "folder", 100, 0), /being deleted/);
-  await assert.rejects(browser.download("first", "folder/child"), /being deleted/);
-  await assert.rejects(browser.openFolder("first", "folder"), /being deleted/);
+  await assert.rejects(browser.list({ kind: "agent", ownerId: "first" }, "folder", 100, 0), /being deleted/);
+  await assert.rejects(browser.download({ kind: "agent", ownerId: "first" }, "folder/child"), /being deleted/);
+  await assert.rejects(browser.openFolder({ kind: "agent", ownerId: "first" }, "folder"), /being deleted/);
   let closed = false;
   const closing = browser.close().then(() => { closed = true; });
   await delay(5); assert.equal(closed, false);
   unblock();
   await Promise.all([first, second, closing]);
   assert.equal(closed, true);
-  await assert.rejects(browser.remove("third", "folder", "directory", true), /shutting down/);
+  await assert.rejects(browser.remove({ kind: "agent", ownerId: "third" }, "folder", "directory", true), /shutting down/);
 });
 
 test("entry deletion reports parent permission errors without removing the entry", { skip: process.platform === "win32" || process.getuid?.() === 0 }, async t => {
@@ -354,4 +354,27 @@ test("entry deletion reports parent permission errors without removing the entry
   } finally {
     await chmod(f.home.path, 0o700);
   }
+});
+
+test("Workspace Folder operates on live shared entries and isolates agent and workspace folders", async t => {
+  const f = await fixture(t, { platform: "linux", env: {} });
+  const base = `/api/workspaces/${f.workspace.id}/files`;
+  const home = (await f.app.inject(`/api/workspaces/${f.workspace.id}/locations`)).json<ManagedLocation>();
+  await mkdir(join(home.path, "nested"));
+  await writeFile(join(home.path, "nested", ".hidden"), "shared bytes");
+  await writeFile(join(f.home.path, "agent-only.txt"), "agent bytes");
+  assert.equal((await f.app.inject(`${base}/download?path=agent-only.txt`)).statusCode, 404);
+  assert.equal((await f.app.inject(`${f.base}/download?path=nested%2F.hidden`)).statusCode, 404);
+  assert.equal((await f.app.inject(`${base}?limit=1&offset=1`)).json().total, 1);
+  const nested = await f.app.inject(`${base}?path=nested`);
+  assert.deepEqual(nested.json<AgentFileListing>().items.map(entry => entry.name), [".hidden"]);
+  assert.equal((await f.app.inject(`${base}/download?path=nested%2F.hidden`)).body, "shared bytes");
+  assert.equal((await f.app.inject({ method: "POST", url: `${base}/open`, payload: { path: "nested" } })).statusCode, 503);
+  const remove = (path: string, confirmed: boolean) => f.app.inject({ method: "DELETE", url: base,
+    payload: { path, expectedKind: "directory", confirmFilesDeletion: confirmed } });
+  assert.equal((await remove("nested", false)).statusCode, 400);
+  assert.equal((await remove("", true)).statusCode, 400);
+  assert.equal((await remove("nested", true)).statusCode, 204);
+  assert.deepEqual((await f.app.inject(base)).json<AgentFileListing>().items, []);
+  assert.equal(await readFile(join(f.home.path, "agent-only.txt"), "utf8"), "agent bytes");
 });

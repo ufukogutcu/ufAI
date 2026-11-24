@@ -21,5 +21,5 @@ export const browserTools: ToolSpec[] = [
     paths: { type: "array", minItems: 1, maxItems: 10, items: text("Host file path, relative to the task directory or absolute") },
     versionIds: { type: "array", minItems: 1, maxItems: 10, items: text("Accessible artifact version ID", 100) },
   }),
-  spec("browser_downloads", "Read download states/paths in Files/Downloads. Publish explicitly with artifact_publish."),
+  spec("browser_downloads", "Read download states/paths in Files/Downloads. Use the Workspace Folder for shared work or attachment_create to prepare a download for a message."),
 ];

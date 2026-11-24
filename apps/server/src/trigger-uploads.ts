@@ -161,10 +161,7 @@ export class TriggerUploads {
           sourceId,
           sourceId,
           { ...input, attachments },
-          [],
-          true,
-          true,
-          id,
+          { internalUpload: true, ingestId: id },
         );
         const same =
           JSON.stringify(accepted.attachments.map((a) => a.versionId)) ===

@@ -23,7 +23,7 @@ export function AgentDeleteDialog({ agent, onClose }: { agent: Agent; onClose: (
     <p>
       Permanently delete {agent.name}, its conversations, memories, and
       all files in its agent and task folders? Its work will be cancelled.
-      This cannot be undone. Published files remain in the workspace.
+      This cannot be undone.
     </p>
     {error && <Feedback role="alert">{error}</Feedback>}
     {busy && <LoadingState>Cleaning up files… This continues if the page closes.</LoadingState>}

@@ -1,3 +1,4 @@
+import { retiredFileEvent } from "./workspace-folder-migration.js";
 import { Cron } from "croner";
 import { isDeepStrictEqual } from "node:util";
 import { ConnectionError } from "./model-providers.js";
@@ -76,6 +77,8 @@ export function validateWhen(
   }
   if (w.kind === "event") {
     const eventType = text(w.eventType, "an event type", 160);
+    if (eventType === retiredFileEvent)
+      triggerError("This file event was retired. Choose another event type.");
     if (!/^[a-zA-Z0-9][\w.:-]*$/.test(eventType))
       triggerError(
         "Use letters, numbers, dots, colons or hyphens in event types.",

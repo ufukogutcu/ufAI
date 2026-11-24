@@ -682,7 +682,6 @@ function TriggerEditor({
               {[
                 "ufai.task.completed",
                 "ufai.task.failed",
-                "ufai.artifact.published",
               ].map((t) => (
                 <option key={t} value={t} />
               ))}

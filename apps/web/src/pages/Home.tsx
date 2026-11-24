@@ -1,7 +1,6 @@
 import { WorkspaceInboxButton } from "../components/Messaging";
 import { WorkspaceTriggersButton } from "../components/Triggers";
-import { PublishedFiles } from "../components/TaskTools";
-import { FolderLocation } from "../components/FolderLocation";
+import { WorkspaceFolder } from "../components/AgentFiles";
 import { DeletionProgress } from "../components/DeletionProgress";
 import { useNavigationGuard } from "../navigation-guard";
 import { useSettings } from "../settings-store";
@@ -91,7 +90,7 @@ function WorkspaceDialog({
           <p>
             Delete <strong>{action.name}</strong>? This permanently removes the
             workspace, its agents, conversations, memories, and all files in its
-            managed folders, including published outputs, and cancels its work. This cannot be undone.
+            managed folders, including shared files and attachments, and cancels its work. This cannot be undone.
           </p>
         ) : (
           <>
@@ -146,13 +145,6 @@ function WorkspaceDialog({
             </label>
           </>
         )}
-        {action.kind === "edit" && (
-          <FolderLocation
-            kind="workspace"
-            ownerId={action.id}
-            label="Workspace shared folder"
-          />
-        )}
         {busy && action.kind === "delete" && (
           <LoadingState>
             Deleting managed files… Cleanup continues if this page closes.
@@ -187,7 +179,7 @@ function WorkspaceDialog({
 }
 
 export default function Home() {
-  const [publishedIn, setPublishedIn] = useState<string | null>(null);
+  const [folderIn, setFolderIn] = useState<string | null>(null);
   const guard = useNavigationGuard();
   const agentStore = useAgentStore();
   const positionError = useAgents((s) => s.positionError);
@@ -195,6 +187,7 @@ export default function Home() {
   const activeId = useSettings(
     (state) => state.snapshot.settings.activeWorkspaceId,
   );
+  useEffect(() => { setFolderIn(null); }, [activeId]);
   const selectedWorkspace = useSettings(
     (state) => state.snapshot.activeWorkspace,
   );
@@ -379,13 +372,13 @@ export default function Home() {
                 <div className={styles.workspaceActions}>
                   <WorkspaceInboxButton key={active.id} workspaceId={active.id} />
                   <WorkspaceTriggersButton key={`triggers:${active.id}`} workspaceId={active.id} />
-                  <Tooltip content="Published Files">
+                  <Tooltip content="Workspace Folder">
                     <button
                       className="iconButton"
-                      aria-label="Published Files"
-                      onClick={() => setPublishedIn(active.id)}
+                      aria-label="Workspace Folder"
+                      onClick={() => setFolderIn(active.id)}
                     >
-                      <FolderOpen size={14} />
+                      <FolderOpen size={14} aria-hidden="true" />
                     </button>
                   </Tooltip>
                   <Tooltip content="Edit workspace">
@@ -464,11 +457,11 @@ export default function Home() {
           )}
         </div>
       </div>
-      {publishedIn === active?.id && publishedIn && (
-        <PublishedFiles
-          key={publishedIn}
-          workspaceId={publishedIn}
-          onClose={() => setPublishedIn(null)}
+      {folderIn === active?.id && folderIn && (
+        <WorkspaceFolder
+          key={folderIn}
+          workspaceId={folderIn}
+          onClose={() => setFolderIn(null)}
         />
       )}
       {menu && menuWorkspace && <ContextMenu anchor={menu.anchor}

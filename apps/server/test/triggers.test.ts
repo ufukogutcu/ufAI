@@ -1340,7 +1340,7 @@ test("shutdown fences dispatch that was awaiting skill validation", async (t) =>
   );
 });
 
-test("artifact events retain the publishing turn's lineage when a newer task input exists", async (t) => {
+test("creating an attachment emits no file trigger event", async (t) => {
   const s = await setup(t);
   const trigger = await s.create({ kind: "every", everyMs: 1000 });
   s.advance(1000);
@@ -1354,7 +1354,7 @@ test("artifact events retain the publishing turn's lineage when a newer task inp
   );
   const file = join(s.root, "publication.txt");
   await writeFile(file, "Published fixture");
-  const version = await s.service.artifacts.publish(
+  const version = await s.service.artifacts.createAttachment(
     {
       workspaceId: s.workspaceId,
       agentId: "a",
@@ -1367,7 +1367,7 @@ test("artifact events retain the publishing turn's lineage when a newer task inp
   const event = s.db
     .prepare("SELECT lineage FROM trigger_events WHERE eventId=?")
     .get(`artifact:${version.id}`) as any;
-  assert.deepEqual(JSON.parse(event.lineage), [trigger.id]);
+  assert.equal(event, undefined);
 });
 
 test("template creation rejects an outdated reviewed fingerprint and requires a missing timezone", async (t) => {
@@ -1642,7 +1642,7 @@ for (const early of [false, true])
     legacy.pragma("user_version=30");
     legacy.close();
     await s.reopen();
-    assert.equal(s.db.pragma("user_version", { simple: true }), 45);
+    assert.equal(s.db.pragma("user_version", { simple: true }), 46);
     assert.ok(
       (s.db.pragma("table_info(agent_triggers)") as { name: string }[]).some(
         (c) => c.name === "dispatchFailures",

@@ -157,7 +157,7 @@ function TimelineRow({
       : item.kind === "checkin"
         ? "Scheduled check-in"
         : item.kind === "file"
-          ? `Published ${item.file?.name ?? "file"}`
+          ? `Prepared attachment ${item.file?.name ?? "file"}`
           : actionLabel(item);
   const Icon = active
     ? item.status === "waiting"

@@ -2,7 +2,7 @@ import { Feedback, BusyButton, LoadingIndicator, LoadingState } from "./Feedback
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { ArrowUp, ChevronRight, Copy, Download, File, Folder, FolderOpen, RefreshCw, Trash2 } from "lucide-react";
 import { request, errorMessage } from "../api";
-import { useAgentFiles } from "../use-agent-files";
+import { useWorkingFiles } from "../use-agent-files";
 import type { AgentFileEntry } from "../../../server/src/contracts";
 import { ContextMenu, type ContextMenuAnchor, type ContextMenuItem } from "./ContextMenu";
 import { Dialog } from "./Dialog";
@@ -20,7 +20,17 @@ function fileSize(bytes: number) {
 }
 
 export function AgentFiles({ agentId }: { agentId: string }) {
-  const { path, offset, location, listing, busy, error, refresh, navigate, paginate } = useAgentFiles(agentId);
+  return <WorkingFiles key={agentId} kind="agent" ownerId={agentId} />;
+}
+
+export function WorkspaceFolder({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+  return <Dialog title="Workspace Folder" className={styles.workspaceDialog} contentClassName={styles.workspaceContent} onClose={onClose}>
+    <WorkingFiles key={workspaceId} kind="workspace" ownerId={workspaceId} />
+  </Dialog>;
+}
+
+function WorkingFiles({ kind, ownerId }: { kind: "agent" | "workspace"; ownerId: string }) {
+  const { base, path, offset, location, listing, busy, error, refresh, navigate, paginate } = useWorkingFiles(kind, ownerId);
   const [action, setAction] = useState("");
   const [actionError, setActionError] = useState("");
   const [status, setStatus] = useState("");
@@ -40,7 +50,7 @@ export function AgentFiles({ agentId }: { agentId: string }) {
   const parts = path ? path.split("/") : [];
   function absolutePath(relative: string) {
     if (!location?.path) return "";
-    const separator = location.path.includes("\\") ? "\\" : "/";
+    const separator = location.path.startsWith("/") ? "/" : "\\";
     return location.path + (relative ? separator + relative.split("/").join(separator) : "");
   }
   const absolute = absolutePath(path);
@@ -50,7 +60,7 @@ export function AgentFiles({ agentId }: { agentId: string }) {
     setAction(""); setActionError(""); setStatus(""); setCopyFallback(""); setMenu(null);
     if (content.current) content.current.scrollTop = 0;
     return () => acting.current?.abort();
-  }, [agentId, path, offset]);
+  }, [base, path, offset]);
 
   useEffect(() => {
     if (breadcrumbs.current) breadcrumbs.current.scrollLeft = breadcrumbs.current.scrollWidth;
@@ -81,26 +91,26 @@ export function AgentFiles({ agentId }: { agentId: string }) {
     (rows?.[Math.min(pending.index, rows.length - 1)] ?? refreshButton.current)?.focus();
   }, [busy, error, listing, offset, paginate, path]);
 
-  async function run(kind: "open" | "repair" | "copy", targetPath = path, copyValue = absolute, copyLabel = "Path") {
+  async function run(operation: "open" | "repair" | "copy", targetPath = path, copyValue = absolute, copyLabel = "Path") {
     if (acting.current && !acting.current.signal.aborted) return;
     const controller = new AbortController();
     acting.current = controller;
-    setAction(kind); setActionError(""); setStatus(""); setCopyFallback("");
+    setAction(operation); setActionError(""); setStatus(""); setCopyFallback("");
     try {
-      if (kind === "copy") {
+      if (operation === "copy") {
         await navigator.clipboard.writeText(copyValue);
         if (!controller.signal.aborted) setStatus(`${copyLabel} copied.`);
-      } else if (kind === "open") {
-        await request(`/agents/${agentId}/files/open`, "POST", { path: targetPath }, controller.signal);
+      } else if (operation === "open") {
+        await request(`${base}/files/open`, "POST", { path: targetPath }, controller.signal);
         if (!controller.signal.aborted) setStatus("Folder sent to your file manager.");
       } else {
-        await request(`/locations/agent/${agentId}/repair`, "POST", undefined, controller.signal);
+        await request(`/locations/${kind}/${encodeURIComponent(ownerId)}/repair`, "POST", undefined, controller.signal);
         if (!controller.signal.aborted) await refresh();
       }
     } catch (e) {
       if (!controller.signal.aborted) {
-        setActionError(kind === "copy" ? "Copy is unavailable. Select and copy the text below." : errorMessage(e));
-        if (kind === "copy") setCopyFallback(copyValue);
+        setActionError(operation === "copy" ? "Copy is unavailable. Select and copy the text below." : errorMessage(e));
+        if (operation === "copy") setCopyFallback(copyValue);
       }
     } finally {
       if (!controller.signal.aborted) { setAction(""); acting.current = null; }
@@ -143,7 +153,7 @@ export function AgentFiles({ agentId }: { agentId: string }) {
     setDeleteBusy(true); setDeleteError("");
     const entry = deleting;
     try {
-      await request(`/agents/${agentId}/files`, "DELETE", {
+      await request(`${base}/files`, "DELETE", {
         path: entry.path, expectedKind: entry.kind, confirmFilesDeletion: true,
       });
       if (!mounted.current) return;
@@ -164,7 +174,7 @@ export function AgentFiles({ agentId }: { agentId: string }) {
     const entry = menu.entry;
     const disabled = !!action;
     if (entry.kind === "file") menuItems.push({ id: "download", label: "Download", icon: <Download size={16} />,
-      href: `/api/agents/${agentId}/files/download?${new URLSearchParams({ path: entry.path })}`, download: entry.name, disabled });
+      href: `/api${base}/files/download?${new URLSearchParams({ path: entry.path })}`, download: entry.name, disabled });
     if (entry.kind === "directory") menuItems.push(
       { id: "open", label: "Open", icon: <FolderOpen size={16} />, onSelect: () => go(entry.path), disabled },
       { id: "file-manager", label: "Open in file manager", icon: <Folder size={16} />, onSelect: () => void run("open", entry.path), disabled });
@@ -176,7 +186,7 @@ export function AgentFiles({ agentId }: { agentId: string }) {
   }
 
   return (
-    <section className={styles.browser} aria-label="Agent files">
+    <section className={styles.browser} aria-label={kind === "agent" ? "Agent files" : "Workspace files and folders"}>
       <div className={styles.toolbar}>
         <div className={styles.actions}>
           <Tooltip content="Up one folder"><button type="button" className="iconButton" aria-label="Up one folder" disabled={!path} onClick={() => go(parts.slice(0, -1).join("/"))}><ArrowUp size={16} aria-hidden="true" /></button></Tooltip>
@@ -196,7 +206,7 @@ export function AgentFiles({ agentId }: { agentId: string }) {
         {actionError && <Feedback role="alert">{actionError}</Feedback>}
         {copyFallback && <code className={styles.path} tabIndex={0}>{copyFallback}</code>}
         {(error || location?.state === "error") && <div className={styles.feedback}>
-          <Feedback role="alert">{error || location?.error || "The agent's files folder is unavailable."}</Feedback>
+          <Feedback role="alert">{error || location?.error || "This folder is unavailable."}</Feedback>
           <button type="button" className="textButton" disabled={busy} onClick={() => void refresh()}>Retry</button>
           {(location?.state === "error" || (location && !path)) && <BusyButton busy={action === "repair"} type="button" className="textButton" disabled={busy || !!action} onClick={() => void run("repair")}>{action === "repair" ? "Retrying…" : "Retry folder setup"}</BusyButton>}
         </div>}
@@ -224,7 +234,7 @@ export function AgentFiles({ agentId }: { agentId: string }) {
               };
               return <li key={entry.path}>
                 <Tooltip content={menu?.entry.path === entry.path ? "" : tooltip} multiline>{entry.kind === "directory" ? <button {...rowProps} type="button" className={styles.entry} onClick={() => go(entry.path)}>{details}</button>
-                  : entry.kind === "file" ? <a {...rowProps} className={styles.entry} href={`/api/agents/${agentId}/files/download?${new URLSearchParams({ path: entry.path })}`} download={entry.name} aria-label={`Download ${entry.name}`}>{details}</a>
+                  : entry.kind === "file" ? <a {...rowProps} className={styles.entry} href={`/api${base}/files/download?${new URLSearchParams({ path: entry.path })}`} download={entry.name} aria-label={`Download ${entry.name}`}>{details}</a>
                   : <div {...rowProps} className={`${styles.entry} ${styles.unavailable}`} role="group" tabIndex={0} aria-label={`${entry.name}: ${description}`}>{details}</div>}</Tooltip>
               </li>;
             })}
@@ -241,7 +251,6 @@ export function AgentFiles({ agentId }: { agentId: string }) {
       {deleting && <Dialog title={deleting.kind === "directory" ? "Delete folder?" : "Delete file?"}
         busy={deleteBusy} initialFocusSelector="[data-cancel-delete]" onClose={() => setDeleting(null)}>
         <p className={styles.confirmation}>Permanently delete <strong>{deleting.name}</strong>{deleting.kind === "directory" ? " and all its contents" : ""}? This cannot be undone.</p>
-        <p>Published files are kept.</p>
         {deleteError && <Feedback role="alert">{deleteError}{deleting.kind === "directory" && " Folder deletion may have removed some contents. Refresh after cancelling to check what remains."}</Feedback>}
         {deleteBusy && <LoadingState>Deleting{deleting.kind === "directory" ? " folder and contents" : " file"}…</LoadingState>}
         <div className={styles.confirmationActions}>

@@ -134,3 +134,22 @@ a.entry:hover, button.entry:hover { background: var(--hover); }
   .browser { flex: none; }
   .content { overflow: visible; }
 }
+
+.workspaceDialog {
+  width: min(620px, calc(100vw - 32px));
+  height: min(600px, calc(100dvh - 48px));
+}
+.workspaceContent {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 12px 0 0;
+  background: var(--panel);
+  > div:first-child {
+    flex-shrink: 0;
+    margin: 0 20px;
+  }
+}
+@media (max-width: 640px) {
+  .workspaceContent > div:first-child { margin-inline: 16px; }
+}
