@@ -42,7 +42,7 @@
 .iconButton, .transportButton { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 12px; font-size: 12px; flex-shrink: 0; &:hover:enabled { background: var(--panel); } }
 .iconButton { width: 36px; padding: 0; }
 .motionNotice { font-size: 11px; color: var(--muted); }
-.animationHeading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin: 20px 0 12px; align-items: center; h2 { font-size: 14px; font-weight: 600; } > span { color: var(--muted); font-size: 11px; } }
+.animationHeading { margin: 20px 0 12px; h2 { font-size: 14px; font-weight: 600; } }
 .activities { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .activity { display: flex; align-items: center; gap: 10px; text-align: left; min-height: 46px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 12px; svg { flex-shrink: 0; } &[aria-pressed="true"] { color: var(--text); border-color: var(--text); background: var(--panel); } &:hover { color: var(--text); background: var(--panel); } }
 .activityDot { width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: currentColor; margin-left: auto; }

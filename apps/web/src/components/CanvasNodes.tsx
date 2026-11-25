@@ -6,7 +6,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { FolderOpen, ListTodo, MessageSquare, Pencil, Settings2, Snowflake, Trash2 } from "lucide-react";
 import { AgentConnectionRing } from "./ConnectionRings";
 import ringStyles from "./ConnectionRings.module.scss";
-import { useStoreApi, type NodeProps } from "@xyflow/react";
+import { useStore as useFlowStore, useStoreApi, type NodeProps } from "@xyflow/react";
 import { useAgents, useAgentStore } from "../agent-store";
 import { resolveAgentCharacterState } from "../agent-appearance";
 import type { AgentFlowNode } from "../canvas-layout";
@@ -34,6 +34,8 @@ export const AgentNode = memo(function AgentNode({
   const freeze = useAgentFreeze(agent);
   const nameButton = useRef<HTMLButtonElement>(null);
   const flowStore = useStoreApi();
+  // React Flow clears the position-drag flag even when it aborts a multi-touch drag.
+  const carried = useFlowStore(state => state.nodeLookup.get(id)?.dragging === true);
   const [menu, setMenu] = useState<ContextMenuAnchor | null>(null);
   const [editingCharacter, setEditingCharacter] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -97,7 +99,7 @@ export const AgentNode = memo(function AgentNode({
       onKeyDown={keyboard}
       onContextMenu={contextMenu}
     >
-      <div className={agentStyles.canvasCharacter}><LiveAgentCharacter agent={agent} /></div>
+      <div className={agentStyles.canvasCharacter}><LiveAgentCharacter agent={agent} carried={carried} /></div>
       <AgentConnectionRing id={id} name={agent.name} workspaceId={agent.workspaceId} />
       <div className={agentStyles.nodeCard}>
         <Tooltip content={menu ? "" : agent.name}>

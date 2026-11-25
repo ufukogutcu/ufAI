@@ -89,3 +89,97 @@
 .character[data-frozen="true"] .leftHand, .character[data-frozen="true"] .rightHand { animation: none; }
 @keyframes shiver { 0%, 45%, 65%, 100% { transform: translateX(0); } 49%, 57% { transform: translateX(-1px); } 53%, 61% { transform: translateX(1px); } }
 @media (prefers-reduced-motion: reduce) { .character[data-frozen="true"] .actor { animation: none; } }
+
+.character[data-carry] {
+  .actor {
+    // The grip stays high on the back while the body swings underneath.
+    transform-box: view-box;
+    transform-origin: 120px 90px;
+    translate: 0 -26px;
+    rotate: -6deg;
+    animation: none;
+  }
+
+  .shadow {
+    transform-box: fill-box;
+    transform-origin: center;
+    scale: .7 .86;
+    opacity: .5;
+  }
+
+  .eyes { translate: 1px 4px; }
+
+  .leftHand, .rightHand, .feet > rect {
+    transform-box: fill-box;
+    transform-origin: center top;
+  }
+
+  .leftHand {
+    translate: 5px 15px;
+    scale: .94 1.42;
+  }
+
+  .rightHand {
+    translate: -6px 13px;
+    scale: .94 1.35;
+  }
+
+  .feet > rect:first-child {
+    translate: -1px 1px;
+    scale: .88 1.58;
+  }
+
+  .feet > rect:last-child {
+    translate: 1px 1px;
+    scale: .88 1.42;
+  }
+}
+
+.character[data-carry="static"] .eyes { animation: none; }
+
+$pickup-duration: 280ms;
+$sway-duration: 1.9s;
+
+.character[data-carry="animated"] {
+  .actor {
+    animation: pickup $pickup-duration ease-out both,
+      carry-sway $sway-duration $pickup-duration ease-in-out infinite;
+  }
+
+  .shadow { animation: shrink-carry-shadow $pickup-duration ease-out both; }
+
+  .leftHand, .rightHand, .feet > rect {
+    animation: settle-limb $pickup-duration ease-out backwards,
+      dangle $sway-duration ease-in-out infinite;
+  }
+
+  .leftHand { animation-delay: 30ms, 340ms; }
+  .rightHand { animation-delay: 55ms, 410ms; }
+  .feet > rect:first-child { animation-delay: 70ms, 440ms; }
+  .feet > rect:last-child { animation-delay: 100ms, 510ms; }
+}
+
+@keyframes pickup {
+  from { translate: 0 -8px; rotate: -2deg; }
+  72% { translate: 0 -29px; rotate: -8deg; }
+  to { translate: 0 -26px; rotate: -6deg; }
+}
+
+@keyframes carry-sway {
+  0%, 100% { rotate: -6deg; }
+  50% { rotate: 7deg; }
+}
+
+@keyframes shrink-carry-shadow {
+  from { scale: .94 .97; opacity: .85; }
+  to { scale: .7 .86; opacity: .5; }
+}
+
+@keyframes settle-limb {
+  from { translate: none; scale: none; }
+}
+
+@keyframes dangle {
+  0%, 100% { rotate: 5deg; }
+  50% { rotate: -8deg; }
+}

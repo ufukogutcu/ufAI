@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { BookOpen, Brain, Check, Coffee, Laptop, Moon, Pause, Play, RotateCcw, Shuffle, Sparkles, Sun, Undo2 } from "lucide-react";
+import { BookOpen, Brain, Check, Coffee, HandGrab, Laptop, Moon, Pause, Play, RotateCcw, Shuffle, Sparkles, Sun, Undo2 } from "lucide-react";
 import catalog from "@ufai/theme-catalog";
-import { Character, activities, characters, characterNames, colors, type Activity, type Appearance } from "./Character";
+import { Character, characters, characterNames, colors, previewAnimations, type Appearance, type PreviewAnimation } from "./Character";
 import styles from "./Playground.module.scss";
 import { collections, looks, sameAppearance, selectAccessory, shuffleAccessories, slots, wardrobe, type Accessory, type Collection } from "./wardrobe";
 
-const activityIcons = { idle: Coffee, working: Laptop, dreaming: Moon, studying: BookOpen, "studying-hard": Sparkles, thinking: Brain };
+const animationIcons = { idle: Coffee, working: Laptop, dreaming: Moon, studying: BookOpen, "studying-hard": Sparkles, thinking: Brain, carried: HandGrab };
 const defaultAppearance: Appearance = looks[0]!.appearance;
+
+function initialAnimation(): PreviewAnimation {
+  const requested = new URLSearchParams(window.location.search).get("animation");
+  return previewAnimations.find(item => item.id === requested)?.id ?? "idle";
+}
 
 function useMotionEnvironment() {
   const [reduced, setReduced] = useState(() => matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -29,21 +34,25 @@ export default function Playground() {
   const [collection, setCollection] = useState<Collection>("Cute");
   const [size, setSize] = useState<"large" | "canvas" | "small">("large");
   const [appearance, setAppearance] = useState<Appearance>(defaultAppearance);
-  const [activity, setActivity] = useState<Activity>("idle");
+  const [animation, setAnimation] = useState(initialAnimation);
   const [paused, setPaused] = useState(false);
   const [restart, setRestart] = useState(0);
   const [compare, setCompare] = useState(false);
   const [mode, setMode] = useState<"light" | "dark">("light");
   const { reduced, hidden } = useMotionEnvironment();
-  const activeActivity = activities.find(item => item.id === activity)!;
+  const activeAnimation = previewAnimations.find(item => item.id === animation)!;
   const theme = useMemo(() => Object.fromEntries(Object.values(catalog.tokens).map(token => [token.cssVariable, token[mode]])) as CSSProperties, [mode]);
   const selectedLook = looks.find(look => sameAppearance(look.appearance, appearance));
   const visibleLooks = looks.filter(look => collection === "All" || look.collection === collection);
   function shuffle() { setAppearance(current => shuffleAccessories(current)); }
   function reset() {
-    setAppearance(defaultAppearance); setCollection("Cute"); setActivity("idle"); setPaused(false); setSize("large"); setCompare(false); setRestart(current => current + 1);
+    setAppearance(defaultAppearance); setCollection("Cute"); setAnimation("idle"); setPaused(false); setSize("large"); setCompare(false); setRestart(current => current + 1);
   }
   function restartAnimation() { setRestart(current => current + 1); }
+  function selectAnimation(id: PreviewAnimation) {
+    setAnimation(id);
+    setCompare(false);
+  }
   return <div className={styles.playground} style={{ ...theme, colorScheme: mode }} data-theme={mode}>
     <a className={styles.skip} href="#preview">Skip to preview</a>
     <div className={styles.shell}>
@@ -73,19 +82,19 @@ export default function Playground() {
           <a className={styles.editorLink} href="#preview">Preview your combination ↑</a>
         </aside>
         <section className={styles.previewColumn} id="preview" tabIndex={-1} aria-label="Animation preview">
-          <div className={styles.previewInner}><div className={styles.selectedIdentity} aria-live="polite"><h2>{selectedLook?.name ?? "Your combination"}</h2><p>{characterNames[appearance.kind]} · {colors.find(color => color.id === appearance.color)!.name}{selectedLook ? ` · ${selectedLook.collection}` : " · Custom look"}</p></div><div className={styles.previewTop}><div className={styles.viewToggle} role="group" aria-label="Preview layout"><button aria-pressed={!compare} onClick={() => setCompare(false)}>Single preview</button><button aria-pressed={compare} onClick={() => setCompare(true)}>All six animations</button></div><span className={styles.live}>{reduced ? "Static poses" : (paused || hidden) ? "Paused" : "Live preview"}</span></div>
+          <div className={styles.previewInner}><div className={styles.selectedIdentity} aria-live="polite"><h2>{selectedLook?.name ?? "Your combination"}</h2><p>{characterNames[appearance.kind]} · {colors.find(color => color.id === appearance.color)!.name}{selectedLook ? ` · ${selectedLook.collection}` : " · Custom look"}</p></div><div className={styles.previewTop}><div className={styles.viewToggle} role="group" aria-label="Preview layout"><button aria-pressed={!compare} onClick={() => setCompare(false)}>Single preview</button><button aria-pressed={compare} onClick={() => setCompare(true)}>All animations</button></div><span className={styles.live}>{reduced ? "Static poses" : (paused || hidden) ? "Paused" : "Live preview"}</span></div>
           <div className={styles.stage}>
-            {compare ? <div className={styles.comparison}>{activities.map(item => <button key={item.id} className={styles.comparisonItem} aria-label={`Preview ${item.name}`} onClick={() => { setActivity(item.id); setCompare(false); }}><Character key={restart} appearance={appearance} activity={item.id} paused={paused || hidden} /><span>{item.name}</span></button>)}</div> : <>
+            {compare ? <div className={styles.comparison}>{previewAnimations.map(item => <button key={item.id} className={styles.comparisonItem} aria-label={`Preview ${item.name}`} onClick={() => selectAnimation(item.id)}><Character key={restart} appearance={appearance} animation={item.id} paused={paused || hidden} decorative /><span>{item.name}</span></button>)}</div> : <>
               <div className={styles.stageLabel}><span>{characterNames[appearance.kind]}</span><span>{colors.find(color => color.id === appearance.color)!.name}</span></div>
-              <div className={`${styles.heroCharacter} ${size === "canvas" ? styles.canvasSize : size === "small" ? styles.small : ""}`}><Character key={`${activity}-${restart}`} appearance={appearance} activity={activity} paused={paused || hidden} /></div>
-              <div className={styles.caption} aria-live="polite"><h2>{activeActivity.name}</h2><p>{activeActivity.description}</p></div>
+              <div className={`${styles.heroCharacter} ${size === "canvas" ? styles.canvasSize : size === "small" ? styles.small : ""}`}><Character key={`${animation}-${restart}`} appearance={appearance} animation={animation} paused={paused || hidden} /></div>
+              <div className={styles.caption} aria-live="polite"><h2>{activeAnimation.name}</h2><p>{activeAnimation.description}</p></div>
             </>}
           </div>
           <div className={styles.transport}><div><button className={styles.transportButton} disabled={reduced} onClick={() => setPaused(current => !current)} aria-label={paused ? "Play animations" : "Pause animations"}>{paused ? <Play size={16} aria-hidden /> : <Pause size={16} aria-hidden />}{paused ? "Play" : "Pause"}</button><button className={styles.iconButton} disabled={reduced} onClick={restartAnimation} aria-label="Restart animations" title="Restart animations"><RotateCcw size={16} aria-hidden /></button></div>{!compare && <div className={styles.sizeChoices} role="group" aria-label="Character preview size">{([ ["large", "Large"], ["canvas", "128 px"], ["small", "64 px"] ] as const).map(([id, label]) => <button key={id} aria-pressed={size === id} onClick={() => setSize(id)}>{label}</button>)}</div>}{reduced && <span className={styles.motionNotice}>Reduced motion is on.</span>}</div>
-          <div className={styles.animationHeading}><h2>Try an activity</h2><span>6 animations · every character</span></div>
-          <div className={styles.activities} role="group" aria-label="Activity">{activities.map(item => {
-            const Icon = activityIcons[item.id];
-            return <button key={item.id} className={styles.activity} aria-pressed={activity === item.id} onClick={() => { setActivity(item.id); setCompare(false); }}><Icon size={18} aria-hidden /><span>{item.name}</span>{activity === item.id && <span className={styles.activityDot} />}</button>;
+          <div className={styles.animationHeading}><h2>Choose an animation</h2></div>
+          <div className={styles.activities} role="group" aria-label="Animation">{previewAnimations.map(item => {
+            const Icon = animationIcons[item.id];
+            return <button key={item.id} className={styles.activity} aria-pressed={animation === item.id} onClick={() => selectAnimation(item.id)}><Icon size={18} aria-hidden /><span>{item.name}</span>{animation === item.id && <span className={styles.activityDot} />}</button>;
           })}</div>
           <p className={styles.previewNote}>Experimental wardrobe · animations are manually previewed.</p><a className={styles.editorLink} href="#wardrobe">Choose a look or customize ↓</a></div>
         </section>

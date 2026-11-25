@@ -12,6 +12,7 @@ import type { Agent } from "../../server/src/contracts";
 const { AgentNode } = await import("../src/components/CanvasNodes");
 const { ConnectionRingsProvider } = await import("../src/components/ConnectionRings");
 
+const node: AgentFlowNode = { id: "one", type: "agent", data: { agentId: "one" }, position: { x: 0, y: 0 } };
 const agent: Agent = {
   id: "one", workspaceId: "workspace", name: "Ava", instructions: "", presetId: null,
   appearance: { kind: "pebble", color: "sage", accessories: [] },
@@ -38,20 +39,56 @@ async function setup(t: TestContext, characterAnimationsPaused = false) {
   }
   const settings = initialSettings();
   settings.settings.characterAnimationsPaused = characterAnimationsPaused;
+  const settingsStore = createSettingsStore(settings);
   const p = await mountComponent(t, h(AgentContext.Provider, { value: store },
-    h(SettingsContext.Provider, { value: createSettingsStore(settings) },
+    h(SettingsContext.Provider, { value: settingsStore },
       h(UnsavedContext.Provider, { value: { setDirty() {}, attempt(action) { if (allowed) action(); return allowed; } } },
-        h(ReactFlowProvider, null, h(ConnectionRingsProvider, { workspaceId: "workspace", children:
+        h(ReactFlowProvider, { initialNodes: [node] }, h(ConnectionRingsProvider, { workspaceId: "workspace", children:
           h("div", { onClick() { bubbled++; }, onContextMenu() { bubbled++; } }, h(Probe)) }))))));
   const name = () => p.document.querySelector<HTMLButtonElement>('button[data-move]')!;
-  return { ...p, store, removed, moves, name,
+  return { ...p, store, settingsStore, removed, moves, name,
     allow(value: boolean) { allowed = value; }, failDelete(value: boolean) { failDelete = value; }, bubbled: () => bubbled,
     menu: () => p.document.querySelector('[role="menu"]')!,
     item: (label: string) => [...p.document.querySelectorAll('[role="menuitem"]')].find(item => item.textContent === label)!,
     open: async () => act(async () => { name().dispatchEvent(new p.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 200, clientY: 100 })); }),
     pan: () => act(async () => flow.setState({ transform: [1, 1, 1] })),
+    drag: (dragging: boolean) => act(async () => flow.getState().setNodes([{ ...node, dragging }])),
   };
 }
+
+test("drag carries the canvas character independently of execution status and respects the saved motion preference", async t => {
+  const p = await setup(t);
+  const working: Agent = { ...agent, state: "running" };
+  const character = p.document.querySelector("svg[data-frozen]")!;
+  await act(async () => p.store.setState({ agents: { one: working } }));
+  assert.ok(character.querySelector(".laptop"));
+
+  await p.drag(true);
+  assert.equal(character.getAttribute("data-carry"), "animated");
+  assert.equal(character.querySelector(".laptop"), null);
+  assert.ok(p.document.querySelector('button[aria-label="Ava, Working"]'));
+  await p.drag(false);
+  assert.equal(character.hasAttribute("data-carry"), false);
+  assert.ok(character.querySelector(".laptop"));
+
+  await p.drag(true);
+  await act(async () => {
+    const { snapshot } = p.settingsStore.getState();
+    p.settingsStore.setState({ snapshot: { ...snapshot, settings: { ...snapshot.settings, characterAnimationsPaused: true } } });
+    p.store.setState({ agents: { one: { ...working, executionControl: {
+      state: "frozen", revision: 1, requestedAt: null, frozenAt: null, queuedTriggerCount: 0,
+      backlogPending: false, workspaceHeld: false,
+    } } } });
+  });
+  assert.equal(character.getAttribute("data-carry"), "static");
+  assert.ok(character.querySelector(".actor .frost"));
+  assert.ok(character.querySelector(".actor > .snowflakes"));
+  assert.ok(p.document.querySelector('button[aria-label="Ava, Frozen"]'));
+  await p.drag(false);
+  assert.equal(character.hasAttribute("data-carry"), false);
+  assert.equal(character.getAttribute("data-frozen"), "true");
+  assert.ok(character.querySelector(":scope > .snowflakes"));
+});
 
 test("the canvas activity tooltip stays in sync with the character while motion is paused", async t => {
   const p = await setup(t, true);
