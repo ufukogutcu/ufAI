@@ -18,6 +18,7 @@ const result = (text: string): TextResult => ({
   finishReason: "stop",
   usage: null,
 });
+const isTitle = (request: TextRequest) => request.instructions.startsWith("Generate a short title");
 const maintenance = JSON.stringify({
   status: "completed",
   summary: "Finished the requested answer.",
@@ -26,6 +27,7 @@ const maintenance = JSON.stringify({
 function setup(
   generate: (r: TextRequest) => Promise<TextResult>,
   autoStart = true,
+  generateTitle = async (_r: TextRequest) => result("{}"),
 ) {
   const db = openDatabase(":memory:");
   const ts = new Date().toISOString();
@@ -46,10 +48,12 @@ function setup(
       "INSERT INTO agents(id,workspaceId,name,instructions,presetId,createdAt,updatedAt) VALUES (?,?,?,'Be useful.','preset',?,?)",
     ).run(id, workspace, id, ts, ts);
   const connections = new ConnectionService(db);
-  connections.generate = async (_s: ExecutionSnapshot, r: TextRequest) =>
-    r.instructions.startsWith("Maintain this task")
+  connections.generate = async (_s: ExecutionSnapshot, r: TextRequest) => {
+    if (isTitle(r)) return generateTitle(r);
+    return r.instructions.startsWith("Maintain this task")
       ? result(maintenance)
       : generate(r);
+  };
   connections.countTokens = async (_s, r) =>
     Buffer.byteLength(JSON.stringify([r.instructions, r.messages]));
   const engine = new AgentExecution(db, connections, {
@@ -74,6 +78,160 @@ async function until(check: () => boolean) {
   }
   assert.fail("Timed out waiting for execution.");
 }
+
+test("task titles use the opening message and can arrive after task completion", async (t) => {
+  const opening = "Review the budget and highlight changes from the previous quarter.";
+  const title = "Quarterly Budget Review";
+  const titleResponse = Promise.withResolvers<TextResult>();
+  let request: TextRequest | undefined;
+  let titleCalls = 0;
+  const f = setup(async () => result("Budget reviewed."), false, async (r) => {
+    titleCalls++;
+    request = r;
+    return titleResponse.promise;
+  });
+  t.after(async () => {
+    titleResponse.resolve(result("{}"));
+    await f.close();
+  });
+  const first = f.engine.submit("a", "new", opening, "title-opening");
+  assert.deepEqual(f.engine.submit("a", "new", opening, "title-opening"), first);
+  const taskId = first.taskId!;
+  assert.equal(f.engine.task(taskId).title, opening);
+  assert.equal(titleCalls, 0);
+
+  f.engine.pump();
+  await until(() => f.engine.task(taskId).status === "completed");
+  assert.deepEqual(request?.messages, [{ role: "user", content: opening }]);
+  assert.equal(request?.modelId, "model");
+  assert.ok(request && !("tools" in request));
+  assert.equal(f.engine.task(taskId).title, opening);
+  await until(() => f.engine.requiredAgent("a").runningTaskCount === 0);
+
+  const change = Promise.withResolvers<void>();
+  f.engine.events.on("change", (workspaceId) => {
+    if (workspaceId === f.workspace && f.engine.task(taskId).title === title) change.resolve();
+  });
+  titleResponse.resolve(result(JSON.stringify({ title })));
+  await until(() => f.engine.task(taskId).title === title);
+  await change.promise;
+  assert.deepEqual(f.db.prepare("SELECT text FROM agent_history WHERE taskId=? AND messageId=''").get(taskId), {
+    text: title + "\nFinished the requested answer.",
+  });
+
+  const followUp = f.engine.submit("a", taskId, "Double-check those figures.", "title-followup");
+  f.engine.pump();
+  await until(() => (f.db.prepare("SELECT status FROM agent_turns WHERE id=?").get(followUp.turnId) as { status: string }).status === "completed");
+  assert.equal(titleCalls, 1);
+  assert.equal(f.engine.task(taskId).title, title);
+});
+
+test("task titles include delegated, triggered and file-only input while persistent Chat keeps its name", async (t) => {
+  const requests: string[] = [];
+  const f = setup(async () => result("Done."), false, async (r) => {
+    const input = r.messages[0]!.content;
+    requests.push(input);
+    return result(JSON.stringify({ title: "Title for " + input }));
+  });
+  t.after(() => f.close());
+  f.db.prepare("INSERT INTO artifacts(id,workspaceId,name,createdAt) VALUES('file',?,'Budget.csv','now')").run(f.workspace);
+  f.db.prepare(`
+    INSERT INTO artifact_versions(id,artifactId,workspaceId,provenance,name,mediaType,size,state,createdAt)
+    VALUES('version','file',?,'user_upload','Budget.csv','text/csv',0,'ready','now')
+  `).run(f.workspace);
+  const chat = f.engine.submit("a", "chat", "Persistent conversation", "title-chat");
+  const delegated = f.engine.submit("a", "new", "Delegated work", "title-delegated", [], "[]", { source: "agent", senderId: "b" });
+  const triggered = f.engine.submit("b", "new", "Triggered work", "title-triggered", [], "[]", { source: "system" });
+  f.engine.pump();
+  await until(() => [chat, delegated, triggered].every((entry) => f.engine.task(entry.taskId!).status === "completed"));
+  const attached = f.engine.submit("b", "new", "", "title-file", [{ versionId: "version", name: "Budget.csv", mode: "file" }]);
+  f.engine.pump();
+  await until(() => f.engine.task(attached.taskId!).status === "completed");
+  assert.deepEqual(requests.sort(), ["Budget.csv", "Delegated work", "Triggered work"]);
+  assert.equal(f.engine.task(chat.taskId!).title, "Chat");
+  assert.equal(f.engine.task(delegated.taskId!).title, "Title for Delegated work");
+  assert.equal(f.engine.task(triggered.taskId!).title, "Title for Triggered work");
+  assert.equal(f.engine.task(attached.taskId!).title, "Title for Budget.csv");
+});
+
+test("title failures and malformed or oversized output leave fallback titles through retries", async (t) => {
+  let attempts = 0;
+  let calls = 0;
+  const f = setup(async () => {
+    if (++attempts === 1) throw new Error("Failed work");
+    return result("Done.");
+  }, false, async () => {
+    if (++calls === 1) throw new Error("Failed title");
+    return result(calls === 2 ? '{"title":"Two\\nlines"}' : JSON.stringify({ title: "X".repeat(121) }));
+  });
+  t.after(() => f.close());
+  const first = f.engine.submit("a", "new", "Try again", "title-retry");
+  f.engine.pump();
+  await until(() => f.engine.task(first.taskId!).status === "failed");
+  f.engine.retry(first.taskId!);
+  f.engine.pump();
+  await until(() => f.engine.task(first.taskId!).status === "completed");
+  assert.equal(calls, 1);
+  assert.equal(f.engine.task(first.taskId!).title, "Try again");
+
+  const malformed = f.engine.submit("a", "new", "Keep these words", "title-malformed");
+  f.engine.pump();
+  await until(() => f.engine.task(malformed.taskId!).status === "completed");
+  assert.equal(f.engine.task(malformed.taskId!).title, "Keep these words");
+  const oversized = f.engine.submit("a", "new", "Keep this short", "title-oversized");
+  f.engine.pump();
+  await until(() => f.engine.task(oversized.taskId!).status === "completed");
+  assert.equal(f.engine.task(oversized.taskId!).title, "Keep this short");
+  assert.equal(calls, 3);
+});
+
+for (const action of ["deadline", "stop", "freeze", "pause", "shutdown"] as const)
+  test(`a late title is discarded after ${action}`, async (t) => {
+    const entered = Promise.withResolvers<AbortSignal>();
+    const titleResponse = Promise.withResolvers<TextResult>();
+    const f = setup(async () => result("Done."), false, async (r) => {
+      entered.resolve(r.signal);
+      return titleResponse.promise;
+    });
+    t.after(async () => {
+      titleResponse.resolve(result("{}"));
+      await f.close();
+    });
+    if (action === "deadline") t.mock.timers.enable({ apis: ["setTimeout"] });
+    const submitted = f.engine.submit("a", "new", "Initial title", "title-late");
+    const taskId = submitted.taskId!;
+    f.engine.pump();
+    const signal = await entered.promise;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(f.engine.task(taskId).status, "completed");
+
+    let settled: Promise<void> | undefined;
+    switch (action) {
+      case "deadline":
+        t.mock.timers.tick(19_999);
+        assert.equal(signal.aborted, false);
+        t.mock.timers.tick(1);
+        t.mock.timers.reset();
+        break;
+      case "stop":
+        settled = f.engine.cancelTask(taskId);
+        break;
+      case "freeze":
+        f.engine.freezing.request("a", "freeze", { requestId: "title-freeze", expectedRevision: 1 });
+        break;
+      case "pause":
+        f.engine.workspaceFreezing.request(f.workspace, "pause", { requestId: "title-pause", expectedRevision: 1 });
+        break;
+      case "shutdown":
+        settled = f.engine.close();
+        break;
+    }
+    assert.equal(signal.aborted, true);
+    titleResponse.resolve(result('{"title":"Late title"}'));
+    await settled;
+    await until(() => !f.connections.busy("connection"));
+    assert.equal(f.engine.task(taskId).title, "Initial title");
+  });
 
 test("unfinished-task counts use ordinary task states once per task and remain agent-scoped", async t => {
   const f = setup(async () => result("Unused"), false);
@@ -459,6 +617,7 @@ test("automatic memory retains evidence, recall crosses task boundaries, and del
   });
   t.after(() => f.close());
   f.connections.generate = async (_s, r) => {
+    if (isTitle(r)) return result("{}");
     if (r.instructions.startsWith("Maintain this task")) {
       const data = JSON.parse(r.messages[0]!.content);
       return result(
@@ -591,6 +750,7 @@ test(`${target}: compaction preserves full transcripts and covers complete excha
   let compactions = 0,
     sawAttachmentMetadata = false;
   f.connections.generate = async (_s, r) => {
+    if (isTitle(r)) return result("{}");
     if (r.instructions.startsWith("Summarize earlier")) {
       compactions++;
       sawAttachmentMetadata ||=

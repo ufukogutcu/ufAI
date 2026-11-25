@@ -589,7 +589,11 @@ test("maintenance resumes from its saved response after restart and preserves me
   s.db.prepare("INSERT INTO agent_memories(id,agentId,key,content,kind,sources,createdAt,updatedAt) VALUES('memory','a','topic','Original','finding','[]','seed','seed')").run();
   let finish!:(value:any)=>void;
   let started=false;
-  s.service.connections.generate=async()=>{started=true;return new Promise(resolve=>finish=resolve);};
+  s.service.connections.generate=async(_snapshot,request)=>{
+    if (request.instructions.startsWith("Generate a short title")) return {text:"{}",usage:null,finishReason:"stop"};
+    started=true;
+    return new Promise(resolve=>finish=resolve);
+  };
   const task=s.engine.submit("a","new","Answer",randomUUID());
   await s.until(()=>started);
   await s.action("freeze");

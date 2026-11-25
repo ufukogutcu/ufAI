@@ -34,6 +34,7 @@ import { readWorkspacePacing } from "./workspace-pacing.js";
 import { connectedAgentSummaries, connectionAwarenessGuidance, type ConnectedAgentSummary } from "./connection-awareness.js";
 import { agentWorkGuidance, finalAnswerDelivery } from "./agent-work-guidance.js";
 import type { MessageEnvelope } from "./messaging.js";
+import { TaskTitles } from "./task-titles.js";
 
 const workspaceFolderGuidance = "Use the Workspace Folder at the workspace working location to read and write files shared by its agents. Use the supplied file or command tools with that path. To include a downloadable file in a reply, prepare it with attachment_create and select its version ID with task_set_outputs. Use the appropriate messaging tool to send an attachment to Inbox or another agent.";
 const retiredFileGuidance = "Use artifact_publish to attach requested downloadable files after creating them.";
@@ -91,6 +92,7 @@ export class AgentExecution {
   incoming?: import("./submission-media.js").SubmissionMedia;
   readonly events = new EventEmitter();
   private active = new Map<string, Active>();
+  private readonly taskTitles: TaskTitles;
   private triggerValidations = new Map<string, Promise<void>>();
   private deleting = new Set<string>();
   private deletingWorkspaces = new Set<string>();
@@ -110,6 +112,7 @@ export class AgentExecution {
     this.issues = new AgentIssues(db);
     this.freezing = new AgentFreezing(db, this);
     this.workspaceFreezing = new WorkspaceFreezing(db, this);
+    this.taskTitles = new TaskTitles(db, connections, (id) => this.event(id));
     this.events.setMaxListeners(128);
     // Replies committed before a crash resume maintenance without repeating generation.
     db.transaction(() => {
@@ -345,12 +348,13 @@ export class AgentExecution {
     await this.tools?.artifacts.settleWorkspace(id);
   }
   async settleAgents(ids: string[]) {
+    const titles = this.taskTitles.cancel((_, agentId) => ids.includes(agentId));
     await this.incoming?.settleAgents(ids);
     const active = [...this.active.values()].filter((a) =>
       ids.includes(a.agentId),
     );
     active.forEach((a) => a.controller.abort());
-    await Promise.allSettled(active.map((a) => a.promise));
+    await Promise.allSettled([titles, ...active.map((a) => a.promise)]);
     await this.tools?.processes.stopAgents(ids);
     await this.tools?.artifacts.settleAgents(ids);
   }
@@ -635,8 +639,9 @@ export class AgentExecution {
       .map((t) => this.active.get(t.id))
       .filter((a): a is Active => !!a);
     active.forEach((a) => a.controller.abort());
+    const title = this.taskTitles.cancel((taskId) => taskId === id);
     this.event(task.agentId);
-    await Promise.allSettled(active.map((a) => a.promise));
+    await Promise.allSettled([title, ...active.map((a) => a.promise)]);
     await this.tools?.processes.stopTask(id);
     this.messaging?.taskCancelled(id);
     for (const table of ["execution_checkpoints","execution_rounds","execution_results","execution_deliveries","execution_generations"])
@@ -717,19 +722,18 @@ export class AgentExecution {
     });
     ids.forEach((id) => this.deleting.add(id));
     try {
-      for (const a of this.active.values())
-        if (ids.includes(a.agentId)) a.controller.abort();
-      await Promise.allSettled(
-        [...this.active.values()]
-          .filter((a) => ids.includes(a.agentId))
-          .map((a) => a.promise),
-      );
+      const titles = this.taskTitles.cancel((_, agentId) => ids.includes(agentId));
+      const active = [...this.active.values()].filter((a) => ids.includes(a.agentId));
+      active.forEach((a) => a.controller.abort());
+      await Promise.allSettled([titles, ...active.map((a) => a.promise)]);
       this.db.transaction(remove)();
     } finally {
       ids.forEach((id) => this.deleting.delete(id));
     }
   }
   freezeChanged(id: string) {
+    if (this.freezing.blocked(id))
+      void this.taskTitles.cancel((_, agentId) => agentId === id);
     this.settleFreeze(id);
     const owner = this.db.prepare("SELECT workspaceId FROM agents WHERE id=?").get(id) as {workspaceId:string} | undefined;
     if (owner) this.workspaceFreezing.settle(owner.workspaceId);
@@ -977,6 +981,7 @@ export class AgentExecution {
         };
         this.active.set(turn.id, record);
         const unpin = this.connections.pin(snapshot.connectionId);
+        if (!chat) this.taskTitles.start(turn, snapshot);
         record.promise = this.run(turn, record)
           .catch(() => {})
           .finally(() => {
@@ -2409,7 +2414,9 @@ Return only JSON {"status":"completed"|"awaiting_user","summary":"short factual 
   async close() {
     this.stopped = true;
     clearInterval(this.timer);
-    for (const a of this.active.values()) {
+    const titles = this.taskTitles.cancel(() => true);
+    const active = [...this.active.values()];
+    for (const a of active) {
       try {
         a.flush?.();
       } catch {
@@ -2417,7 +2424,7 @@ Return only JSON {"status":"completed"|"awaiting_user","summary":"short factual 
       }
       a.controller.abort();
     }
-    await Promise.allSettled([...this.active.values()].map((a) => a.promise));
+    await Promise.allSettled([titles, ...active.map((a) => a.promise)]);
     await Promise.allSettled(this.triggerValidations.values());
     this.events.emit("close");
     this.events.removeAllListeners();
