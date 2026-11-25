@@ -10,7 +10,7 @@ import { SettingsContext, createSettingsStore } from "../src/settings-store";
 import { ConnectionContext, createConnectionStore } from "../src/connection-store";
 import { UnsavedContext } from "../src/navigation-guard";
 import { initialSettings } from "./helpers";
-import type { Agent } from "../../server/src/contracts";
+import type { Agent, AgentTask } from "../../server/src/contracts";
 const { AgentPanel } = await import("../src/components/AgentPanel");
 
 const agent: Agent = {
@@ -102,6 +102,112 @@ test("Tasks shows the full reactive total per agent without changing tab identit
   assert.equal(p.active(), "Tasks (126)");
   await act(async () => p.store.setState({ taskTotals: { one: 0, two: 3 } }));
   assert.equal(p.active(), "Tasks");
+});
+
+test("Tasks streams titles in the list and conversation, restores focus, and keeps the settled title across older reads", async t => {
+  const p = await setup(t);
+  const task: AgentTask = {
+    id: "draft", agentId: agent.id, conversationId: "conversation", kind: "task",
+    title: "Initial task title", status: "awaiting_user", summary: "", error: null,
+    createdAt: "now", updatedAt: "now",
+    trigger: { id: "trigger", occurrenceId: "occurrence", name: "Morning review", scheduledAt: "2026-01-01", dispatchedAt: null },
+  };
+  const olderList = Promise.withResolvers<Response>();
+  const olderDetail = Promise.withResolvers<Response>();
+  let holdReads = false;
+  let savedTitle = task.title;
+  t.mock.method(globalThis, "fetch", async (url: string) => {
+    if (url === "/api/tasks/draft") {
+      return holdReads ? olderDetail.promise : Response.json({ task: { ...task, title: savedTitle }, turns: [] });
+    }
+    if (url.startsWith("/api/agents/one/tasks?")) return olderList.promise;
+    return Response.json({ items: [], total: 0, before: null, updates: [], removed: [] });
+  });
+  const patchTitle = (state: "generating" | "settled", title: string | null) => {
+    const identity = { agentId: agent.id, taskId: task.id };
+    p.store.getState().receiveTaskTitle(agent.workspaceId, state === "generating"
+      ? { ...identity, state, title: title! }
+      : { ...identity, state, title });
+  };
+  await act(async () => p.store.setState({
+    connectionWorkspaceId: agent.workspaceId, connected: true, tasks: { one: [task] }, taskTotals: { one: 1 },
+  }));
+  await p.click(p.tab("Tasks (1)"));
+  const row = () => p.document.querySelector<HTMLButtonElement>("[data-task-id='draft']")!;
+  const heading = () => p.document.querySelector<HTMLHeadingElement>(".taskHeading h3")!;
+  const back = () => p.document.querySelector<HTMLButtonElement>(".allTasks")!;
+  assert.match(row().textContent!, /Triggered by Morning review/);
+  assert.match(row().textContent!, /Needs input/);
+  await act(async () => patchTitle("generating", ""));
+  assert.match(row().textContent!, /Initial task titleGenerating title…/);
+  await act(async () => patchTitle("generating", "Quarterly"));
+  assert.match(row().textContent!, /^QuarterlyGenerating title…/);
+  await p.click(row());
+  assert.equal(p.document.activeElement, heading());
+  assert.equal(heading().textContent, "Quarterly");
+  await act(async () => patchTitle("generating", "Quarterly plan"));
+  assert.equal(heading().textContent, "Quarterly plan");
+  await p.click(back());
+  assert.equal(p.document.activeElement, row());
+  assert.match(row().textContent!, /^Quarterly plan/);
+  await act(async () => patchTitle("settled", null));
+  assert.match(row().textContent!, /^Initial task title/);
+  assert.doesNotMatch(row().textContent!, /Generating title/);
+
+  await p.click(row());
+  holdReads = true;
+  const list = p.store.getState().loadTasks(agent.id);
+  const detail = p.store.getState().loadTaskDetail(agent.id, task.id);
+  await act(async () => {
+    patchTitle("generating", "Annual");
+    patchTitle("settled", "Annual review");
+    olderList.resolve(Response.json({ items: [task], total: 1 }));
+    olderDetail.resolve(Response.json({ task, turns: [] }));
+    await Promise.all([list, detail]);
+  });
+  assert.equal(heading().textContent, "Annual review");
+  assert.equal(p.document.querySelector(".taskTitleProgress"), null);
+  await p.click(back());
+  assert.match(row().textContent!, /^Annual review/);
+
+  // A disconnected reader can miss settlement entirely. Re-read the exact
+  // open task on reconnect even if the refreshed list page lacks the row.
+  holdReads = false;
+  await p.click(row());
+  await act(async () => {
+    patchTitle("generating", "Live");
+    p.store.getState().clearTaskTitlePreviews(agent.workspaceId);
+    p.store.setState({ connected: false, tasks: { one: [] } });
+  });
+  savedTitle = "Recovered from server";
+  await act(async () => p.store.setState({ connected: true }));
+  assert.equal(heading().textContent, savedTitle);
+});
+
+test("new tasks open after acceptance while the agent refresh is still pending", async t => {
+  const p = await setup(t);
+  const refreshed = Promise.withResolvers<void>();
+  const task = { id: "newly-created", agentId: agent.id, kind: "task", title: "Opening message", status: "queued" };
+  t.mock.method(globalThis, "fetch", async (url: string) => {
+    if (url === "/api/agents/one/tasks") return Response.json({ taskId: task.id, turnId: "turn" }, { status: 202 });
+    if (url === "/api/tasks/newly-created") return Response.json({ task, turns: [] });
+    return Response.json({ items: [], total: 0, before: null, updates: [], removed: [] });
+  });
+  await act(async () => p.store.setState({
+    drafts: { "new:one": task.title },
+    refreshAgent: () => refreshed.promise,
+    loadMessages: async () => {},
+  }));
+  await p.click(p.tab("Tasks"));
+  const create = p.document.querySelector<HTMLButtonElement>(".newTask")!;
+  await p.click(create);
+  const form = p.document.querySelector("form")!;
+  await act(async () => {
+    form.dispatchEvent(new p.window.Event("submit", { bubbles: true, cancelable: true }));
+  });
+  assert.equal(p.document.querySelector(".taskHeading h3")?.textContent, task.title);
+  assert.equal(p.store.getState().drafts["new:one"], "");
+  refreshed.resolve();
 });
 
 test("rejected navigation preserves the active tab and panel; Escape remains available", async t => {

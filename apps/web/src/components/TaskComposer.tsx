@@ -189,30 +189,39 @@ export function TaskComposer({
     setBusy(true);
     setError("");
     setProgress(0);
-    try {
-      const fileOptions={attachments:files,signal:c.signal,onProgress:(p:number)=>{if(scope.current===key)setProgress(p);}};
-      const override=submissionPath ? (files.length ? await sendTaskFiles<{taskId:string}>(submissionPath,value,requestId,fileOptions) : await request<{taskId:string}>(submissionPath,"POST",{content:value,requestId},c.signal)) : null;
-      const id = submissionPath ? override!.taskId : await store.getState().submit(
-        agentId,
-        typeof taskId === "string" && taskId !== "new" ? taskId : null,
-        value,
-        requestId,
-        taskId === "new",
-        files.length
-          ? {
-              attachments: files,
-              signal: c.signal,
-              onProgress: (p) => {
-                if (scope.current === key) setProgress(p);
-              },
-            }
-          : undefined,
-      );
+    function submitted(id: string | null) {
       if (store.getState().drafts[key] === value)
         store.getState().setDraft(key, "");
       if (store.getState().fileDrafts[key] === sentFiles)
         store.getState().setFileDraft(key, []);
       if (scope.current === key && (taskId === "new" || submissionPath) && id) onCreated(id);
+    }
+    try {
+      const fileOptions = {
+        attachments: files,
+        signal: c.signal,
+        onProgress: (progress: number) => {
+          if (scope.current === key) setProgress(progress);
+        },
+      };
+      if (submissionPath) {
+        const accepted = files.length
+          ? await sendTaskFiles<{ taskId: string }>(submissionPath, value, requestId, fileOptions)
+          : await request<{ taskId: string }>(submissionPath, "POST", { content: value, requestId }, c.signal);
+        submitted(accepted.taskId);
+      } else {
+        const newTask = taskId === "new";
+        const id = await store.getState().submit(
+          agentId,
+          newTask ? null : taskId,
+          value,
+          requestId,
+          newTask,
+          files.length ? fileOptions : undefined,
+          newTask ? submitted : undefined,
+        );
+        if (!newTask) submitted(id);
+      }
     } catch (err) {
       if (scope.current === key) setError(errorMessage(err));
     } finally {

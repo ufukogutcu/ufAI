@@ -347,6 +347,13 @@ export interface AgentTask {
   createdAt: string;
   updatedAt: string;
 }
+export type TaskTitleEvent = {
+  agentId: string;
+  taskId: string;
+} & (
+  | { state: "generating"; title: string }
+  | { state: "settled"; title: string | null }
+);
 export interface AgentIssue {
   id: string;
   severity: "warning" | "error";

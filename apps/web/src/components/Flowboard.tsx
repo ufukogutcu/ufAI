@@ -42,6 +42,7 @@ import { Feedback, LoadingState } from "./Feedback";
 import { useNotice } from "./FeedbackProvider";
 import { WorkspaceFeedback } from "./WorkspaceFeedback";
 import { WorkspaceControls } from "./WorkspaceControls";
+import type { TaskTitleEvent } from "../../../server/src/contracts";
 
 const edgeTypes = { communication: CommunicationEdge };
 const nodeTypes = { agent: AgentNode };
@@ -157,7 +158,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
     if (!dragging.current && !canvasInteracting) setNodes(savedNodes);
   }, [savedNodes, setNodes, canvasInteracting]);
   useEffect(() => {
-    agentStore.setState({ connected: false, connectionWorkspaceId: workspaceId });
+    agentStore.setState({ connected: false, connectionWorkspaceId: workspaceId, taskTitlePreviews: {} });
     void agentStore.getState().loadWorkspace(workspaceId);
     void agentStore.getState().loadWorkspaceControl(workspaceId).catch(() => {});
     const refreshPacing = () => void agentStore.getState().loadWorkspacePacing(workspaceId);
@@ -211,14 +212,30 @@ function Board({ workspaceId }: { workspaceId: string }) {
       refresh();
     };
     const resync = () => { invalidateTimeline(); invalidateConfiguration(); refreshTransits(); refreshPacing(); refresh(); };
+    const taskTitle = (event: MessageEvent<string>) => {
+      if (closed) return;
+      try {
+        const data = JSON.parse(event.data) as TaskTitleEvent;
+        if (typeof data.agentId !== "string" || typeof data.taskId !== "string") return;
+        if ((data.state === "generating" && typeof data.title === "string") ||
+            (data.state === "settled" && (data.title === null || typeof data.title === "string"))) {
+          agentStore.getState().receiveTaskTitle(workspaceId, data);
+        }
+      } catch { /* Ignore malformed transient events; task reads remain authoritative. */ }
+    };
     events.addEventListener("change", changed);
     events.addEventListener("resync", resync);
+    events.addEventListener("task-title", taskTitle);
     events.onopen = () => {
       if (closed) return;
       agentStore.setState({ connected: true });
       resync();
     };
-    events.onerror = () => { if (!closed) agentStore.setState({ connected: false }); };
+    events.onerror = () => {
+      if (closed) return;
+      agentStore.getState().clearTaskTitlePreviews(workspaceId);
+      agentStore.setState({ connected: false });
+    };
     const unfocus = refreshOnFocus(async () => {
       resync();
     });
@@ -226,7 +243,7 @@ function Board({ workspaceId }: { workspaceId: string }) {
       closed = true;
       clearTimeout(timer);
       events.close();
-      agentStore.setState({ connected: false, connectionWorkspaceId: null });
+      agentStore.setState({ connected: false, connectionWorkspaceId: null, taskTitlePreviews: {} });
       transitStore.getState().clear();
       unfocus();
     };

@@ -112,7 +112,8 @@ export class AgentExecution {
     this.issues = new AgentIssues(db);
     this.freezing = new AgentFreezing(db, this);
     this.workspaceFreezing = new WorkspaceFreezing(db, this);
-    this.taskTitles = new TaskTitles(db, connections, (id) => this.event(id));
+    this.taskTitles = new TaskTitles(db, connections, (id) => this.event(id),
+      (workspaceId, event) => this.events.emit("task-title", workspaceId, event));
     this.events.setMaxListeners(128);
     // Replies committed before a crash resume maintenance without repeating generation.
     db.transaction(() => {
@@ -301,6 +302,9 @@ export class AgentExecution {
         "SELECT * FROM agent_messages WHERE conversationId = ? AND sequence <= ? AND sequence > ? ORDER BY sequence LIMIT ?",
       )
       .all(conversationId, through, after, limit) as AgentMessage[];
+  }
+  taskTitlePreviews(workspaceId: string) {
+    return this.taskTitles.previews(workspaceId);
   }
   event(agentId: string, kind = "changed") {
     const a = this.db
@@ -981,7 +985,7 @@ export class AgentExecution {
         };
         this.active.set(turn.id, record);
         const unpin = this.connections.pin(snapshot.connectionId);
-        if (!chat) this.taskTitles.start(turn, snapshot);
+        if (!chat) this.taskTitles.start(turn, snapshot, owner.workspaceId);
         record.promise = this.run(turn, record)
           .catch(() => {})
           .finally(() => {

@@ -23,9 +23,11 @@ import { TaskComposer as Composer } from "./TaskComposer";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type FormEvent,
+  type Ref,
 } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -52,7 +54,7 @@ import type {
   AgentMessage,
   AgentTask,
   ModelPreset,
-  TaskDetail,
+  TaskStatus,
 } from "../../../server/src/contracts";
 import { FolderLocation } from "./FolderLocation";
 import { AgentFiles } from "./AgentFiles";
@@ -73,6 +75,53 @@ type AgentFormValues = {
   expectedRevision?: number;
 };
 const customPresetOption = "__custom__";
+const taskStatusLabels: Record<TaskStatus, string> = {
+  queued: "Queued",
+  running: "Running",
+  waiting: "Waiting",
+  awaiting_user: "Needs input",
+  completed: "Completed",
+  blocked: "Blocked",
+  failed: "Failed",
+  cancelled: "Cancelled",
+};
+
+function TaskRow({ task, open }: { task: AgentTask; open: (id: string) => void }) {
+  const preview = useAgents(s => s.taskTitlePreviews[task.id]);
+  const needsAttention = ["awaiting_user", "blocked", "failed"].includes(task.status);
+  return (
+    <li>
+      <button type="button" className={styles.taskLink} data-task-id={task.id} onClick={() => open(task.id)}>
+        <span className={styles.taskIdentity}>
+          <span className={styles.taskTitle}>{preview || task.title}</span>
+          {(preview !== undefined || task.trigger) && (
+            <span className={styles.taskMetadata}>
+              {preview !== undefined && <span>Generating title…</span>}
+              {task.trigger && <span className={styles.taskOrigin}>Triggered by {task.trigger.name}</span>}
+            </span>
+          )}
+        </span>
+        <span className={styles.taskStatus} data-attention={needsAttention || undefined}>
+          {taskStatusLabels[task.status]}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function TaskConversationTitle({ taskId, title, heading }: {
+  taskId: string;
+  title: string;
+  heading: Ref<HTMLHeadingElement>;
+}) {
+  const preview = useAgents(s => s.taskTitlePreviews[taskId]);
+  return (
+    <>
+      <h3 ref={heading} tabIndex={-1}>{preview || title}</h3>
+      {preview !== undefined && <p className={styles.taskTitleProgress}>Generating title…</p>}
+    </>
+  );
+}
 
 export function AgentForm({
   agent,
@@ -628,19 +677,41 @@ export function AgentPanel({
   const [taskId, setTaskId] = useState<string | null>(null),
     [newTask, setNewTask] = useState(false),
     [error, setError] = useState(""),
+    [taskReadError, setTaskReadError] = useState<{ id: string; message: string } | null>(null),
     [deleting, setDeleting] = useState(false),
     [source, setSource] = useState<{
       message: AgentMessage;
       taskId: string;
     } | null>(null);
+  const taskHeading = useRef<HTMLHeadingElement>(null);
+  const taskList = useRef<HTMLDivElement>(null);
+  const newTaskButton = useRef<HTMLButtonElement>(null);
+  const returnTaskRow = useRef<string | null>(null);
+  const focusTaskView = useRef<"heading" | "list" | null>(null);
+  useLayoutEffect(() => {
+    if (tab !== "Tasks") return;
+    if (focusTaskView.current === "heading") taskHeading.current?.focus();
+    if (focusTaskView.current === "list") {
+      const row = returnTaskRow.current && Array.from(taskList.current?.querySelectorAll<HTMLButtonElement>("button[data-task-id]") ?? [])
+        .find(button => button.dataset.taskId === returnTaskRow.current);
+      (row || newTaskButton.current)?.focus();
+    }
+    focusTaskView.current = null;
+  }, [tab, taskId, newTask]);
   const requestedTask=useAgents(s=>s.requestedTask?.agentId===agent.id?s.requestedTask:null);
   const openConversation = useCallback(async (id: string, signal?: AbortSignal) => {
-    const detail = await request<TaskDetail>(`/tasks/${id}`, "GET", undefined, signal);
+    const detail = await store.getState().loadTaskDetail(agent.id, id, signal);
     if (signal?.aborted || detail.task.agentId !== agent.id) return;
     if (detail.task.kind === "chat") {
       await store.getState().refreshAgent(agent.id);
       if (!signal?.aborted) setTab("Chat");
-    } else { setTab("Tasks"); setTaskId(id); setNewTask(false); }
+    } else {
+      returnTaskRow.current = id;
+      focusTaskView.current = "heading";
+      setTab("Tasks");
+      setTaskId(id);
+      setNewTask(false);
+    }
   }, [agent.id, store, setTab]);
   useEffect(() => {
     if (!requestedTask) return;
@@ -659,10 +730,22 @@ export function AgentPanel({
         ) ?? false)
       : false,
   );
-  const tasks = useAgents((s) => s.tasks[agent.id] ?? emptyList),
+  const loadedTasks = useAgents((s) => s.tasks[agent.id]),
+    tasks = loadedTasks ?? emptyList,
     memories = useAgents((s) => s.memories[agent.id] ?? emptyList),
     chat = useAgents((s) => s.chats[agent.id]),
     details = useAgents((s) => (taskId ? s.details[taskId] : undefined));
+  const connected = useAgents(s => tab === "Tasks" && !!taskId && s.connected);
+  useEffect(() => {
+    if (tab !== "Tasks" || !taskId) return;
+    const controller = new AbortController();
+    void store.getState().loadTaskDetail(agent.id, taskId, controller.signal)
+      .catch(failure => {
+        if (!controller.signal.aborted && !store.getState().details[taskId])
+          setTaskReadError({ id: taskId, message: errorMessage(failure) });
+      });
+    return () => controller.abort();
+  }, [agent.id, connected, store, tab, taskId]);
   const chatHasProcesses = useAgents(s => chat?.task ? (s.toolData[chat.task.id]?.processes.some(p => ["starting", "running"].includes(p.state)) ?? false) : false);
   const taskTotal = useAgents((s) => s.taskTotals[agent.id] ?? 0),
     memoryTotal = useAgents((s) => s.memoryTotals[agent.id] ?? 0);
@@ -676,9 +759,26 @@ export function AgentPanel({
     };
   }, []);
   const created = useCallback((id: string) => {
+    focusTaskView.current = "heading";
     setTaskId(id);
     setNewTask(false);
   }, []);
+  const openTask = useCallback((id: string) => {
+    returnTaskRow.current = id;
+    focusTaskView.current = "heading";
+    setTaskReadError(null);
+    setTaskId(id);
+  }, []);
+  function startTask() {
+    returnTaskRow.current = null;
+    focusTaskView.current = "heading";
+    setNewTask(true);
+  }
+  function showAllTasks() {
+    focusTaskView.current = "list";
+    setTaskId(null);
+    setNewTask(false);
+  }
   async function action(kind: "cancel" | "retry", id = taskId) {
     if (!id) return;
     try {
@@ -785,11 +885,11 @@ export function AgentPanel({
         (newTask ? (
           <>
             <div className={styles.taskHeading}>
-              <button className="textButton" onClick={() => setNewTask(false)}>
-                <ArrowLeft size={14} />
+              <button className={`textButton ${styles.allTasks}`} onClick={showAllTasks}>
+                <ArrowLeft size={14} aria-hidden />
                 All tasks
               </button>
-              <h3>New task</h3>
+              <h3 ref={taskHeading} tabIndex={-1}>New task</h3>
             </div>
             <p className={styles.help}>
               A separate conversation with access to this agent’s shared memory
@@ -800,23 +900,18 @@ export function AgentPanel({
         ) : taskId ? (
           <>
             <div className={styles.taskHeading}>
-              <button className="textButton" onClick={() => setTaskId(null)}>
-                <ArrowLeft size={14} />
+              <button className={`textButton ${styles.allTasks}`} onClick={showAllTasks}>
+                <ArrowLeft size={14} aria-hidden />
                 All tasks
               </button>
-              <h3>{current?.title ?? "Task"}</h3>
-              {current?.trigger && <div className={styles.help}><button className="textButton" onClick={() => guard(() => {triggerStore.setState({requestedId:current.trigger!.id});setTab("Triggers");})}>Trigger: {current.trigger.name}</button><p>Originally triggered: {new Date(current.trigger.scheduledAt).toLocaleString()} · Occurrence {current.trigger.occurrenceId}</p></div>}
-              <details>
-                <summary>Working folder</summary>
-                <FolderLocation
-                  kind="task"
-                  ownerId={taskId}
-                  label="Task working folder"
-                />
-              </details>
-              <div className={styles.actions}>
+              <TaskConversationTitle
+                taskId={taskId}
+                title={details?.task.title ?? current?.title ?? "Task"}
+                heading={taskHeading}
+              />
+              <div className={`${styles.actions} ${styles.taskActions}`}>
                 <span>
-                  {current?.status.replaceAll("_", " ")}
+                  {current && taskStatusLabels[current.status]}
                   {details?.turns.find((t) => t.status === "running")
                     ? ` · ${details.turns.find((t) => t.status === "running")!.phase}`
                     : ""}
@@ -847,6 +942,28 @@ export function AgentPanel({
                   </button>
                 )}
               </div>
+              {current?.trigger && (
+                <div className={styles.taskTrigger}>
+                  <button className="textButton" onClick={() => guard(() => {
+                    triggerStore.setState({ requestedId: current.trigger!.id });
+                    setTab("Triggers");
+                  })}>
+                    Triggered by {current.trigger.name}
+                  </button>
+                  <p>Originally triggered {new Date(current.trigger.scheduledAt).toLocaleString()} · Occurrence {current.trigger.occurrenceId}</p>
+                </div>
+              )}
+              <details>
+                <summary>Working folder</summary>
+                <FolderLocation
+                  kind="task"
+                  ownerId={taskId}
+                  label="Task working folder"
+                />
+              </details>
+              {!current && taskReadError?.id === taskId && (
+                <Feedback role="alert">{taskReadError.message}</Feedback>
+              )}
               {current?.error && (
                 <Feedback role="alert">
                   {current.error} <a href="#/providers">Providers</a> ·{" "}
@@ -869,27 +986,23 @@ export function AgentPanel({
             />
           </>
         ) : (
-          <div className={styles.scroll}>
-            <button className="button primary" onClick={() => setNewTask(true)}>
-              <Plus size={15} />
-              New Task
+          <div className={`${styles.scroll} ${styles.taskListView}`} ref={taskList}>
+            <button className={`button primary ${styles.newTask}`} ref={newTaskButton} onClick={startTask}>
+              <Plus size={15} aria-hidden />
+              New task
             </button>
-            {tasks.map((t) => (
-              <button
-                key={t.id}
-                className={styles.taskLink}
-                onClick={() => setTaskId(t.id)}
-              >
-                <span>{t.title}{t.trigger && <small> · Trigger: {t.trigger.name}</small>}</span>
-                <small>{t.status.replaceAll("_", " ")}</small>
-              </button>
-            ))}
-            {!tasks.length && (
-              <p className={styles.muted}>Start this agent’s first task.</p>
+            {!loadedTasks && <LoadingState className={styles.taskEmpty}>Loading tasks…</LoadingState>}
+            {loadedTasks && !tasks.length && (
+              <p className={`${styles.muted} ${styles.taskEmpty}`}>No tasks yet.</p>
+            )}
+            {!!tasks.length && (
+              <ul aria-label="Tasks" className={styles.taskList} role="list">
+                {tasks.map(task => <TaskRow key={task.id} task={task} open={openTask} />)}
+              </ul>
             )}
             {tasks.length < taskTotal && (
               <button
-                className="textButton"
+                className={`textButton ${styles.loadTasks}`}
                 onClick={() =>
                   void store
                     .getState()

@@ -30,6 +30,7 @@ export default defineConfig({
             { name: "preload", test: /vite\/preload-helper/ },
             { name: "react", test: /\/node_modules\/(?:react|react-dom|scheduler)\// },
             { name: "workspace-navigation", includeDependenciesRecursively: false, test: /\/src\/(?:pages\/Home|components\/WorkspaceTabs?|store)\.tsx?$/ },
+            { name: "agent-panel", includeDependenciesRecursively: false, test: /\/src\/components\/AgentPanel\.tsx$/ },
             { name: "canvas", test: /\/node_modules\/@xyflow\// },
             { name: "syntax-highlighting", test: /\/node_modules\/(?:highlight\.js|lowlight|rehype-highlight)\// },
             { name: "mermaid-grammars", test: /^\0ufai:mermaid-grammars$/ },

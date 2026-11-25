@@ -3,7 +3,7 @@ import { generateAppearance, validateAppearance, workspaceAppearanceCounts } fro
 import { assertAgentNameAvailable, generateAgentName, workspaceAgentNameKeys } from "./agent-names.js";
 import { randomUUID } from "node:crypto";
 import { writeCustomConfiguration } from "./agent-model-configuration.js";
-import type { Agent, AgentModelConfiguration } from "./contracts.js";
+import type { Agent, AgentModelConfiguration, TaskTitleEvent } from "./contracts.js";
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
 import type { ManagedFiles } from "./managed-files.js";
@@ -546,6 +546,7 @@ export function registerAgents(
       closed = true;
       clearInterval(heartbeat);
       execution.events.off("change", changed);
+      execution.events.off("task-title", taskTitle);
       execution.events.off("close", stop);
       reply.raw.off("close", cleanup);
     };
@@ -553,10 +554,10 @@ export function registerAgents(
       cleanup();
       reply.raw.end();
     };
-    const write = (kind: string, sequence: number, data: unknown) => {
+    const write = (kind: string, data: unknown, sequence?: number) => {
       if (closed) return false;
       const ok = reply.raw.write(
-        `id: ${sequence}\nevent: ${kind}\ndata: ${JSON.stringify(data)}\n\n`,
+        `${sequence === undefined ? "" : `id: ${sequence}\n`}event: ${kind}\ndata: ${JSON.stringify(data)}\n\n`,
       );
       if (!ok) stop();
       return ok;
@@ -575,7 +576,7 @@ export function registerAgents(
         cursor > (bounds.latest ?? 0)
       ) {
         cursor = bounds.latest ?? 0;
-        write("resync", cursor, {});
+        write("resync", {}, cursor);
         return;
       }
       const rows = db
@@ -585,7 +586,7 @@ export function registerAgents(
         .all(q.workspaceId!, cursor) as any[];
       for (const row of rows) {
         cursor = row.sequence;
-        if (!write("change", cursor, row)) break;
+        if (!write("change", row, cursor)) break;
       }
       if (rows.length === 100 && !closed) {
         scheduled = true;
@@ -598,14 +599,21 @@ export function registerAgents(
         setImmediate(pump);
       }
     };
+    const taskTitle = (id: string, event: TaskTitleEvent) => {
+      if (id === q.workspaceId) write("task-title", event);
+    };
     const heartbeat = setInterval(() => {
       if (!closed && !reply.raw.write(": heartbeat\n\n")) stop();
     }, 15000);
     heartbeat.unref();
     execution.events.on("change", changed);
+    execution.events.on("task-title", taskTitle);
     execution.events.on("close", stop);
     reply.raw.on("close", cleanup);
     pump();
+    for (const preview of execution.taskTitlePreviews(q.workspaceId!)) {
+      if (!write("task-title", preview)) break;
+    }
   });
   app.addHook("preClose", async () => {
     execution.events.emit("close");

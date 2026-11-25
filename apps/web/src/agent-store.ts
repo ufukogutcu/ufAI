@@ -28,6 +28,7 @@ import type {
   AgentMemory,
   AgentWorkload,
   TaskDetail,
+  TaskTitleEvent,
   Page,
   CommunicationLink,
   CommunicationAnchors,
@@ -108,6 +109,9 @@ interface AgentState {
   ) => Promise<void>;
   nodes: Record<string, WorkspaceFlowNode[]>;
   tasks: Record<string, AgentTask[]>;
+  taskTitlePreviews: Partial<Record<string, string>>;
+  receiveTaskTitle: (workspaceId: string, event: TaskTitleEvent) => void;
+  clearTaskTitlePreviews: (workspaceId: string) => void;
   chats: Record<string, AgentChat>;
   taskTotals: Record<string, number>;
   details: Record<string, TaskDetail>;
@@ -145,6 +149,7 @@ interface AgentState {
     older?: boolean,
   ) => Promise<void>;
   loadTasks: (id: string, more?: boolean) => Promise<void>;
+  loadTaskDetail: (agentId: string, taskId: string, signal?: AbortSignal) => Promise<TaskDetail>;
   loadMemories: (id: string, more?: boolean) => Promise<void>;
   select: (workspaceId: string, id: string | null) => void;
   create: (
@@ -174,12 +179,16 @@ interface AgentState {
     requestId: string,
     newTask?: boolean,
     files?: FileSubmission,
+    onAccepted?: (taskId: string | null) => void,
   ) => Promise<string | null>;
 }
 const emptyNodes: WorkspaceFlowNode[] = [];
 export const emptyList: never[] = [];
 const equal = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
+function applyTaskTitle(task: AgentTask, title: string | undefined) {
+  return title === undefined || title === task.title ? task : { ...task, title };
+}
 function merge<T extends { id: string }>(before: T[], after: T[]) {
   const map = new Map(before.map((v) => [v.id, v]));
   for (const v of after)
@@ -195,6 +204,18 @@ export function createAgentStore() {
   let anchorRevision = 0;
   const anchorRevisions = new Map<string, number>();
   const pendingRefresh = new Set<string>();
+  // A title is generated once. Only requests already in flight at settlement
+  // can return its old value after the live event.
+  const taskReads = new Set<{ agentId: string; titles: Map<string, string> }>();
+  async function readTasks<T>(agentId: string, read: (applyTitle: (task: AgentTask) => AgentTask) => Promise<T>) {
+    const pending = { agentId, titles: new Map<string, string>() };
+    taskReads.add(pending);
+    try {
+      return await read(task => applyTaskTitle(task, pending.titles.get(task.id)));
+    } finally {
+      taskReads.delete(pending);
+    }
+  }
   // Execution changes do not increment the saved agent revision. Order runtime
   // snapshots independently so a slower read or position save cannot rewind them.
   let snapshotSequence = 0;
@@ -623,6 +644,46 @@ export function createAgentStore() {
       },
       nodes: {},
       tasks: {},
+      taskTitlePreviews: {},
+      receiveTaskTitle(workspaceId, event) {
+        if (get().connectionWorkspaceId !== workspaceId) return;
+        if (event.state === "generating") {
+          const { taskId, title } = event;
+          set(s => s.taskTitlePreviews[taskId] === title ? s : {
+            taskTitlePreviews: { ...s.taskTitlePreviews, [taskId]: title },
+          });
+          return;
+        }
+        const { agentId, taskId, title } = event;
+        if (title !== null) {
+          for (const pending of taskReads) {
+            if (pending.agentId === agentId) pending.titles.set(taskId, title);
+          }
+        }
+        set(s => {
+          const preview = s.taskTitlePreviews[taskId];
+          const taskTitlePreviews = preview === undefined ? s.taskTitlePreviews : { ...s.taskTitlePreviews };
+          if (preview !== undefined) delete taskTitlePreviews[taskId];
+          if (title === null) return preview === undefined ? s : { taskTitlePreviews };
+          const items = s.tasks[agentId];
+          const row = items?.find(task => task.id === taskId && task.title !== title);
+          const detail = s.details[taskId];
+          return {
+            taskTitlePreviews,
+            tasks: items && row
+              ? { ...s.tasks, [agentId]: items.map(task => task === row ? { ...task, title } : task) }
+              : s.tasks,
+            details: detail && detail.task.title !== title
+              ? { ...s.details, [taskId]: { ...detail, task: { ...detail.task, title } } }
+              : s.details,
+          };
+        });
+      },
+      clearTaskTitlePreviews(workspaceId) {
+        set(s => s.connectionWorkspaceId === workspaceId && Object.keys(s.taskTitlePreviews).length
+          ? { taskTitlePreviews: {} }
+          : s);
+      },
       taskTotals: {},
       details: {},
       messages: {},
@@ -833,16 +894,24 @@ export function createAgentStore() {
       },
       async loadTasks(id, more = false) {
         const offset = more ? (get().tasks[id]?.length ?? 0) : 0;
-        const p = await request<Page<AgentTask>>(
-          `/agents/${id}/tasks?limit=100&offset=${offset}`,
-        );
-        set((s) => ({
-          tasks: {
-            ...s.tasks,
-            [id]: more ? merge(s.tasks[id] ?? [], p.items) : merge([], p.items),
-          },
-          taskTotals: { ...s.taskTotals, [id]: p.total },
-        }));
+        await readTasks(id, async applyTitle => {
+          const p = await request<Page<AgentTask>>(`/agents/${id}/tasks?limit=100&offset=${offset}`);
+          const items = p.items.map(applyTitle);
+          set(s => ({
+            tasks: { ...s.tasks, [id]: merge(more ? (s.tasks[id] ?? []) : [], items) },
+            taskTotals: { ...s.taskTotals, [id]: p.total },
+          }));
+        });
+      },
+      loadTaskDetail(agentId, taskId, signal) {
+        return readTasks(agentId, async applyTitle => {
+          const detail = await request<TaskDetail>(`/tasks/${taskId}`, "GET", undefined, signal);
+          if (signal?.aborted || detail.task?.agentId !== agentId) return detail;
+          const task = applyTitle(detail.task);
+          const result = { ...detail, task };
+          set(s => ({ details: { ...s.details, [taskId]: result } }));
+          return result;
+        });
       },
       async loadMemories(id, more = false) {
         const offset = more ? (get().memories[id]?.length ?? 0) : 0;
@@ -869,9 +938,7 @@ export function createAgentStore() {
           const p = await request<Page<AgentMessage>>(
             `${path}${older && prior.length ? `?before=${prior[0]!.sequence}` : ""}`,
           );
-          const detail = taskId
-            ? await request<TaskDetail>(`/tasks/${taskId}`)
-            : null;
+          if (taskId) await get().loadTaskDetail(agentId, taskId);
           set((s) => ({
             messages: {
               ...s.messages,
@@ -880,7 +947,6 @@ export function createAgentStore() {
               ),
             },
             messageTotals: { ...s.messageTotals, [key]: p.total },
-            details: detail ? { ...s.details, [taskId!]: detail } : s.details,
           }));
         });
       },
@@ -1009,7 +1075,7 @@ export function createAgentStore() {
       setDraft(key, value) {
         set((s) => ({ drafts: { ...s.drafts, [key]: value } }));
       },
-      async submit(id, taskId, value, requestId, newTask = false, files) {
+      async submit(id, taskId, value, requestId, newTask = false, files, onAccepted) {
         const path = newTask
           ? `/agents/${id}/tasks`
           : taskId
@@ -1029,6 +1095,7 @@ export function createAgentStore() {
                 turnId: string;
               }>(path, "POST", { content: value, requestId });
         const accepted = await send();
+        onAccepted?.(accepted.taskId);
         await get().refreshAgent(id);
         const conversationId = !taskId && !newTask ? null : accepted.taskId;
         const source = `messages:${id}:${conversationId ?? "chat"}`;

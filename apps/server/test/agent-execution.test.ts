@@ -12,6 +12,8 @@ import type {
   TextRequest,
   TextResult,
 } from "../src/execution-types.js";
+import type { TaskTitleEvent } from "../src/contracts.js";
+import type { Triggers } from "../src/triggers.js";
 
 const result = (text: string): TextResult => ({
   text,
@@ -24,12 +26,7 @@ const maintenance = JSON.stringify({
   summary: "Finished the requested answer.",
   memories: [],
 });
-function setup(
-  generate: (r: TextRequest) => Promise<TextResult>,
-  autoStart = true,
-  generateTitle = async (_r: TextRequest) => result("{}"),
-) {
-  const db = openDatabase(":memory:");
+function seedExecutionAgents(db: ReturnType<typeof openDatabase>) {
   const ts = new Date().toISOString();
   const workspace = (
     db.prepare("SELECT id FROM workspaces LIMIT 1").get() as any
@@ -47,6 +44,15 @@ function setup(
     db.prepare(
       "INSERT INTO agents(id,workspaceId,name,instructions,presetId,createdAt,updatedAt) VALUES (?,?,?,'Be useful.','preset',?,?)",
     ).run(id, workspace, id, ts, ts);
+  return workspace;
+}
+function setup(
+  generate: (r: TextRequest) => Promise<TextResult>,
+  autoStart = true,
+  generateTitle = async (_r: TextRequest) => result("{}"),
+) {
+  const db = openDatabase(":memory:");
+  const workspace = seedExecutionAgents(db);
   const connections = new ConnectionService(db);
   connections.generate = async (_s: ExecutionSnapshot, r: TextRequest) => {
     if (isTitle(r)) return generateTitle(r);
@@ -126,6 +132,83 @@ test("task titles use the opening message and can arrive after task completion",
   assert.equal(f.engine.task(taskId).title, title);
 });
 
+test("workspace SSE streams decoded title prefixes and restores active previews on reconnect", { timeout: 10_000 }, async t => {
+  const app = createApp({ databasePath: ":memory:", serveStatic: false, execution: { autoStart: false } });
+  const controller = new AbortController();
+  const titleRequest = Promise.withResolvers<TextRequest>();
+  const titleResponse = Promise.withResolvers<TextResult>();
+  t.after(async () => {
+    controller.abort();
+    titleResponse.resolve(result("{}"));
+    await app.close();
+  });
+  const { db, connections, execution } = (app as unknown as { triggers: Triggers }).triggers;
+  const workspace = seedExecutionAgents(db);
+  connections.generate = async (_snapshot, request) => {
+    if (!isTitle(request)) return result(maintenance);
+    titleRequest.resolve(request);
+    return titleResponse.promise;
+  };
+  connections.countTaskTokens = async () => null;
+  connections.toolRound = async () => ({ calls: [], text: "Done", continuation: {}, usage: null });
+  await app.listen({ host: "127.0.0.1", port: 0 });
+  const opening = "Summarize the quarterly report";
+  const { taskId } = execution.submit("a", "new", opening, "title-live");
+  const subscribe = async () => {
+    const response = await fetch(`${app.listeningOrigin}/api/events?workspaceId=${workspace}`, { signal: controller.signal });
+    assert.equal(response.status, 200);
+    const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+    let buffer = "";
+    return {
+      cancel: () => reader.cancel(),
+      async title() {
+        for (;;) {
+          const boundary = buffer.indexOf("\n\n");
+          if (boundary < 0) {
+            const chunk = await reader.read();
+            assert.equal(chunk.done, false, "SSE closed before the title event");
+            buffer += chunk.value;
+            continue;
+          }
+          const frame = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          if (!frame.startsWith("event: task-title\n")) continue;
+          return JSON.parse(frame.split("\ndata: ")[1]!) as TaskTitleEvent;
+        }
+      },
+    };
+  };
+  const initial = await subscribe();
+  execution.pump();
+  const request = await titleRequest.promise;
+  const identity = { taskId, agentId: "a" };
+  assert.deepEqual(await initial.title(), { ...identity, state: "generating", title: "" });
+  const first = '```json\n{"title":"Quarterly \\u00';
+  request.onDelta!(first);
+  assert.deepEqual(await initial.title(), { ...identity, state: "generating", title: "Quarterly" });
+  assert.equal(execution.task(taskId!).title, opening);
+  await initial.cancel();
+
+  const second = 'e9lan \\"R';
+  request.onDelta!(second);
+  const reconnected = await subscribe();
+  assert.deepEqual(await reconnected.title(), { ...identity, state: "generating", title: 'Quarterly élan "R' });
+  const third = 'eport\\""}\n```';
+  request.onDelta!(third);
+  const final = 'Quarterly élan "Report"';
+  // A reconnect snapshot can arrive just before the already scheduled update.
+  let event = await reconnected.title();
+  if (event.title === 'Quarterly élan "R') event = await reconnected.title();
+  assert.deepEqual(event, { ...identity, state: "generating", title: final });
+  assert.equal((await app.inject(`/api/tasks/${taskId}`)).json().task.title, opening);
+  titleResponse.resolve(result(first + second + third));
+  assert.deepEqual(await reconnected.title(), { ...identity, state: "settled", title: final });
+  assert.deepEqual([...execution.taskTitlePreviews(workspace)], []);
+  assert.equal((await app.inject(`/api/tasks/${taskId}`)).json().task.title, final);
+  assert.equal((await app.inject("/api/agents/a/tasks")).json().items[0].title, final);
+  await reconnected.cancel();
+});
+
 test("task titles include delegated, triggered and file-only input while persistent Chat keeps its name", async (t) => {
   const requests: string[] = [];
   const f = setup(async () => result("Done."), false, async (r) => {
@@ -164,6 +247,10 @@ test("title failures and malformed or oversized output leave fallback titles thr
     if (++calls === 1) throw new Error("Failed title");
     return result(calls === 2 ? '{"title":"Two\\nlines"}' : JSON.stringify({ title: "X".repeat(121) }));
   });
+  const settlements: TaskTitleEvent[] = [];
+  f.engine.events.on("task-title", (_workspaceId: string, event: TaskTitleEvent) => {
+    if (event.state === "settled") settlements.push(event);
+  });
   t.after(() => f.close());
   const first = f.engine.submit("a", "new", "Try again", "title-retry");
   f.engine.pump();
@@ -183,6 +270,8 @@ test("title failures and malformed or oversized output leave fallback titles thr
   await until(() => f.engine.task(oversized.taskId!).status === "completed");
   assert.equal(f.engine.task(oversized.taskId!).title, "Keep this short");
   assert.equal(calls, 3);
+  assert.deepEqual(settlements.map(({ taskId, title }) => ({ taskId, title })), [first, malformed, oversized]
+    .map(({ taskId }) => ({ taskId, title: null })));
 });
 
 for (const action of ["deadline", "stop", "freeze", "pause", "shutdown"] as const)
@@ -190,6 +279,7 @@ for (const action of ["deadline", "stop", "freeze", "pause", "shutdown"] as cons
     const entered = Promise.withResolvers<AbortSignal>();
     const titleResponse = Promise.withResolvers<TextResult>();
     const f = setup(async () => result("Done."), false, async (r) => {
+      r.onDelta?.('{"title":"Late');
       entered.resolve(r.signal);
       return titleResponse.promise;
     });
@@ -202,6 +292,7 @@ for (const action of ["deadline", "stop", "freeze", "pause", "shutdown"] as cons
     const taskId = submitted.taskId!;
     f.engine.pump();
     const signal = await entered.promise;
+    assert.equal([...f.engine.taskTitlePreviews(f.workspace)][0]?.title, "Late");
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert.equal(f.engine.task(taskId).status, "completed");
 
@@ -227,6 +318,7 @@ for (const action of ["deadline", "stop", "freeze", "pause", "shutdown"] as cons
         break;
     }
     assert.equal(signal.aborted, true);
+    assert.deepEqual([...f.engine.taskTitlePreviews(f.workspace)], []);
     titleResponse.resolve(result('{"title":"Late title"}'));
     await settled;
     await until(() => !f.connections.busy("connection"));

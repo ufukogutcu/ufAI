@@ -155,41 +155,128 @@
 .help {
   padding: 0 20px;
 }
+.taskListView {
+  padding-block: 12px 16px;
+}
+.newTask,
+.loadTasks {
+  min-height: 36px;
+}
+.taskList {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  border-block-end: 1px solid var(--border);
+  > li {
+    border-block-start: 1px solid var(--border);
+  }
+}
+.taskEmpty,
+.loadTasks {
+  margin-block-start: 8px;
+}
 .taskLink {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6.5rem;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
-  text-align: left;
+  min-height: 36px;
+  padding: 5px 8px;
+  text-align: start;
   border: 0;
-  border-bottom: 1px solid var(--border);
   background: transparent;
   color: var(--text);
-  padding: 12px 0;
-  min-height: 44px;
-  span {
-    overflow-wrap: anywhere;
-  }
-  small {
-    color: var(--muted);
-    flex-shrink: 0;
-    font-size: 12px;
-  }
   &:hover {
     background: var(--hover);
   }
+  &:focus-visible {
+    outline-offset: -2px;
+  }
+}
+.taskIdentity {
+  min-width: 0;
+}
+.taskTitle,
+.taskOrigin {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.taskTitle {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+.taskMetadata,
+.taskStatus,
+.taskTitleProgress,
+.taskTrigger {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--muted);
+}
+.taskMetadata {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 8px;
+}
+.taskStatus {
+  text-align: end;
+  &[data-attention] {
+    color: var(--text);
+    font-weight: 600;
+  }
 }
 .taskHeading {
-  padding: 12px 20px;
+  padding: 8px 20px 12px;
   border-bottom: 1px solid var(--border);
   max-height: 35%;
   overflow: auto;
   flex-shrink: 0;
   h3 {
     font-size: 16px;
-    font-weight: 500;
+    font-weight: 600;
+    line-height: 1.35;
+    margin: 2px 0 0;
+    width: fit-content;
     overflow-wrap: anywhere;
+  }
+  details {
+    margin-block-start: 6px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  summary {
+    cursor: pointer;
+    width: fit-content;
+    &:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+  }
+}
+.allTasks {
+  min-height: 28px;
+  padding-inline-start: 0;
+}
+.taskTitleProgress {
+  margin: 2px 0 0;
+}
+.taskActions {
+  margin-top: 4px;
+  gap: 8px;
+}
+.taskTrigger {
+  margin-block-start: 4px;
+  overflow-wrap: anywhere;
+  button {
+    text-align: start;
+    padding-inline-start: 0;
+  }
+  p {
+    margin: 0;
   }
 }
 .chatStatus {
@@ -325,6 +412,12 @@
   .transcript {
     padding: 16px;
   }
+  .taskListView {
+    padding-block: 12px 16px;
+  }
+  .taskHeading {
+    padding-inline: 16px;
+  }
   .detailsFooter {
     padding: 10px 16px;
   }
@@ -343,6 +436,18 @@
   }
 }
 @media (max-width: 430px) {
+  .taskLink {
+    grid-template-columns: minmax(0, 1fr) 5rem;
+    padding-inline: 6px;
+  }
+  .taskTitle {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-height: 17px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   .detailsFooter {
     gap: 8px;
     > button {
@@ -366,8 +471,17 @@
 }
 @media (any-pointer: coarse) {
   .tabs button,
-  .node button {
+  .node button,
+  .taskLink,
+  .newTask,
+  .loadTasks,
+  .allTasks,
+  .taskActions button,
+  .taskTrigger button {
     min-height: 44px;
+  }
+  .taskHeading summary {
+    line-height: 44px;
   }
 }
 
