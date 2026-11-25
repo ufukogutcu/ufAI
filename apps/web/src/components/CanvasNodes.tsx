@@ -1,4 +1,5 @@
 import { FrozenIndicator, useAgentFreeze } from "./AgentFreeze";
+import { AgentActivityBubble } from "./AgentActivityBubble";
 import { AgentInputBubble } from "./AgentInputBubble";
 import { LiveAgentCharacter } from "./LiveAgentCharacter";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
@@ -7,6 +8,7 @@ import { AgentConnectionRing } from "./ConnectionRings";
 import ringStyles from "./ConnectionRings.module.scss";
 import { useStoreApi, type NodeProps } from "@xyflow/react";
 import { useAgents, useAgentStore } from "../agent-store";
+import { resolveAgentCharacterState } from "../agent-appearance";
 import type { AgentFlowNode } from "../canvas-layout";
 import { useNavigationGuard } from "../navigation-guard";
 import agentStyles from "./AgentPanel.module.scss";
@@ -108,9 +110,11 @@ export const AgentNode = memo(function AgentNode({
             aria-expanded={!!menu || undefined}
             onClick={selectAgent}
           >
-            <FrozenIndicator agent={agent} /><span className={agentStyles.nodeNameText}>{agent.name}</span>
+            {agent.executionControl?.state === "freezing" && <FrozenIndicator agent={agent} />}
+            <span className={agentStyles.nodeNameText}>{agent.name}</span>
           </button>
         </Tooltip>
+        <AgentActivityBubble agentName={agent.name} status={resolveAgentCharacterState(agent).status} />
         <div className={agentStyles.nodeIssues}>
           <AgentInputBubble agentId={agent.id} agentName={agent.name} count={agent.pendingUserInputCount} fallbackRef={nameButton} />
           {(["warning", "error"] as const).map(severity => agent.issueCounts[severity] > 0 && (

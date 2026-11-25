@@ -19,7 +19,7 @@ const agent: Agent = {
   queuedCount: 0, runningTaskCount: 0, unfinishedTaskCount: 0, chatWorking: false, pendingUserInputCount: 0, issueCounts: { warning: 0, error: 0 },
 };
 
-async function setup(t: TestContext) {
+async function setup(t: TestContext, characterAnimationsPaused = false) {
   const store = createAgentStore();
   const removed: string[] = [], moves: number[][] = [];
   let allowed = true, failDelete = false, bubbled = 0;
@@ -36,8 +36,10 @@ async function setup(t: TestContext) {
       selected: false, isConnectable: false, zIndex: 1, selectable: true, deletable: false,
       draggable: true, positionAbsoluteX: 0, positionAbsoluteY: 0 } satisfies NodeProps<AgentFlowNode>);
   }
+  const settings = initialSettings();
+  settings.settings.characterAnimationsPaused = characterAnimationsPaused;
   const p = await mountComponent(t, h(AgentContext.Provider, { value: store },
-    h(SettingsContext.Provider, { value: createSettingsStore(initialSettings()) },
+    h(SettingsContext.Provider, { value: createSettingsStore(settings) },
       h(UnsavedContext.Provider, { value: { setDirty() {}, attempt(action) { if (allowed) action(); return allowed; } } },
         h(ReactFlowProvider, null, h(ConnectionRingsProvider, { workspaceId: "workspace", children:
           h("div", { onClick() { bubbled++; }, onContextMenu() { bubbled++; } }, h(Probe)) }))))));
@@ -50,6 +52,49 @@ async function setup(t: TestContext) {
     pan: () => act(async () => flow.setState({ transform: [1, 1, 1] })),
   };
 }
+
+test("the canvas activity tooltip stays in sync with the character while motion is paused", async t => {
+  const p = await setup(t, true);
+  const bubble = p.document.querySelector<HTMLButtonElement>('button[aria-label="Ava, Idle"]')!;
+  const character = p.document.querySelector("svg[data-frozen]")!;
+  const tooltip = () => p.document.querySelector('[role="tooltip"]');
+  assert.equal(character.getAttribute("data-paused"), "true");
+  await p.click(bubble);
+  for (const [state, execution, counts, pose, title, frozen] of [
+    ["idle", "active", {}, "idle", "Idle", false],
+    ["queued", "active", { queuedCount: 1, unfinishedTaskCount: 1 }, "idle", "Idle", false],
+    ["running", "active", { runningTaskCount: 1, unfinishedTaskCount: 1 }, "working", "Working", false],
+    ["running", "active", { chatWorking: true }, "working", "Working", false],
+    ["waiting", "active", { chatWorking: true }, "working", "Working", false],
+    ["waiting", "freezing", {}, "working", "Working", false],
+    ["idle", "freezing", {}, "idle", "Idle", false],
+    ["waiting", "frozen", {}, "working", "Frozen", true],
+    ["waiting", "resuming", {}, "working", "Preparing resume…", true],
+    ["running", "active", {}, "working", "Working", false],
+  ] as const) {
+    await act(async () => p.store.setState({ agents: { one: { ...agent, ...counts, state, executionControl: {
+      state: execution, revision: 1, requestedAt: null, frozenAt: null, queuedTriggerCount: 0,
+      backlogPending: false, workspaceHeld: false,
+    } } } }));
+    assert.equal(character.getAttribute("data-activity"), pose);
+    assert.equal(character.getAttribute("data-frozen"), String(frozen));
+    assert.equal(bubble.getAttribute("aria-label"), `Ava, ${title}`);
+    assert.equal(bubble.firstElementChild?.getAttribute("data-activity"), frozen ? execution : pose);
+    assert.equal(tooltip()?.querySelector("strong")?.textContent, title);
+    assert.equal(!!p.name().querySelector('[aria-label="Freezing…"]'), execution === "freezing");
+  }
+  assert.match(tooltip()?.textContent ?? "", /working on tasks or Chat/);
+  await p.key(bubble, "Escape");
+  assert.equal(tooltip(), null);
+  bubble.scrollIntoView = () => {};
+  await act(async () => {
+    bubble.focus();
+    await new Promise<void>(resolve => p.window.requestAnimationFrame(() => resolve()));
+  });
+  assert.equal(tooltip()?.querySelector("strong")?.textContent, "Working");
+  assert.equal(p.store.getState().selected.workspace, "other");
+  assert.equal(p.bubbled(), 0);
+});
 
 test("right-click targets an agent without selecting it; shortcuts use guarded tabs", async t => {
   const p = await setup(t);

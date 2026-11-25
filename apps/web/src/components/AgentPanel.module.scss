@@ -292,6 +292,15 @@
   .nodeName { height: 64px; }
   .node[data-issues="true"] {
     .nodeIssues { --issue-gap: 8px; }
+    .nodeIssues:has(> :nth-child(3)) {
+      // Three touch targets in one row would reach the activity bubble.
+      grid-template-columns: repeat(2, 1fr);
+      transform: translateX(calc(25% - var(--issue-gap) / 4));
+
+      > :first-child { grid-area: 1 / 1; }
+      > :nth-child(2) { grid-area: 2 / 1; }
+      > :nth-child(3) { grid-area: 2 / 2; }
+    }
   }
 }
 .creationCharacter { display: flex; flex-direction: column; align-items: center; gap: 8px; }

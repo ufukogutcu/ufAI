@@ -228,6 +228,7 @@ export function Tooltip({
           children.props.onFocus?.(event);
           if (!event.currentTarget.matches(":focus-visible")) return;
           focused.current = true;
+          dismissed.current = false;
           if (live) {
             // Let keyboard-triggered overflow scrolling settle before opening the live tooltip.
             event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });

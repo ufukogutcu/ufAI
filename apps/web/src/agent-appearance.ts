@@ -15,6 +15,17 @@ export function agentActivity(state: Agent["state"]): CharacterActivity {
   return state === "running" || state === "waiting" ? "working" : "idle";
 }
 
+export type AgentActivityStatus = Activity | "frozen" | "resuming";
+
+export function resolveAgentCharacterState(agent: Pick<Agent, "state" | "executionControl">) {
+  // When enabling a new live activity, update its icon and tooltip in AgentActivityBubble and extend the character/bubble parity tests.
+  const activity = agentActivity(agent.state);
+  const executionState = agent.executionControl?.state;
+  const frozen = executionState === "frozen" || executionState === "resuming";
+  const status: AgentActivityStatus = frozen ? executionState : activity;
+  return { activity, frozen, status };
+}
+
 export type Slot = keyof typeof catalog.slots;
 export const slots = (Object.keys(catalog.slots) as Slot[]).map(id => ({ id, name: catalog.slots[id] }));
 export const collections = ["All", "Cute", "Fantasy", "Tech"] as const;

@@ -35,6 +35,7 @@ import styles from "./Themes.module.scss";
 import { GlassMaterial } from "../components/GlassMaterial";
 import { CodexUsageBar } from "../components/CodexUsageBar";
 import { AgentCharacter } from "../components/AgentCharacter";
+import { AgentActivityGlyph } from "../components/AgentActivityBubble";
 import { defaultAppearance } from "../agent-appearance";
 import { connectionRingPaths } from "../connection-appearance";
 import ringStyles from "../components/ConnectionRings.module.scss";
@@ -251,7 +252,7 @@ function ThemePreview({
                     <GlassMaterial />
                     − &nbsp; 100% &nbsp; +
                   </span>
-                  <svg className={`${styles.agentSampleScene} ${ringStyles.agent}`} viewBox="0 0 218 224" role="img" aria-label="Agent connection arcs, hover ring and endpoint grips">
+                  <svg className={`${styles.agentSampleScene} ${ringStyles.agent}`} viewBox="0 0 218 224" role="img" aria-label="Frozen agent activity bubble, connection arcs, hover ring and endpoint grips">
                     <g transform="translate(12 0)" className={ringStyles.ringAppearance}>
                       <g className={ringStyles.outline}>
                         <path d={sampleRingPaths.arcs} />
@@ -269,6 +270,7 @@ function ThemePreview({
                         <AgentCharacter appearance={defaultAppearance} frozen paused decorative className={styles.agentSampleCharacter} />
                         <div className={styles.agentSampleCard}>
                           <span className={styles.agentSampleName}>Research assistant</span>
+                          <span className={styles.agentSampleActivity}><AgentActivityGlyph status="frozen" /></span>
                           <span className={`${styles.agentSampleTask} ${taskBubbleStyles.bubble}`} aria-label="0 ongoing tasks">0</span>
                         </div>
                       </div>

@@ -1,9 +1,10 @@
 import type { Agent } from "../../../server/src/contracts";
-import { agentActivity } from "../agent-appearance";
+import { resolveAgentCharacterState } from "../agent-appearance";
 import { useSettings } from "../settings-store";
 import { AgentCharacter } from "./AgentCharacter";
 
 export function LiveAgentCharacter({ agent, className }: { agent: Agent; className?: string }) {
   const paused = useSettings(s => s.snapshot.settings.characterAnimationsPaused);
-  return <AgentCharacter appearance={agent.appearance} frozen={agent.executionControl?.state === "frozen" || agent.executionControl?.state === "resuming"} activity={agentActivity(agent.state)} paused={paused} className={className} decorative />;
+  const { activity, frozen } = resolveAgentCharacterState(agent);
+  return <AgentCharacter appearance={agent.appearance} frozen={frozen} activity={activity} paused={paused} className={className} decorative />;
 }
