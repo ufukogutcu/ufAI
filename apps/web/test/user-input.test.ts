@@ -104,3 +104,37 @@ test("agent bubble opens an answer dialog, keeps the empty result and restores f
   assert.equal(p.document.activeElement, p.document.querySelector("[data-input-list]"));
   await p.click(p.document.querySelector("button[aria-label='Close dialog']")!); assert.equal(p.document.activeElement?.textContent, "Agent name");
 });
+
+test("agent input dialog keeps loaded requests in place while refreshing", async t => {
+  const store = createAgentStore();
+  const next = { ...base, id: "next", name: "A new question" };
+  let respondToPage!: (response: Response) => void;
+  t.mock.method(globalThis, "fetch", (url: string) => {
+    if (url.includes("/user-input-requests?")) {
+      return new Promise<Response>(resolve => { respondToPage = resolve; });
+    }
+    return Promise.resolve(Response.json(url.endsWith("/next") ? next : base));
+  });
+  function Probe() {
+    const fallbackRef = useRef<HTMLButtonElement>(null);
+    return h(AgentInputBubble, { agentId: "a", agentName: "Agent", count: 1, fallbackRef });
+  }
+  const p = await mountComponent(t, guard(h(AgentContext.Provider, { value: store }, h(Probe))));
+  await p.click(p.document.querySelector("button[aria-haspopup='dialog']")!);
+  const dialog = p.document.querySelector("dialog[open]")!;
+  assert.match(dialog.textContent!, /Loading requests/);
+  await act(async () => { respondToPage(Response.json({ items: [base], total: 1 })); });
+
+  const answer = dialog.querySelector("textarea")!;
+  answer.focus();
+  await input(p, "textarea", "Keep this draft");
+  await act(async () => { store.setState(state => ({ eventVersion: state.eventVersion + 1 })); });
+  assert.doesNotMatch(dialog.textContent!, /Loading requests/);
+  assert.equal(dialog.querySelector("textarea"), answer);
+  assert.equal(p.document.activeElement, answer);
+
+  await act(async () => { respondToPage(Response.json({ items: [base, next], total: 2 })); });
+  assert.match(dialog.textContent!, /A new question/);
+  assert.equal(answer.value, "Keep this draft");
+  assert.equal(p.document.activeElement, answer);
+});
