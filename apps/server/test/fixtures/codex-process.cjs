@@ -98,6 +98,17 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       const events = [
         { id: request.id, result: { turn: { id: "test-turn" } } },
       ];
+      if (mode === "test-compaction") {
+        const params = {
+          threadId: "test-thread",
+          turnId: "test-turn",
+          item: { id: "compaction", type: "contextCompaction" },
+        };
+        events.push(
+          { method: "item/started", params },
+          { method: "item/completed", params },
+        );
+      }
       if (mode === "test-exit") {
         process.exit(1);
         break;

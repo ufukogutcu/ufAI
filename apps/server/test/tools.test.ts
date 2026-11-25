@@ -20,7 +20,7 @@ import { AgentTools } from "../src/agent-tools.js";
 import { MessagingService } from "../src/messaging.js";
 import { AgentExecution } from "../src/agent-execution.js";
 import { ConnectionService } from "../src/connection-service.js";
-import type { TaskRequest, ToolRound } from "../src/execution-types.js";
+import type { TaskRequest, TextRequest, ToolRound } from "../src/execution-types.js";
 import { createApp } from "../src/app.js";
 import { removeToolTables } from "./legacy-schema.js";
 async function until(fn: () => boolean) {
@@ -1107,6 +1107,77 @@ for (const finalText of ["DONE_TOKEN", ""]) for (const successful of [true,false
   assert.equal(s.engine.task(s.owner.taskId).status,successful ? "completed" : "awaiting_user");
   if(successful) assert.equal(await readFile(join(s.files.location("task",s.owner.taskId).path,"completion.txt"),"utf8"),"EXACT_CONTENT");
   else await assert.rejects(readFile(join(s.files.location("task",s.owner.taskId).path,"completion.txt")),/ENOENT/);
+});
+
+test("saved task progress carries tool findings forward and survives failed maintenance", async (t) => {
+  const s = await setup(t);
+  const { taskId } = s.owner;
+  const draftProgress = "Wrote draft report.txt.";
+  const finalProgress = "Replaced the draft with the final report.txt.";
+  const generationPrompts: string[] = [];
+  const maintenanceRequests: TextRequest[] = [];
+  s.connections.toolRound = async (_snapshot, request) => {
+    const answer: ToolRound = { text: "Done.", calls: [], continuation: [], usage: null };
+    if (request.continuation?.length) return answer;
+    generationPrompts.push(request.instructions);
+    const input = request.messages.at(-1)?.content;
+    if (input === "Confirm the report") return answer;
+    const replacing = input === "Finalize the report";
+    return {
+      ...answer,
+      text: "",
+      calls: [{
+        id: "write-report",
+        name: "files_write",
+        arguments: {
+          path: "report.txt",
+          text: replacing ? "Final report" : "Draft report",
+          expectedSha256: replacing ? createHash("sha256").update("Draft report").digest("hex") : null,
+        },
+      }],
+    };
+  };
+  s.connections.generate = async (_snapshot, request) => {
+    const data = JSON.parse(request.messages[0]!.content);
+    maintenanceRequests.push(request);
+    if (data.messages[0].content === "Confirm the report") {
+      return { text: "{}", finishReason: "stop", usage: null };
+    }
+    const summary = data.toolEvidence.tools[0]?.arguments?.text === "Final report"
+      ? finalProgress
+      : draftProgress;
+    return {
+      text: JSON.stringify({ status: "completed", summary, memories: [] }),
+      finishReason: "stop",
+      usage: null,
+    };
+  };
+
+  s.engine.pump();
+  await until(() => s.engine.task(taskId).summary === draftProgress);
+  s.engine.submit("a", taskId, "Finalize the report", randomUUID());
+  s.engine.pump();
+  await until(() => s.engine.task(taskId).summary === finalProgress);
+  const third = s.engine.submit("a", taskId, "Confirm the report", randomUUID());
+  s.engine.pump();
+  await until(() => s.engine.task(taskId).status === "awaiting_user");
+
+  const [first, second] = maintenanceRequests;
+  assert.match(first!.instructions, /Use priorSummary as the starting point/);
+  assert.match(first!.instructions, /newer evidence supersedes/);
+  const firstData = JSON.parse(first!.messages[0]!.content);
+  assert.equal(firstData.messages[1].content, "Done.");
+  assert.equal(firstData.toolEvidence.tools[0].result.ok, true);
+  assert.ok(generationPrompts[1]?.includes(`Saved task progress: ${draftProgress}`));
+  const secondData = JSON.parse(second!.messages[0]!.content);
+  assert.equal(secondData.priorSummary, draftProgress);
+  assert.equal(secondData.toolEvidence.tools[0].result.ok, true);
+  assert.ok(generationPrompts[2]?.includes(`Saved task progress: ${finalProgress}`));
+  assert.ok(!generationPrompts[2]?.includes(draftProgress));
+  assert.equal(maintenanceRequests.length, 4);
+  assert.equal(s.engine.task(taskId).summary, finalProgress);
+  assert.equal(s.db.prepare("SELECT content FROM agent_messages WHERE turnId=? AND role='assistant'").pluck().get(third.turnId), "Done.");
+  assert.equal(s.db.prepare("SELECT count(*) FROM tool_invocations").pluck().get(), 2);
 });
 
 test("retired file tools replay committed results and guide unresolved calls to the Workspace Folder", async t => {

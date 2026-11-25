@@ -37,6 +37,13 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       return send({method:"turn/completed",params:{threadId,turn:{id:turnId,status:"completed"}}});
     }
     if (text.includes("hang")) return;
+    if (text.includes("native-compaction")) {
+      const params = { threadId, turnId, item: { id: "compaction", type: "contextCompaction" } };
+      if (text.includes("with-request-id"))
+        return send({ id: 999, method: "item/started", params });
+      send({ method: "item/started", params });
+      send({ method: "item/completed", params });
+    }
     if (text.includes("multiple-items")) {
       send({
         method: "item/agentMessage/delta",

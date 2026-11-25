@@ -288,7 +288,7 @@ One local installation holds one shared setup across browser sessions. There are
 
 - **Status:** partial
 - **Purpose:** Carry useful preferences and past findings between an agent’s isolated tasks.
-- **Behavior:** The agent automatically maintains a work summary and may learn lasting preferences or findings after successful replies. New tasks receive bounded shared memories and can retrieve relevant history. Memory entries link to source messages; findings are not independently verified.
+- **Behavior:** After a successful reply, the agent updates saved progress with relevant prior work and important outcomes from its tools, such as changed files, produced artifacts, test results, and unresolved blockers. Later turns in the same task or Chat receive this progress. The agent may also learn lasting preferences or findings. New tasks receive bounded shared memories and can retrieve relevant history. Memory entries link to source messages; findings are not independently verified.
 - **Steps:** Open Memory to inspect entries, view their sources, edit them, or choose Forget. Forgetting an entry preserves its original transcript and suppresses automatic updates to that remembered topic.
 - **Limitations:** Recall is selective and does not guarantee every relevant past detail will be found. Memory is scoped to one agent. A memory update can fail without losing the answer. Editing memory does not edit the agent’s configured instructions or grant permissions.
 
@@ -296,7 +296,7 @@ One local installation holds one shared setup across browser sessions. There are
 
 - **Status:** implemented
 - **Purpose:** Keep long task context within the selected model’s saved capacity.
-- **Behavior:** Older complete exchanges are summarized automatically at the agent’s configured threshold or an earlier safety limit. An empty threshold uses 80%. Recent context and the new input remain available, while original transcripts stay saved.
+- **Behavior:** Before a new turn, ufAI summarizes older complete exchanges at the agent’s configured threshold or an earlier safety limit. An empty threshold uses 80%. Recent context and the new input remain available, while original transcripts stay saved. Codex-backed agents can also compact their working context, including tool results, during a running turn and continue that same turn under Codex’s own limits.
 - **Limitations:** Summaries can lose details. An unknown capacity must be configured on Providers before running. If a summary fails or the task still cannot fit, Retry or start a smaller New Task. Saved capacity does not enlarge the actual model window.
 
 ### model-presets

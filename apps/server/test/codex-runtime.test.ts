@@ -150,6 +150,14 @@ test("Codex test rejects empty replies, failures, tool requests, approvals, malf
     );
   }
 });
+test("Codex model tests continue after context compaction", async (t) => {
+  const { runtime } = await setup(t, "test-compaction");
+  await runtime.login("one", false);
+  assert.equal(
+    await runtime.test("one", "test-model", new AbortController().signal),
+    "OK",
+  );
+});
 test("Codex test cancellation settles the active turn and closes the child", async (t) => {
   const { runtime, children } = await setup(t, "test-hang");
   await runtime.login("one", false);

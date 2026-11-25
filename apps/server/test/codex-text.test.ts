@@ -47,12 +47,12 @@ test("Codex journals queued callbacks before execution and withholds replies unt
   assert.deepEqual(executed,queued);
   assert.equal(continuations, 2);
 });
-async function runtime(t: any) {
+async function runtime(t: any, script = fixture) {
   const dir = await mkdtemp(join(tmpdir(), "ufai-codex-text-"));
   const r = new CodexRuntime(
     dir,
     () =>
-      spawn(process.execPath, [fixture], { stdio: ["pipe", "pipe", "pipe"] }),
+      spawn(process.execPath, [script], { stdio: ["pipe", "pipe", "pipe"] }),
     1000,
     1000,
   );
@@ -92,6 +92,24 @@ test("Codex rejects tool activity without killing an unrelated text thread", asy
     /unsupported action/,
   );
   assert.equal((await r.executeText("connection", base)).text, "Hello world");
+});
+test("Codex text generation treats only compaction notifications as informational", async (t) => {
+  const r = await runtime(t);
+  const deltas: string[] = [];
+  const answer = await r.executeText("connection", {
+    ...base,
+    messages: [{ role: "user", content: "native-compaction" }],
+    onDelta: (delta) => deltas.push(delta),
+  });
+  assert.equal(answer.text, "Hello world");
+  assert.equal(deltas.join(""), answer.text);
+  await assert.rejects(
+    r.executeText("connection", {
+      ...base,
+      messages: [{ role: "user", content: "native-compaction-with-request-id" }],
+    }),
+    /requested a tool/,
+  );
 });
 test("Codex text-only generation still rejects a completed empty reply", async t => {
   const r = await runtime(t);
@@ -353,6 +371,23 @@ test("Codex executes more than 32 dynamic tool rounds", async (t) => {
     },
   });
   assert.equal(calls, 130);
+  assert.equal(reply.text, "Final answer.");
+});
+test("Codex finishes the same turn after compacting between tool results", async (t) => {
+  const r = await runtime(t, fileURLToPath(new URL("./fixtures/codex-tools-process.cjs", import.meta.url)));
+  const paths: unknown[] = [];
+  const reply = await r.executeTask("connection", {
+    ...base,
+    messages: [{ role: "user", content: "native-compaction" }],
+    tools: [taskTools.find((tool) => tool.name === "files_read")!],
+    onTool: async (call) => {
+      assert.equal(call.name, "files_read");
+      paths.push(call.arguments.path);
+      return { ok: true, text: "Contents" };
+    },
+  });
+  assert.deepEqual(paths, ["a.txt", "b.txt"]);
+  assert.equal(reply.finishReason, "stop");
   assert.equal(reply.text, "Final answer.");
 });
 

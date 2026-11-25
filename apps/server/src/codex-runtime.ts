@@ -176,6 +176,14 @@ class CodexClient {
       }
       const message = parsed as Record<string, unknown>;
       const params = object(message.params);
+      // Codex manages its own context. Compaction notifications require no reply.
+      if (
+        message.id === undefined &&
+        (message.method === "item/started" || message.method === "item/completed") &&
+        object(params.item).type === "contextCompaction"
+      ) {
+        continue;
+      }
       const textTurn =
         typeof params.threadId === "string"
           ? this.textTurns.get(params.threadId)
