@@ -71,7 +71,7 @@ export function createCodexUsageStore() {
         if (current) return details && !current.details ? current.promise.then(() => get().refresh(id, true, force)) : current.promise;
         const started = revision.get(id) ?? 0;
         const controller = new AbortController();
-        patch(id, { loading: true, error: "" });
+        patch(id, { loading: true });
         const promise = schedule(async () => {
           if (controller.signal.aborted || !active.has(id)) return;
           try {

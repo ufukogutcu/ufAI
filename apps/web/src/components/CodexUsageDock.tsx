@@ -1,6 +1,6 @@
 import { BusyButton, Feedback, LoadingIndicator, LoadingState } from "./Feedback";
 import { memo, useContext, useEffect, useRef, useState } from "react";
-import { AlertCircle, Info, LogIn } from "lucide-react";
+import { AlertCircle, Info, LogIn, RefreshCw } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { ConnectionContext, useConnections } from "../connection-store";
 import { CodexUsageContext, useCodexUsage, type UsageEntry } from "../codex-usage-store";
@@ -65,7 +65,7 @@ const UsageButton = memo(function UsageButton({ provider, onOpen }: { provider: 
   </Tooltip>;
 });
 function usageState(entry: UsageEntry | undefined): string {
-  return entry?.disconnected ? "Sign-in required." : entry?.loading ? "Loading usage…" : "Usage unavailable.";
+  return entry?.disconnected ? "Sign-in required." : entry?.loading && !entry.error ? "Loading usage…" : "Usage unavailable.";
 }
 function UsageTooltip({ name, entry, now }: { name: string; entry?: UsageEntry; now: number }) {
   const snapshot = entry?.snapshot;
@@ -94,10 +94,11 @@ function resetIneligibility(credit: CodexResetCredit, now: number): string {
   if (credit.expiresAt !== null && credit.expiresAt * 1000 <= now) return "This reset has expired.";
   return "";
 }
-function ResetRow({ credit, now, unavailableReason, onUse }: {
+function ResetRow({ credit, now, unavailableReason, refreshing, onUse }: {
   credit: CodexResetCredit;
   now: number;
   unavailableReason: string;
+  refreshing: boolean;
   onUse: (credit: CodexResetCredit) => void;
 }) {
   const title = credit.title ?? "Earned reset";
@@ -111,7 +112,9 @@ function ResetRow({ credit, now, unavailableReason, onUse }: {
       <button type="button" className={styles.creditTitle} aria-label={`Reset details: ${title}`}><span>{title}</span><Info size={14} aria-hidden="true" /></button>
     </Tooltip>
     <span className={styles.expiry}>{expiryPrefix && <span className={styles.expiryPrefix}>{expiryPrefix}</span>}<span className={styles.expiryValue}>{expiry.slice(expiryPrefix.length)}</span></span>
-    {ineligible ? <span className={styles.creditStatus}>{credit.status === "available" ? "Unavailable" : credit.status}</span> : <button type="button" className={`button secondary ${styles.useReset}`} aria-label={`Use reset: ${title}`} disabled={!!reason} onClick={() => onUse(credit)}>Use</button>}
+    {ineligible ? <span className={styles.creditStatus}>{credit.status === "available" ? "Unavailable" : credit.status}</span> :
+      <button type="button" className={`button secondary ${styles.useReset}`} aria-label={`Use reset: ${title}`}
+        disabled={!!reason} aria-disabled={refreshing || undefined} onClick={() => { if (!refreshing) onUse(credit); }}>Use</button>}
   </div>;
 }
 function UsageModal({ provider, onClose }: { provider: ProviderConnection; onClose: () => void }) {
@@ -131,8 +134,9 @@ function UsageModal({ provider, onClose }: { provider: ProviderConnection; onClo
   const snapshot = entry?.snapshot;
   const reset = snapshot?.resetCredits;
   const busy = confirming || !!entry?.redeeming;
-  const canReset = !!snapshot && !entry?.disconnected && !busy && !entry?.loading;
-  const unavailableReason = entry?.disconnected ? "Sign in to use a reset." : busy ? "A reset is being used." : entry?.loading ? "Wait for usage to finish refreshing." : entry?.attempt ? "Retry the previous reset attempt before using another reset." : !reset?.availableCount ? "No resets are currently available." : "";
+  const refreshing = !!entry?.loading;
+  const resetEligible = !!snapshot && !entry?.disconnected && !busy;
+  const unavailableReason = entry?.disconnected ? "Sign in to use a reset." : busy ? "A reset is being used." : entry?.attempt ? "Retry the previous reset attempt before using another reset." : !reset?.availableCount ? "No resets are currently available." : "";
   const selectedCredit = reset?.credits?.find((credit) => credit.id === confirmation?.creditId);
   const confirmationReason = confirmation?.retry ? "" : confirmation?.creditId ? selectedCredit ? resetIneligibility(selectedCredit, now) || unavailableReason : "This reset is no longer available. Refresh usage to check." : unavailableReason;
   function openReset(credit: CodexResetCredit) {
@@ -140,7 +144,7 @@ function UsageModal({ provider, onClose }: { provider: ProviderConnection; onClo
   }
   function closeConfirmation() { if (!busy) setConfirmation(null); }
   async function confirm() {
-    if (!confirmation || !canReset || confirmationReason) return;
+    if (!confirmation || !resetEligible || refreshing || confirmationReason) return;
     setConfirming(true);
     try {
       await redeem(provider.id, confirmation.creditId);
@@ -149,9 +153,17 @@ function UsageModal({ provider, onClose }: { provider: ProviderConnection; onClo
   }
   return <><Dialog title={`${provider.name} usage`} onClose={onClose} busy={busy} contentClassName={styles.dialogContent}>
     <div className={styles.modalBody}>
-      <div className={styles.summary}><div className={styles.accountDetails}><span>Plan: {snapshot?.planType ?? "Unknown"}</span>{snapshot && <span className={styles.updated}>Updated {dateTime(Date.parse(snapshot.fetchedAt) / 1000)}</span>}</div><BusyButton busy={entry?.loading} type="button" className="button secondary" disabled={entry?.loading || entry?.redeeming} onClick={() => void refresh(provider.id, true, true)}>{entry?.loading ? "Refreshing…" : "Refresh"}</BusyButton></div>
+      <div className={styles.summary}>
+        <div className={styles.accountDetails}><span>Plan: {snapshot?.planType ?? "Unknown"}</span>{snapshot && <span className={styles.updated}>Updated {dateTime(Date.parse(snapshot.fetchedAt) / 1000)}</span>}</div>
+        <button type="button" className={`button secondary ${styles.refreshAction}`} disabled={entry?.redeeming}
+          aria-disabled={refreshing || undefined} aria-busy={refreshing || undefined}
+          onClick={() => { if (!refreshing) void refresh(provider.id, true, true); }}>
+          {refreshing ? <LoadingIndicator /> : <RefreshCw size={18} aria-hidden="true" />}
+          Refresh
+        </button>
+      </div>
       {entry?.error && <Feedback role="alert">{snapshot ? "Stale usage · " : ""}{entry.error}</Feedback>}
-      {!snapshot && (entry?.loading ? <LoadingState>Loading usage…</LoadingState> : <p className={styles.emptyState}>{usageState(entry)}</p>)}
+      {!snapshot && (refreshing && !entry.error && !entry.disconnected ? <LoadingState>Loading usage…</LoadingState> : <p className={styles.emptyState}>{usageState(entry)}</p>)}
       {snapshot && <>
         {snapshot.ordinaryUsageAllowed === false && <p className={styles.notice}>Included usage is currently unavailable according to Codex.</p>}
         {!snapshot.limits.length && <p className={styles.emptyState}>Usage windows unavailable.</p>}
@@ -168,9 +180,12 @@ function UsageModal({ provider, onClose }: { provider: ProviderConnection; onClo
           {!reset && <p>Reset availability is unknown.</p>}
           {reset && reset.credits === null && <p>Individual reset details are unavailable.</p>}
           {reset?.credits && reset.credits.length < reset.availableCount && <p>Codex returned details for only some available resets.</p>}
-          {!!reset?.credits?.length && <div className={styles.resetsList}>{reset.credits.map((credit) => <ResetRow key={credit.id} credit={credit} now={now} unavailableReason={unavailableReason} onUse={openReset} />)}</div>}
-          {!!reset?.availableCount && (!reset.credits?.length || reset.credits.length < reset.availableCount) && <button type="button" className={`button secondary ${styles.resetFallback}`} disabled={!canReset || !!entry?.attempt} onClick={() => setConfirmation({ title: "Next available reset" })}>Use next available reset</button>}
-          {entry?.attempt && <button type="button" className={`button secondary ${styles.resetFallback}`} disabled={!canReset} onClick={() => setConfirmation({ creditId: entry.attempt?.creditId, title: "Previous reset attempt", retry: true })}>Retry previous reset attempt</button>}
+          {!!reset?.credits?.length && <div className={styles.resetsList}>{reset.credits.map((credit) => <ResetRow key={credit.id} credit={credit} now={now} unavailableReason={unavailableReason} refreshing={refreshing} onUse={openReset} />)}</div>}
+          {!!reset?.availableCount && (!reset.credits?.length || reset.credits.length < reset.availableCount) &&
+            <button type="button" className={`button secondary ${styles.resetFallback}`} disabled={!resetEligible || !!entry?.attempt}
+              aria-disabled={refreshing || undefined} onClick={() => { if (!refreshing) setConfirmation({ title: "Next available reset" }); }}>Use next available reset</button>}
+          {entry?.attempt && <button type="button" className={`button secondary ${styles.resetFallback}`} disabled={!resetEligible}
+            aria-disabled={refreshing || undefined} onClick={() => { if (!refreshing) setConfirmation({ creditId: entry.attempt?.creditId, title: "Previous reset attempt", retry: true }); }}>Retry previous reset attempt</button>}
           {entry?.message && <p role="status">{entry.message}</p>}
         </section>
       </>}
@@ -181,7 +196,11 @@ function UsageModal({ provider, onClose }: { provider: ProviderConnection; onClo
         <strong>{confirmation.title}</strong>
         <p>This consumes one earned reset if an eligible usage window can be reset.</p>
         {confirmationReason && !busy && <p role="status">{confirmationReason}</p>}
-        <div className={styles.actions}><button type="button" className="button secondary" data-cancel-reset disabled={busy} onClick={closeConfirmation}>Cancel</button><BusyButton busy={busy} type="button" className="button" disabled={!canReset || !!confirmationReason} onClick={() => void confirm()}>{busy ? "Using reset…" : "Use reset"}</BusyButton></div>
+        <div className={styles.actions}>
+          <button type="button" className="button secondary" data-cancel-reset disabled={busy} onClick={closeConfirmation}>Cancel</button>
+          <BusyButton busy={busy} type="button" className={`button ${styles.confirmAction}`} disabled={!resetEligible || !!confirmationReason}
+            aria-disabled={refreshing || undefined} onClick={() => void confirm()}>{busy ? "Using reset…" : "Use reset"}</BusyButton>
+        </div>
       </div>
     </Dialog>}
   </>;

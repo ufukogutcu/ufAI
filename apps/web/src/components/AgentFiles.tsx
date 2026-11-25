@@ -55,6 +55,7 @@ function WorkingFiles({ kind, ownerId }: { kind: "agent" | "workspace"; ownerId:
   }
   const absolute = absolutePath(path);
   const ready = location?.state === "ready";
+  const loadingPage = busy && !listing && !error && (!location || ready);
 
   useEffect(() => {
     setAction(""); setActionError(""); setStatus(""); setCopyFallback(""); setMenu(null);
@@ -124,6 +125,12 @@ function WorkingFiles({ kind, ownerId }: { kind: "agent" | "workspace"; ownerId:
     navigate(next);
   }
 
+  function refreshFiles() {
+    if (busy) return;
+    setMenu(null);
+    void refresh();
+  }
+
   function openMenu(entry: AgentFileEntry, trigger: HTMLElement, x: number, y: number) {
     if (busy || deleteBusy || deleting) return;
     trigger.focus({ preventScroll: true });
@@ -190,7 +197,12 @@ function WorkingFiles({ kind, ownerId }: { kind: "agent" | "workspace"; ownerId:
       <div className={styles.toolbar}>
         <div className={styles.actions}>
           <Tooltip content="Up one folder"><button type="button" className="iconButton" aria-label="Up one folder" disabled={!path} onClick={() => go(parts.slice(0, -1).join("/"))}><ArrowUp size={16} aria-hidden="true" /></button></Tooltip>
-          <Tooltip content="Refresh files"><button type="button" className="iconButton" aria-label="Refresh files" ref={refreshButton} disabled={busy || action === "repair"} onClick={() => { setMenu(null); void refresh(); }}><RefreshCw size={16} aria-hidden="true" /></button></Tooltip>
+          <Tooltip content="Refresh files">
+            <button type="button" className="iconButton" aria-label="Refresh files" ref={refreshButton}
+              aria-busy={busy || undefined} aria-disabled={busy || undefined} disabled={action === "repair"} onClick={refreshFiles}>
+              {busy ? <LoadingIndicator /> : <RefreshCw size={16} aria-hidden="true" />}
+            </button>
+          </Tooltip>
           <Tooltip content="Copy folder path"><button type="button" className="iconButton" aria-label="Copy folder path" disabled={!absolute || !!action} onClick={() => void run("copy")}><Copy size={16} aria-hidden="true" /></button></Tooltip>
           <Tooltip content="Open in file manager"><button type="button" className="iconButton" aria-label="Open in file manager" aria-busy={action === "open"} disabled={!ready || !!action} onClick={() => void run("open")}><FolderOpen size={16} aria-hidden="true" /></button></Tooltip>
         </div>
@@ -202,7 +214,7 @@ function WorkingFiles({ kind, ownerId }: { kind: "agent" | "workspace"; ownerId:
         </nav>}
       </div>
       <div ref={content} className={styles.content} aria-busy={busy}>
-        <p className={styles.status} role="status">{(busy || location?.state === "pending" || action === "open") && <LoadingIndicator />}{busy ? "Loading files…" : location?.state === "pending" ? "Creating folder…" : action === "open" ? "Opening folder…" : status}</p>
+        <p className={styles.status} role="status">{(loadingPage || location?.state === "pending" || action === "open") && <LoadingIndicator />}{loadingPage ? "Loading files…" : location?.state === "pending" ? "Creating folder…" : action === "open" ? "Opening folder…" : status}</p>
         {actionError && <Feedback role="alert">{actionError}</Feedback>}
         {copyFallback && <code className={styles.path} tabIndex={0}>{copyFallback}</code>}
         {(error || location?.state === "error") && <div className={styles.feedback}>

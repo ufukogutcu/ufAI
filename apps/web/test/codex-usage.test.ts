@@ -22,6 +22,14 @@ test("usage stores isolate Providers, coalesce reads, retain stale snapshots, an
   assert.equal(store.getState().entries.one?.snapshot?.planType, "pro");
   assert.equal(store.getState().entries.one?.error, "Retry later");
   assert.equal(store.getState().entries.two, other);
+  const recovery = deferred<Response>();
+  t.mock.method(globalThis, "fetch", async () => recovery.promise);
+  const refreshing = store.getState().refresh("one");
+  assert.equal(store.getState().entries.one?.loading, true);
+  assert.equal(store.getState().entries.one?.error, "Retry later");
+  recovery.resolve(Response.json(snapshot));
+  await refreshing;
+  assert.equal(store.getState().entries.one?.error, "");
   const independent = createCodexUsageStore(); independent.getState().sync(["one"]);
   assert.equal(independent.getState().entries.one?.snapshot, undefined);
   t.mock.method(globalThis, "fetch", async () => Response.json({ error: "Sign in" }, { status: 401 }));

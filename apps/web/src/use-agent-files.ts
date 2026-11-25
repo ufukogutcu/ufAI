@@ -21,25 +21,30 @@ export function useWorkingFiles(kind: "agent" | "workspace", ownerId: string) {
     const controller = new AbortController();
     reading.current = controller;
     setBusy(true);
-    setError("");
+    let nextLocation: ManagedLocation | undefined;
     try {
       const value = await request<ManagedLocation>(`${base}/locations`, "GET", undefined, controller.signal);
       if (controller.signal.aborted) return;
-      setLocation(value);
+      nextLocation = value;
       if (value.state === "pending") {
-        setPage(null);
         timer.current = setTimeout(() => void load(), 500);
-      } else if (value.state === "error") {
-        setPage(null);
-      } else {
+      }
+      if (value.state === "ready") {
         const query = new URLSearchParams({ path, limit: "100", offset: String(offset) });
         const listing = await request<AgentFileListing>(`${base}/files?${query}`, "GET", undefined, controller.signal);
-        if (!controller.signal.aborted) setPage({ base, offset, listing });
+        if (controller.signal.aborted) return;
+        setPage({ base, offset, listing });
+      } else {
+        setPage(null);
       }
+      setError("");
     } catch (e) {
       if (!controller.signal.aborted) setError(errorMessage(e));
     } finally {
-      if (!controller.signal.aborted) setBusy(false);
+      if (!controller.signal.aborted) {
+        if (nextLocation) setLocation(nextLocation);
+        setBusy(false);
+      }
     }
   }, [base, path, offset]);
 

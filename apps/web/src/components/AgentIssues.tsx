@@ -11,7 +11,7 @@ import styles from "./AgentIssues.module.scss";
 
 function IssueList({ agentId, severity, count }: { agentId: string; severity: AgentIssue["severity"]; count: number }) {
   const version = useAgents(s => s.eventVersion);
-  const [page, setPage] = useState<Page<AgentIssue>>({ items: [], total: count });
+  const [page, setPage] = useState<Page<AgentIssue> | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -26,7 +26,6 @@ function IssueList({ agentId, severity, count }: { agentId: string; severity: Ag
     nextOffset.current = offset;
     loading.current = true;
     setBusy(true);
-    setError("");
     try {
       const result = await request<Page<AgentIssue>>(
         `/agents/${encodeURIComponent(agentId)}/issues?severity=${severity}&limit=20&offset=${offset}`,
@@ -35,8 +34,9 @@ function IssueList({ agentId, severity, count }: { agentId: string; severity: Ag
       if (controller.signal.aborted) return;
       setPage(previous => ({
         total: result.total,
-        items: offset ? [...new Map([...previous.items, ...result.items].map(item => [item.id, item])).values()] : result.items,
+        items: offset && previous ? [...new Map([...previous.items, ...result.items].map(item => [item.id, item])).values()] : result.items,
       }));
+      setError("");
     } catch (failure) {
       if (!controller.signal.aborted) setError(errorMessage(failure));
     } finally {
@@ -53,28 +53,29 @@ function IssueList({ agentId, severity, count }: { agentId: string; severity: Ag
   }, [load, version, count, retry]);
 
   function more() {
-    if (!loading.current) void load(page.items.length);
+    if (!loading.current && page) void load(page.items.length);
   }
   function tryAgain() {
+    if (loading.current) return;
     if (nextOffset.current) void load(nextOffset.current);
     else setRetry(value => value + 1);
   }
   return <>
-    <div className={styles.scroll} tabIndex={0} aria-label={`${severity === "warning" ? "Warning" : "Error"} details`}>
+    <div className={styles.scroll} tabIndex={0} aria-busy={busy} aria-label={`${severity === "warning" ? "Warning" : "Error"} details`}>
       <ul className={styles.list}>
-        {page.items.map(issue => <li key={issue.id}>
+        {page?.items.map(issue => <li key={issue.id}>
           {issue.taskTitle && <strong>{issue.taskTitle}</strong>}
           <p>{issue.message}</p>
         </li>)}
       </ul>
-      {!busy && !error && !page.items.length && <p>No current {severity === "warning" ? "warnings" : "errors"}.</p>}
+      {page?.items.length === 0 && <p>No current {severity === "warning" ? "warnings" : "errors"}.</p>}
     </div>
     <div className={styles.feedback} role="status" aria-live="polite">
-      {busy && <LoadingState>Loading issues…</LoadingState>}
+      {busy && !page && !error && <LoadingState>Loading issues…</LoadingState>}
       {error && <Feedback>{error}</Feedback>}
     </div>
-    {error ? <button type="button" className={`button secondary ${styles.action}`} onClick={tryAgain}>Retry</button>
-      : page.items.length < page.total && <button type="button" className={`button secondary ${styles.action}`} disabled={busy} onClick={more}>Load more</button>}
+    {error ? <button type="button" className={`button secondary ${styles.action}`} aria-disabled={busy || undefined} onClick={tryAgain}>Retry</button>
+      : page && page.items.length < page.total && <button type="button" className={`button secondary ${styles.action}`} aria-disabled={busy || undefined} onClick={more}>Load more</button>}
   </>;
 }
 

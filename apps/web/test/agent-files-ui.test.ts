@@ -12,6 +12,7 @@ async function setup(t: TestContext, entries: AgentFileEntry[], root = "/managed
   let items = entries;
   const calls: { url: string; method: string; body: Record<string, unknown> }[] = [];
   let deletion: (() => Promise<Response>) | null = null;
+  let listing: Promise<Response> | undefined;
   t.mock.method(globalThis, "fetch", async (input: string, init?: RequestInit) => {
     const url = new URL(String(input), "http://localhost"), body = JSON.parse(String(init?.body ?? "{}"));
     const method = init?.method ?? "GET";
@@ -23,6 +24,7 @@ async function setup(t: TestContext, entries: AgentFileEntry[], root = "/managed
     }
     if (url.pathname.endsWith("/locations")) return Response.json({ kind, ownerId: kind, path: root, state: "ready" });
     if (url.pathname.endsWith("/open")) return new Response(null, { status: 204 });
+    if (listing) return listing;
     const path = url.searchParams.get("path") ?? "", offset = Number(url.searchParams.get("offset"));
     const current = items.filter(item => (item.path.includes("/") ? item.path.slice(0, item.path.lastIndexOf("/")) : "") === path);
     return Response.json({ path, total: current.length, items: current.slice(offset, offset + 100) });
@@ -36,7 +38,10 @@ async function setup(t: TestContext, entries: AgentFileEntry[], root = "/managed
     await act(async () => row(name).focus());
     await p.key(row(name), key, key === "F10" ? { shiftKey: true } : {});
   };
-  return { ...p, calls, row, menuItem, button, open, setDeletion: (action: () => Promise<Response>) => { deletion = action; } };
+  return { ...p, calls, row, menuItem, button, open,
+    setDeletion: (action: () => Promise<Response>) => { deletion = action; },
+    setListing: (response: Promise<Response>) => { listing = response; },
+  };
 }
 
 test("Files opens row-specific menus by right-click and keyboard, preserves download links, and restricts unavailable entries", async t => {
@@ -131,4 +136,23 @@ test("Workspace Folder shares row actions and keeps the confirmation scoped to t
   assert.deepEqual(p.calls.filter(call => call.method === "DELETE").map(call => call.url), ["/api/workspaces/workspace/files"]);
   assert.equal(p.document.querySelectorAll("dialog[open]").length, 1);
   assert.equal(p.document.activeElement, p.row("other.txt"));
+});
+
+test("Workspace Folder refreshes a visible listing in place", async t => {
+  const p = await setup(t, [file("shared.txt")], "/managed/shared", "workspace");
+  const row = p.row("shared.txt");
+  await act(async () => row.focus());
+
+  let finish!: (response: Response) => void;
+  p.setListing(new Promise(resolve => { finish = resolve; }));
+  await act(async () => p.window.dispatchEvent(new p.window.Event("focus")));
+  const dialog = p.document.querySelector("dialog[open]")!;
+  assert.equal(dialog.querySelector('[aria-label="Refresh files"]')?.getAttribute("aria-busy"), "true");
+  assert.doesNotMatch(dialog.textContent!, /Loading files/);
+  assert.equal(p.row("shared.txt"), row);
+  assert.equal(p.document.activeElement, row);
+
+  await act(async () => finish(Response.json({ path: "", total: 2, items: [file("shared.txt"), file("new.txt")] })));
+  assert.ok(p.row("new.txt"));
+  assert.equal(p.document.activeElement, row);
 });
