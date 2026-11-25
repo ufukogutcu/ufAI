@@ -237,7 +237,7 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-compact);
-  &:hover { background: var(--hover); }
+  &:hover { background-image: linear-gradient(var(--hover), var(--hover)); }
 }
 .nodeName {
   position: absolute;
