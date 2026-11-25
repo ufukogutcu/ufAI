@@ -42,6 +42,7 @@ import taskBubbleStyles from "../components/AgentTaskBubble.module.scss";
 import { RichText } from "../components/RichText";
 import { SkillSwitch } from "../components/SkillSwitch";
 import { MessageEnvelope } from "../components/MessageEnvelope";
+import unreadBadgeStyles from "../components/InboxUnreadBadge.module.scss";
 
 const sampleRingPaths = connectionRingPaths([0, 180], { x: 97, y: 112 });
 const characterPreviewColors = [
@@ -216,7 +217,7 @@ function ThemePreview({
               {region.id === "feedback" && (
                 <div className={styles.feedbackSample}>
                   <span className={styles.localSample}>● Local instance</span>
-                  <span><span className={styles.inboxBadge}>3</span> Unread Inbox messages</span>
+                  <div><span className={unreadBadgeStyles.badge}>3</span> Unread Inbox messages</div>
                   <Feedback tone="info" title="Workspace · Agent" role="presentation">Your requested work is ready in Inbox.</Feedback>
                   <Feedback title="Change could not save" role="presentation">Try again when the connection is available.</Feedback>
                   <Feedback tone="loading" title="Reconnecting to live updates…" role="presentation">ufAI will reconnect automatically.</Feedback>

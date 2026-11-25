@@ -807,14 +807,4 @@
   text { fill: var(--rich-diagram-text); font-size: 14px; }
 }
 
-.inboxBadge {
-  display: inline-block;
-  padding: 1px 4px;
-  border-radius: var(--radius-compact);
-  background: var(--inbox-unread-background);
-  color: var(--inbox-unread-text);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
 .issueInput { background: var(--agent-input-background); color: var(--agent-input-text); }

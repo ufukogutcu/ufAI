@@ -95,15 +95,7 @@
 
 .unreadBadge {
   position: absolute;
-  top: -3px;
-  right: -3px;
-  min-width: 16px;
-  padding: 1px 3px;
-  border-radius: var(--radius-compact);
-  background: var(--inbox-unread-background);
-  color: var(--inbox-unread-text);
-  font-size: 10px;
-  line-height: 1.4;
-  font-variant-numeric: tabular-nums;
+  inset-block-start: -7px;
+  inset-inline-end: -2px;
   pointer-events: none;
 }

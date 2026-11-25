@@ -39,6 +39,7 @@ import { CodexUsageContext, createCodexUsageStore } from "./codex-usage-store";
 import { FeedbackProvider, useFeedbackStore, useNotice } from "./components/FeedbackProvider";
 import SettingsPage from "./pages/Settings";
 import { InboxNotificationsProvider, useInboxNotificationStore, useInboxNotifications } from "./components/InboxNotifications";
+import unreadBadgeStyles from "./components/InboxUnreadBadge.module.scss";
 import { RichTextProvider } from "./components/RichText";
 
 const pages = [
@@ -214,7 +215,11 @@ function Shell() {
               onClick={(event) => navigate(event, item.id)}
             >
               <item.icon size={18} strokeWidth={1.65} aria-hidden="true" />
-              {item.id === "home" && unreadTotal > 0 && <span className={styles.unreadBadge} aria-hidden="true">{unreadTotal > 99 ? "99+" : unreadTotal}</span>}
+              {item.id === "home" && unreadTotal > 0 && (
+                <span className={`${unreadBadgeStyles.badge} ${styles.unreadBadge}`} aria-hidden="true">
+                  {unreadTotal > 99 ? "99+" : unreadTotal}
+                </span>
+              )}
             </a>
           </Tooltip>
         ))}

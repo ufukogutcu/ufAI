@@ -1,0 +1,22 @@
+.badge {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 16px;
+  block-size: 16px;
+  padding-inline: 4px;
+  border-radius: 999px;
+  background: var(--inbox-unread-background);
+  color: var(--inbox-unread-text);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (forced-colors: active) {
+  .badge {
+    outline: 1px solid currentColor;
+    outline-offset: -1px;
+  }
+}
