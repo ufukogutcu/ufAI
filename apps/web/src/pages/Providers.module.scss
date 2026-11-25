@@ -15,8 +15,8 @@
   color: var(--muted);
 }
 .categoryTabs {
-  display: grid;
-  grid-template-columns: repeat(3, auto);
+  display: flex;
+  flex-wrap: wrap;
   width: fit-content;
   max-width: 100%;
   padding: 3px;

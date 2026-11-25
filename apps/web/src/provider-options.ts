@@ -1,7 +1,8 @@
 import type { ConnectionProvider, IntegrationKind } from "./api";
 export const providerCategories = [
-  { id: "api", label: "API" },
   { id: "subscription", label: "Subscription" },
+  { id: "api", label: "API" },
+  { id: "aggregator", label: "Aggregator" },
   { id: "local", label: "Local" },
 ] as const;
 export type ProviderCategory = (typeof providerCategories)[number]["id"];
@@ -15,7 +16,7 @@ export const providerOptions: {
   { id: "openai", label: "OpenAI", kind: "provider", category: "api" },
   { id: "anthropic", label: "Anthropic", kind: "provider", category: "api" },
   { id: "google", label: "Google Gemini", kind: "provider", category: "api" },
-  { id: "openrouter", label: "OpenRouter", kind: "provider", category: "api" },
+  { id: "openrouter", label: "OpenRouter", kind: "provider", category: "aggregator" },
   { id: "xai", label: "xAI", kind: "provider", category: "api" },
   { id: "deepseek", label: "DeepSeek", kind: "provider", category: "api" },
   { id: "mistral", label: "Mistral", kind: "provider", category: "api" },

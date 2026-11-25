@@ -5,7 +5,7 @@ import {
   createModelLoader,
   type ModelDiscoveryState,
 } from "../src/model-discovery.js";
-import { providerOptions } from "../src/provider-options.js";
+import { providerCategories, providerOptions } from "../src/provider-options.js";
 import { connectedSetup } from "./helpers.js";
 import type { DiscoveredModel, ProviderConnection } from "../src/api.js";
 const connection: ProviderConnection = {
@@ -29,7 +29,14 @@ function deferred<T>() {
 }
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
-test("Provider options retain API and subscription choices and add dedicated Ollama", () => {
+test("Provider categories are ordered and OpenRouter is the only aggregator", () => {
+  assert.deepEqual(providerCategories.map(({ label }) => label), [
+    "Subscription", "API", "Aggregator", "Local",
+  ]);
+  assert.deepEqual(
+    providerOptions.filter(({ category }) => category === "aggregator"),
+    [{ id: "openrouter", label: "OpenRouter", kind: "provider", category: "aggregator" }],
+  );
   assert.deepEqual(
     providerOptions.filter((p) => p.kind === "runtime").map((p) => p.id),
     ["codex"],
