@@ -136,6 +136,16 @@
   display: flex;
   flex-direction: column;
 }
+.modelGroupHeading {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.companyFilter {
+  margin-bottom: 12px;
+}
 .selectionToolbar {
   display: flex;
   flex-wrap: wrap;

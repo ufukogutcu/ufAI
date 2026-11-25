@@ -143,6 +143,7 @@ export class TextProvider implements ModelProviderAdapter {
         model: r.modelId,
         messages,
         stream: true,
+        ...(this.provider === "experiential" ? { stream_options: { include_usage: true } } : {}),
       };
     }
     if (this.provider === "anthropic") {

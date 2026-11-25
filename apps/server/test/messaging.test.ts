@@ -873,7 +873,7 @@ test("v13 upgrade preserves populated records and stable paths while backfilling
       );
     else assert.deepEqual(rows, retained[table], table);
   }
-  assert.equal(upgraded.pragma("user_version", { simple: true }), 46);
+  assert.equal(upgraded.pragma("user_version", { simple: true }), 47);
   assert.deepEqual(
     (upgraded.prepare("SELECT content FROM agent_messages").all() as any[]).map(
       (r) => r.content,
@@ -2805,7 +2805,7 @@ test("v20 routing upgrade preserves existing check-ins and installs missing rout
   );
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 46);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 47);
     const row = upgraded
       .prepare("SELECT * FROM task_checkins WHERE id=?")
       .get(reminder.checkinId) as any;
@@ -2980,7 +2980,7 @@ function insertReverseLink(s: Awaited<ReturnType<typeof setup>>, id: string) {
 function upgradeLinks(s: Awaited<ReturnType<typeof setup>>) {
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 46);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 47);
     assert.deepEqual(upgraded.pragma("foreign_key_check"), []);
     assert.deepEqual(upgraded.pragma("integrity_check"), [{ integrity_check: "ok" }]);
   } finally {
@@ -3191,7 +3191,7 @@ test("version 41 missing the transit timing column preserves history and restore
   assert.equal(result.ok, true, JSON.stringify(result));
   assert.deepEqual(readTransit.get(result.messageId), { state: "arrived", arrivesAt: result.arrivesAt });
   assert.equal(s.messaging.readRequest(result.requestId as string).targetAgentId, "b");
-  assert.equal(s.db.pragma("user_version", { simple: true }), 46);
+  assert.equal(s.db.pragma("user_version", { simple: true }), 47);
 });
 
 test("slow Chat handoffs acknowledge queueing while durable ordered travel controls recipient admission", async t => {
@@ -3338,7 +3338,7 @@ test("v22 upgrade preserves old messages without adding retrospective transmissi
   s.db.exec("DROP INDEX communication_deliveries_turn; DROP TABLE message_transits; PRAGMA user_version=22");
   const upgraded = openDatabase(s.path);
   try {
-    assert.equal(upgraded.pragma("user_version", { simple: true }), 46);
+    assert.equal(upgraded.pragma("user_version", { simple: true }), 47);
     assert.equal((upgraded.prepare("SELECT count(*) n FROM message_transits").get() as any).n, 0);
     assert.equal((upgraded.prepare("SELECT content FROM communication_messages WHERE id=?").get(sent.messageId) as any).content, "Old message");
     assert.deepEqual(upgraded.pragma("foreign_key_check"), []);

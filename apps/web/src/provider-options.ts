@@ -17,6 +17,7 @@ export const providerOptions: {
   { id: "anthropic", label: "Anthropic", kind: "provider", category: "api" },
   { id: "google", label: "Google Gemini", kind: "provider", category: "api" },
   { id: "openrouter", label: "OpenRouter", kind: "provider", category: "aggregator" },
+  { id: "experiential", label: "Experiential Labs", kind: "provider", category: "aggregator" },
   { id: "xai", label: "xAI", kind: "provider", category: "api" },
   { id: "deepseek", label: "DeepSeek", kind: "provider", category: "api" },
   { id: "mistral", label: "Mistral", kind: "provider", category: "api" },

@@ -183,6 +183,7 @@ export class ToolProvider {
           : {}),
         tools: tools.map((t) => ({ type: "function", function: t })),
         stream: true,
+        ...(p === "experiential" ? { stream_options: { include_usage: true } } : {}),
         ...(ollama
           ? {
               options: {

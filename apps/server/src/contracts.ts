@@ -8,6 +8,7 @@ export type ProviderId =
   | "anthropic"
   | "google"
   | "openrouter"
+  | "experiential"
   | "xai"
   | "deepseek"
   | "mistral"
@@ -131,6 +132,7 @@ export interface ModelMedia {
   effective: MediaCapabilities;
 }
 export interface DiscoveredModel {
+  maker?: string;
   media?: MediaCapabilities;
   presetCapabilities?: ProviderPresetCapabilities;
   id: string;
@@ -167,6 +169,9 @@ export interface ProviderModel extends DiscoveredModel {
   legacyLimits: {
     contextWindow: number | null;
   }[];
+}
+export interface ProviderModelPage extends Page<ProviderModel> {
+  makers?: (string | null)[];
 }
 export interface CodexLoginStatus {
   status: "disconnected" | "pending" | "connected" | "error";

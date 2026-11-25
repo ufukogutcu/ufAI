@@ -29,13 +29,16 @@ function deferred<T>() {
 }
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
-test("Provider categories are ordered and OpenRouter is the only aggregator", () => {
+test("Provider categories are ordered and offer OpenRouter and Experiential Labs as aggregators", () => {
   assert.deepEqual(providerCategories.map(({ label }) => label), [
     "Subscription", "API", "Aggregator", "Local",
   ]);
   assert.deepEqual(
     providerOptions.filter(({ category }) => category === "aggregator"),
-    [{ id: "openrouter", label: "OpenRouter", kind: "provider", category: "aggregator" }],
+    [
+      { id: "openrouter", label: "OpenRouter", kind: "provider", category: "aggregator" },
+      { id: "experiential", label: "Experiential Labs", kind: "provider", category: "aggregator" },
+    ],
   );
   assert.deepEqual(
     providerOptions.filter((p) => p.kind === "runtime").map((p) => p.id),

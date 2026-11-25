@@ -16,6 +16,7 @@ export const providerEndpoints: Record<
   anthropic: "https://api.anthropic.com/v1",
   google: "https://generativelanguage.googleapis.com/v1beta",
   openrouter: "https://openrouter.ai/api/v1",
+  experiential: "https://api.experientiallabs.ai/v1",
   xai: "https://api.x.ai/v1",
   deepseek: "https://api.deepseek.com",
   mistral: "https://api.mistral.ai/v1",

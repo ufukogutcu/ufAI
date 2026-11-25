@@ -54,6 +54,7 @@ for (const provider of [
   "ollama",
   "openai-compatible",
   "openrouter",
+  "experiential",
   "deepseek",
   "mistral",
   "groq",
@@ -224,6 +225,7 @@ for (const provider of [
                 choices: [{ delta: { content: "Done" }, finish_reason: null }],
               },
               { choices: [{ delta: {}, finish_reason: "stop" }] },
+              ...(provider === "experiential" ? [{ choices: [], usage: { prompt_tokens: 31 } }] : []),
             ]
           : [
               {
@@ -320,6 +322,7 @@ for (const provider of [
     });
     assert.equal(second.text, "Done");
     assert.equal(second.calls.length, 0);
+    if (provider === "experiential") assert.equal(second.usage?.prompt_tokens, 31);
     for (const body of bodies) {
       const instructions = body.instructions ?? body.system ?? body.systemInstruction?.parts[0]?.text ?? body.messages[0].content;
       assert.equal(instructions, mediaRequest.instructions);
@@ -330,6 +333,7 @@ for (const provider of [
         assert.equal(body.generationConfig?.maxOutputTokens, undefined);
       }
       if (provider === "ollama") assert.equal(body.options.num_predict, -1);
+      if (provider === "experiential") assert.deepEqual(body.stream_options, { include_usage: true });
     }
     const replay = JSON.stringify(bodies[1]);
     assert.ok(replay.indexOf("Restored roster after tool delivery") > replay.indexOf("collaborator-message"));

@@ -1,6 +1,7 @@
 import { BusyButton, Feedback, LoadingIndicator, LoadingState } from "../components/Feedback";
 import { useNotice } from "../components/FeedbackProvider";
 import {
+  Fragment,
   useCallback,
   useEffect,
   useId,
@@ -32,12 +33,15 @@ import {
   type SelectionImpact,
   type ProviderConnection,
   type ProviderModel,
+  type ProviderModelPage,
 } from "../api";
 import { useDashboard } from "../store";
 import { Tooltip } from "../components/Tooltip";
 import { reconcileSelection, selectModels, selectedCount, selectionChanges, type SelectionDraft } from "../model-selection";
 import { useConnections } from "../connection-store";
 import { contextDifference, resetContextToAutomatic } from "../model-context";
+import { catalogSearch, groupModels, makerLabel } from "../model-catalog";
+import { ModelCompanyField } from "../components/ModelCompanyField";
 import {
   providerCategories,
   providerOptions,
@@ -157,7 +161,6 @@ function ProviderPicker({
   );
 }
 
-type ModelPage = { items: ProviderModel[]; total: number };
 function ModelContextWarning({
   model,
   onSaved,
@@ -478,7 +481,7 @@ function ProviderEditor({
   const [error, setError] = useState("");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [catalogLoading, setCatalogLoading] = useState(true);
-  const [catalog, setCatalog] = useState<ModelPage>({ items: [], total: 0 });
+  const [catalog, setCatalog] = useState<ProviderModelPage>({ items: [], total: 0 });
   const [modelActionStatus, setModelActionStatus] = useState("");
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraft>(() => ({ saved: new Map(), changes: new Map() }));
   const [selectionLoading, setSelectionLoading] = useState(true);
@@ -491,7 +494,10 @@ function ProviderEditor({
   const selectionErrorId = useId();
   const [createdModelId, setCreatedModelId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [maker, setMaker] = useState<string>();
   const [offset, setOffset] = useState(0);
+  const filtered = !!query || maker !== undefined;
+  const groups = catalog.makers ? groupModels(catalog.items) : [{ models: catalog.items, maker: undefined }];
   const [revision, setRevision] = useState(0);
   const [modelEditor, setModelEditor] = useState<{
     model?: ProviderModel;
@@ -561,6 +567,10 @@ function ProviderEditor({
     setCreatedModelId(null);
     setOffset(next);
   }
+  function changeModelCompany(next: string | undefined) {
+    setMaker(next);
+    changeModelPage(0);
+  }
   function clearCreatedModelAppearance() {
     setCreatedModelId(null);
   }
@@ -615,14 +625,19 @@ function ProviderEditor({
     }
     setCatalogLoading(true);
     const timer = setTimeout(() => {
-      void request<ModelPage>(
-        `/connections/${id}/models?limit=50&offset=${offset}&q=${encodeURIComponent(query)}`,
+      void request<ProviderModelPage>(
+        `/connections/${id}/models?limit=50&offset=${offset}&${catalogSearch(query, maker)}`,
         "GET",
         undefined,
         controller.signal,
       )
         .then((result) => {
-          if (!controller.signal.aborted) setCatalog(result);
+          if (controller.signal.aborted) return;
+          setCatalog(result);
+          if (maker !== undefined && result.makers && !result.makers.includes(maker || null)) {
+            setMaker(undefined);
+            setOffset(0);
+          }
         })
         .catch((error) => {
           if (!controller.signal.aborted) setError(errorMessage(error));
@@ -635,7 +650,7 @@ function ProviderEditor({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [id, query, offset, revision]);
+  }, [id, query, maker, offset, revision]);
   useEffect(() => {
     if (!id || provider !== "codex") return;
     const controller = new AbortController();
@@ -827,7 +842,7 @@ function ProviderEditor({
     setBusy(true);
     setError("");
     try {
-      const result = await request<{ items: ModelSelection[] }>(`/connections/${id}/model-selection?q=${encodeURIComponent(query)}`);
+      const result = await request<{ items: ModelSelection[] }>(`/connections/${id}/model-selection?${catalogSearch(query, maker)}`);
       if (mounted.current) {
         // Include models another session added since our last snapshot.
         setSelectionDraft(current => {
@@ -1111,14 +1126,19 @@ function ProviderEditor({
             </div>
             <div className={styles.selectionToolbar}>
               <span role="status">{selectionLoading && <LoadingIndicator />}{selectionLoading ? "Loading model selections…" : `${enabledCount.toLocaleString()} of ${selectionDraft.saved.size.toLocaleString()} selected`}</span>
-              <button type="button" className="textButton" disabled={!id || selectionLoading || !!selectionLoadError} onClick={() => void selectMatching(true)}>Select all{query ? " matching" : ""}</button>
-              <button type="button" className="textButton" disabled={!id || selectionLoading || !!selectionLoadError} onClick={() => void selectMatching(false)}>Unselect all{query ? " matching" : ""}</button>
+              <button type="button" className="textButton" disabled={!id || selectionLoading || !!selectionLoadError} onClick={() => void selectMatching(true)}>Select all{filtered ? " matching" : ""}</button>
+              <button type="button" className="textButton" disabled={!id || selectionLoading || !!selectionLoadError} onClick={() => void selectMatching(false)}>Unselect all{filtered ? " matching" : ""}</button>
             </div>
             {selectionLoadError && <Feedback>{selectionLoadError}{" "}<button type="button" className="textButton" onClick={refreshLocal}>Retry model selections</button></Feedback>}
             {fields.models && (
               <Appearance kind="fade"><p id={selectionErrorId} className="fieldError" role="alert" tabIndex={-1}>
                 {fields.models}
               </p></Appearance>
+            )}
+            {!!catalog.makers?.length && (
+              <div className={styles.companyFilter}>
+                <ModelCompanyField makers={catalog.makers} value={maker} onChange={changeModelCompany} />
+              </div>
             )}
             <Field label="Search models">
               {(props) => (
@@ -1131,7 +1151,7 @@ function ProviderEditor({
                     setQuery(event.target.value);
                     setOffset(0);
                   }}
-                  placeholder="Search by name or model ID…"
+                  placeholder={catalog.makers ? "Name, ID or company…" : "Search by name or model ID…"}
                 />
               )}
             </Field>
@@ -1141,7 +1161,9 @@ function ProviderEditor({
             </p>
             <p className={styles.actionStatus} role="status">{modelActionStatus}</p>
             <div className={styles.modelList}>
-              {catalog.items.map((model) => (
+              {groups.map(group => <Fragment key={group.maker ?? ""}>
+              {catalog.makers && <h4 className={styles.modelGroupHeading}>{makerLabel(group.maker)}</h4>}
+              {group.models.map((model) => (
                 <Appearance kind="fade" key={model.id} ready={model.id === createdModelId}><article className={styles.modelRow} onAnimationEnd={clearCreatedModelAppearance}>
                   <div className={styles.modelHeading}>
                     <label className={styles.modelIdentity}>
@@ -1209,6 +1231,7 @@ function ProviderEditor({
                   </details>)}
                 </article></Appearance>
               ))}
+              </Fragment>)}
             </div>
             {dirty && id && (
               <p className={shared.modelStatus}>
@@ -1223,7 +1246,7 @@ function ProviderEditor({
             {!catalogLoading && !catalog.items.length && (
               <Appearance kind="fade">
               <p className={shared.listMessage}>
-                {query
+                {filtered
                   ? "No matching models."
                   : "No models yet. Load the model list or add a model manually."}
               </p>

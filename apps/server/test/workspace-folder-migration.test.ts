@@ -81,7 +81,7 @@ test("legacy workspace files survive import, collisions, interrupted startup and
   db.close();
 
   const migrated = openDatabase(databasePath);
-  assert.equal(migrated.pragma("user_version", { simple: true }), 46);
+  assert.equal(migrated.pragma("user_version", { simple: true }), 47);
   const grants = migrated.prepare("SELECT versionId FROM artifact_grants WHERE taskId='older-task' ORDER BY versionId").pluck().all();
   assert.deepEqual(grants, [first, second].sort());
   assert.deepEqual(migrated.prepare("SELECT id,state FROM trigger_occurrences ORDER BY id").all(), [

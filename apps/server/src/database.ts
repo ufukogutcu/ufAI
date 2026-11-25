@@ -24,7 +24,7 @@ import { migrateCheckIns, migrateCheckInRoutes } from "./checkin-schema.js";
 import { migrateMedia } from "./media-schema.js";
 import { migrateTools } from "./tools-schema.js";
 
-const schemaVersion = 46;
+const schemaVersion = 47;
 
 const defaultPath = fileURLToPath(
   new URL("../../../data/ufai.sqlite", import.meta.url),
@@ -466,6 +466,13 @@ export function openDatabase(path = process.env.DATABASE_PATH ?? defaultPath) {
     if (version < 46) database.transaction(() => {
       migrateWorkspaceFolder(database);
       database.pragma("user_version = 46");
+    })();
+
+    if (version < 47) database.transaction(() => {
+      const columns = database.pragma("table_info(provider_models)") as { name: string }[];
+      if (!columns.some(({ name }) => name === "maker"))
+        database.exec("ALTER TABLE provider_models ADD COLUMN maker TEXT");
+      database.pragma("user_version = 47");
     })();
 
   } catch (error) {

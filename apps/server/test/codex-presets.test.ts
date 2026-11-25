@@ -268,7 +268,7 @@ test("v42 migration preserves existing Codex presets and models with defaults", 
     assert.equal((await app.inject("/api/connections/c/models/m")).json().presetCapabilities, undefined);
     const db = openDatabase(path);
     try {
-      assert.equal(db.pragma("user_version", { simple: true }), 46);
+      assert.equal(db.pragma("user_version", { simple: true }), 47);
     } finally { db.close(); }
   } finally { await app.close(); }
 });

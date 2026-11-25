@@ -1,9 +1,16 @@
 import { Appearance } from "./Appearance";
 import { useEffect, useState } from "react";
-import { errorMessage, request, type ProviderModel } from "../api";
+import { errorMessage, request, type ProviderModel, type ProviderModelPage } from "../api";
 import { Field } from "./FormField";
+import { ModelCompanyField } from "./ModelCompanyField";
 import { refreshOnFocus } from "../focus-refresh";
+import { catalogSearch, groupModels, makerLabel } from "../model-catalog";
 import styles from "../pages/Presets.module.scss";
+
+function modelOption(model: ProviderModel) {
+  return <option key={model.id} value={model.id}>{model.name}</option>;
+}
+
 export function ModelSelect({
   connectionId,
   refreshVersion,
@@ -20,40 +27,51 @@ export function ModelSelect({
   error?: string;
 }) {
   const [query, setQuery] = useState("");
+  const [maker, setMaker] = useState<string>();
   const [offset, setOffset] = useState(0);
   const [revision, setRevision] = useState(0);
-  const [page, setPage] = useState<{ items: ProviderModel[]; total: number }>({
+  const [page, setPage] = useState<ProviderModelPage>({
     items: [],
     total: 0,
   });
+  const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<ProviderModel | null>(null);
   const [message, setMessage] = useState("");
   const [selectedMessage, setSelectedMessage] = useState("");
   useEffect(() => refreshOnFocus(async () => setRevision((v) => v + 1)), []);
   useEffect(() => {
     const controller = new AbortController();
-    setPage({ items: [], total: 0 });
+    setPage(current => ({ ...current, items: [], total: current.makers ? current.total : 0 }));
     setMessage("");
     if (!connectionId) return;
+    setLoading(true);
     const timer = setTimeout(() => {
-      void request<{ items: ProviderModel[]; total: number }>(
-        `/connections/${connectionId}/models?enabled=true&limit=50&offset=${offset}&q=${encodeURIComponent(query)}`,
+      void request<ProviderModelPage>(
+        `/connections/${connectionId}/models?enabled=true&limit=50&offset=${offset}&${catalogSearch(query, maker)}`,
         "GET",
         undefined,
         controller.signal,
       )
         .then((result) => {
-          if (!controller.signal.aborted) setPage(result);
+          if (controller.signal.aborted) return;
+          setPage(result);
+          if (maker !== undefined && result.makers && !result.makers.includes(maker || null)) {
+            setMaker(undefined);
+            setOffset(0);
+          }
         })
         .catch((error) => {
           if (!controller.signal.aborted) setMessage(errorMessage(error));
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
         });
     }, 150);
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [connectionId, query, offset, revision, refreshVersion]);
+  }, [connectionId, query, maker, offset, revision, refreshVersion]);
   useEffect(() => {
     const controller = new AbortController();
     setSelectedMessage("");
@@ -82,8 +100,17 @@ export function ModelSelect({
   }, [connectionId, value, onResolved, revision, refreshVersion]);
   const selectedModel = selected?.id === value && selected.connectionId === connectionId
     ? selected : null;
+  function resetFiltersPage() {
+    setPage(current => ({ ...current, items: [], total: 0 }));
+    setOffset(0);
+  }
+  function changeCompany(next: string | undefined) {
+    setMaker(next);
+    resetFiltersPage();
+  }
   return (
     <div className={styles.modelPicker}>
+      {!!page.makers?.length && <ModelCompanyField makers={page.makers} value={maker} onChange={changeCompany} />}
       {connectionId && (
         <Field label="Search saved models">
           {(props) => (
@@ -94,9 +121,9 @@ export function ModelSelect({
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value);
-                setOffset(0);
+                resetFiltersPage();
               }}
-              placeholder="Search models…"
+              placeholder={page.makers ? "Name, ID or company…" : "Search models…"}
             />
           )}
         </Field>
@@ -119,14 +146,17 @@ export function ModelSelect({
             {value && !page.items.some((m) => m.id === value) && (
               <option value={value} disabled={selectedModel?.enabled === false}>{selectedModel?.name ?? value}{selectedModel?.enabled === false ? " (unselected)" : ""}</option>
             )}
-            {page.items.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.name}
-              </option>
-            ))}
+            {page.makers ? groupModels(page.items).map(group => (
+              <optgroup key={group.maker ?? ""} label={makerLabel(group.maker)}>
+                {group.models.map(modelOption)}
+              </optgroup>
+            )) : page.items.map(modelOption)}
           </select>
         )}
       </Field>
+      {page.makers && !loading && !message && !page.items.length && (query || maker !== undefined) && (
+        <p className={styles.modelStatus} role="status">No matching models.</p>
+      )}
       {connectionId && page.total > 50 && (
         <div className={styles.inlineActions}>
           <button

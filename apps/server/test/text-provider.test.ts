@@ -59,6 +59,7 @@ const cases: {
   ...(
     [
       "openrouter",
+      "experiential",
       "deepseek",
       "mistral",
       "groq",
@@ -68,7 +69,9 @@ const cases: {
   ).map((provider) => ({
     provider,
     path: "/chat/completions",
-    text: 'data: {"choices":[{"delta":{"content":"Héllo"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+    text: 'data: {"choices":[{"delta":{"content":"Héllo"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n' +
+      (provider === "experiential" ? 'data: {"choices":[],"usage":{"prompt_tokens":5,"completion_tokens":2}}\n\n' : "") +
+      'data: [DONE]\n\n',
   })),
 ];
 for (const c of cases)
@@ -101,6 +104,10 @@ for (const c of cases)
       assert.equal(body.generationConfig?.maxOutputTokens, undefined);
     }
     if (c.provider === "ollama") assert.equal(body.options.num_predict, -1);
+    if (c.provider === "experiential") {
+      assert.deepEqual(body.stream_options, { include_usage: true });
+      assert.equal(answer.usage?.completion_tokens, 2);
+    }
     assert.equal(JSON.stringify(answer).includes("private"), false);
   });
 test("compatible JSON replies work without a second generation request", async () => {

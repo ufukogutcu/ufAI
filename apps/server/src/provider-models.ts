@@ -4,6 +4,7 @@ import type {
   DiscoveredModel,
   ModelTestResult,
   ProviderModel,
+  ProviderModelPage,
   ModelSelection,
   SelectionImpact,
 } from "./contracts.js";
@@ -20,7 +21,9 @@ type Row = Omit<
   | "lastTest"
   | "legacyLimits"
   | "presetCapabilities"
+  | "maker"
 > & {
+  maker: string | null;
   enabled: number;
   manual: number;
   available: number;
@@ -28,6 +31,23 @@ type Row = Omit<
   legacyLimits: string;
   presetCapabilities: string | null;
 };
+type CatalogFilters = { query?: string; enabledOnly?: boolean; grouped?: boolean; maker?: string };
+
+function catalogFilter(connectionId: string, { query = "", enabledOnly, grouped, maker }: CatalogFilters) {
+  const search = query.toLowerCase();
+  const args = [connectionId, search, search];
+  // instr treats search text literally, including SQL wildcard characters.
+  const matchMaker = grouped ? " OR instr(lower(coalesce(maker, 'Other models')), ?) > 0" : "";
+  if (grouped) args.push(search);
+  let where = `connectionId = ? AND (instr(lower(name), ?) > 0 OR instr(lower(id), ?) > 0${matchMaker})`;
+  if (enabledOnly) where += " AND enabled = 1";
+  if (maker === "") where += " AND maker IS NULL";
+  else if (maker !== undefined) {
+    where += " AND maker = ? COLLATE NOCASE";
+    args.push(maker);
+  }
+  return { where, args };
+}
 export class SelectionConfirmationError extends Error {
   constructor(public impact: SelectionImpact) {
     super(
@@ -42,10 +62,10 @@ export class ProviderModels {
     this.db.prepare(`
       INSERT INTO provider_models (
         connectionId, id, name, discoveredContextWindow, contextWindowOverride,
-        manual, available, legacyLimits, enabled, presetCapabilities
+        manual, available, legacyLimits, enabled, presetCapabilities, maker
       )
       SELECT ?, id, name, discoveredContextWindow, contextWindowOverride,
-        manual, available, legacyLimits, enabled, presetCapabilities
+        manual, available, legacyLimits, enabled, presetCapabilities, maker
       FROM provider_models WHERE connectionId = ?
     `).run(targetId, sourceId);
     this.db.prepare(`
@@ -57,7 +77,7 @@ export class ProviderModels {
     `).run(targetId, sourceId);
   }
   private public(row: Row): ProviderModel {
-    const { presetCapabilities, ...model } = row;
+    const { presetCapabilities, maker, ...model } = row;
     const caps = this.db
       .prepare(
         "SELECT * FROM model_media_capabilities WHERE connectionId=? AND modelId=?",
@@ -71,6 +91,7 @@ export class ProviderModels {
           : ("unsupported" as const);
     return {
       ...model,
+      ...(maker ? { maker } : {}),
       ...(presetCapabilities ? { presetCapabilities: JSON.parse(presetCapabilities) } : {}),
       mediaSettings: {
         discovered: { image: support(caps?.image), pdf: support(caps?.pdf) },
@@ -116,17 +137,15 @@ export class ProviderModels {
     connectionId: string,
     limit: number,
     offset: number,
-    query = "",
-    enabledOnly = false,
-  ) {
-    // instr treats search text literally, including SQL wildcard characters.
-    const args = [connectionId, query.toLowerCase(), query.toLowerCase()];
-    const where = `connectionId = ? AND (instr(lower(name), ?) > 0 OR instr(lower(id), ?) > 0)${enabledOnly ? " AND enabled = 1" : ""}`;
+    filters: CatalogFilters = {},
+  ): ProviderModelPage {
+    const { where, args } = catalogFilter(connectionId, filters);
+    const order = filters.grouped ? "maker IS NULL, maker COLLATE NOCASE, name, id" : "name, id";
     return {
       items: (
         this.db
           .prepare(
-            `SELECT * FROM provider_models WHERE ${where} ORDER BY name, id LIMIT ? OFFSET ?`,
+            `SELECT * FROM provider_models WHERE ${where} ORDER BY ${order} LIMIT ? OFFSET ?`,
           )
           .all(...args, limit, offset) as Row[]
       ).map((row) => this.public(row)),
@@ -137,15 +156,22 @@ export class ProviderModels {
           )
           .get(...args) as { total: number }
       ).total,
+      ...(filters.grouped ? { makers: this.makers(connectionId, filters.enabledOnly) } : {}),
     };
   }
-  selection(connectionId: string, query = ""): { items: ModelSelection[] } {
+  private makers(connectionId: string, enabledOnly = false): (string | null)[] {
+    return this.db.prepare(`SELECT min(maker) AS label FROM provider_models
+      WHERE connectionId = ?${enabledOnly ? " AND enabled = 1" : ""}
+      GROUP BY maker COLLATE NOCASE ORDER BY label IS NULL, label COLLATE NOCASE`)
+      .pluck().all(connectionId) as (string | null)[];
+  }
+  selection(connectionId: string, filters: CatalogFilters = {}): { items: ModelSelection[] } {
+    const { where, args } = catalogFilter(connectionId, filters);
     const rows = this.db
       .prepare(
-        `SELECT id, enabled FROM provider_models WHERE connectionId = ?
-        AND (instr(lower(name), ?) > 0 OR instr(lower(id), ?) > 0) ORDER BY id LIMIT 5000`,
+        `SELECT id, enabled FROM provider_models WHERE ${where} ORDER BY id LIMIT 5000`,
       )
-      .all(connectionId, query.toLowerCase(), query.toLowerCase()) as {
+      .all(...args) as {
       id: string;
       enabled: number;
     }[];
@@ -352,14 +378,15 @@ export class ProviderModels {
         )
         .run(connectionId);
       const upsert = this.db
-        .prepare(`INSERT INTO provider_models (connectionId, id, name, discoveredContextWindow, presetCapabilities) VALUES (?, ?, ?, ?, ?)
+        .prepare(`INSERT INTO provider_models (connectionId, id, name, discoveredContextWindow, presetCapabilities, maker) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(connectionId, id) DO UPDATE SET name = excluded.name,
         discoveredContextWindow = excluded.discoveredContextWindow, available = 1,
+        maker = coalesce(excluded.maker, provider_models.maker),
         presetCapabilities = CASE WHEN excluded.presetCapabilities IS NULL THEN provider_models.presetCapabilities
           ELSE json_patch(coalesce(provider_models.presetCapabilities, '{}'), excluded.presetCapabilities) END`);
       for (const m of models) {
         upsert.run(connectionId, m.id, m.name, m.contextWindow,
-          m.presetCapabilities ? JSON.stringify(m.presetCapabilities) : null);
+          m.presetCapabilities ? JSON.stringify(m.presetCapabilities) : null, m.maker ?? null);
         const numeric = (s: string | undefined) =>
           s === "supported" ? 1 : s === "unsupported" ? 0 : null;
         this.db

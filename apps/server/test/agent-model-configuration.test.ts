@@ -126,7 +126,7 @@ test("a version 44 database keeps existing preset links when it gains custom age
   const agent = await s.create("Existing");
   s.services.db.exec("DROP TABLE agent_model_configurations; PRAGMA user_version=44");
   await s.restart();
-  assert.equal(s.services.db.pragma("user_version", { simple: true }), 46);
+  assert.equal(s.services.db.pragma("user_version", { simple: true }), 47);
   const upgraded = await s.read(agent.id);
   assert.equal(upgraded.presetId, preset.id);
   assert.equal(upgraded.revision, agent.revision);

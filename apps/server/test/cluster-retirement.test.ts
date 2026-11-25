@@ -66,7 +66,7 @@ test("v25 retirement preserves application records, absolute positions and files
   f.db.close();
   const db = openDatabase(f.path);
   try {
-    assert.equal(db.pragma("user_version", { simple: true }), 46);
+    assert.equal(db.pragma("user_version", { simple: true }), 47);
     for (const table of tables) assert.deepEqual(db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(), before[table], table);
     assert.deepEqual(db.prepare("SELECT * FROM managed_locations ORDER BY id").all(), locations);
     assert.deepEqual(db.prepare("SELECT * FROM deletion_operations").all(), deletions);

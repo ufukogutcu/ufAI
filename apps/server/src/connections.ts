@@ -19,7 +19,7 @@ import {
   discoverApiModels,
   providerEndpoints,
 } from "./model-providers.js";
-import { ProviderModels } from "./provider-models.js";
+import { discoverExperiential, maxMakerLength } from "./experiential-catalog.js";
 import { discoverOllama, testApiModel } from "./provider-inference.js";
 import { duplicateName, InputError, objectBody, pagination } from "./validation.js";
 
@@ -350,35 +350,31 @@ export function registerConnections(
         ? ""
         : providerEndpoints[row.provider];
   }
+  function modelCatalogFilters(row: Row, input: unknown) {
+    const { q: query, maker } = input as { q?: unknown; maker?: unknown };
+    if (query !== undefined && (typeof query !== "string" || query.length > 300))
+      throw new InputError({ q: "Enter at most 300 search characters." });
+    const grouped = row.provider === "experiential";
+    if (maker !== undefined && (!grouped || typeof maker !== "string" || maker.length > maxMakerLength))
+      throw new InputError({ maker: "Choose a company from this model catalog." });
+    return { query, maker, grouped };
+  }
   app.get<{ Params: { id: string } }>(
     "/api/connections/:id/models",
     async (request) => {
-      required(request.params.id);
+      const row = required(request.params.id);
       const { limit, offset } = pagination(request.query);
-      const query = (request.query as { q?: unknown }).q;
       const enabled = (request.query as { enabled?: unknown }).enabled;
       if (enabled !== undefined && enabled !== "true")
         throw new InputError({ enabled: "Use true to list selected models only." });
-      if (
-        query !== undefined &&
-        (typeof query !== "string" || query.length > 300)
-      )
-        throw new InputError({ q: "Enter at most 300 search characters." });
-      return models.list(
-        request.params.id,
-        limit,
-        offset,
-        typeof query === "string" ? query : "",
-        enabled === "true",
-      );
+      return models.list(row.id, limit, offset, {
+        ...modelCatalogFilters(row, request.query), enabledOnly: enabled === "true",
+      });
     },
   );
   app.get<{ Params: { id: string } }>("/api/connections/:id/model-selection", async request => {
-    required(request.params.id);
-    const query = (request.query as { q?: unknown }).q;
-    if (query !== undefined && (typeof query !== "string" || query.length > 300))
-      throw new InputError({ q: "Enter at most 300 search characters." });
-    return models.selection(request.params.id, typeof query === "string" ? query : "");
+    const row = required(request.params.id);
+    return models.selection(row.id, modelCatalogFilters(row, request.query));
   });
   app.post<{ Params: { id: string } }>(
     "/api/connections/:id/models/refresh",
@@ -399,32 +395,30 @@ export function registerConnections(
         const release = service.claim(row.id, "exclusive");
         running = (async () => {
           try {
-          const discovered =
-            row.provider === "codex"
-              ? await codex.models(sessionId(row))
-              : row.provider === "ollama"
-                ? await discoverOllama(
-                    endpoint(row),
-                    key(row),
-                    options.fetcher,
-                    options.discoveryTimeoutMs,
-                  )
-                : await discoverApiModels(
-                    row.provider,
-                    endpoint(row),
-                    key(row),
-                    options.fetcher,
-                    options.discoveryTimeoutMs,
-                  );
-          models.merge(row.id, discovered);
-          return discovered;
+            const { fetcher, discoveryTimeoutMs } = options;
+            let discovered: DiscoveredModel[];
+            switch (row.provider) {
+              case "codex":
+                discovered = await codex.models(sessionId(row));
+                break;
+              case "ollama":
+                discovered = await discoverOllama(endpoint(row), key(row), fetcher, discoveryTimeoutMs);
+                break;
+              case "experiential":
+                discovered = await discoverExperiential(key(row), fetcher, discoveryTimeoutMs);
+                break;
+              default:
+                discovered = await discoverApiModels(row.provider, endpoint(row), key(row), fetcher, discoveryTimeoutMs);
+            }
+            models.merge(row.id, discovered);
+            return discovered;
           } finally { release(); }
         })();
         inFlight.set(row.id, running);
         void running.finally(() => inFlight.delete(row.id)).catch(() => {});
       }
       await running;
-      return models.list(row.id, 100, 0);
+      return models.list(row.id, 100, 0, { grouped: row.provider === "experiential" });
     },
   );
   app.post<{ Params: { id: string } }>(
