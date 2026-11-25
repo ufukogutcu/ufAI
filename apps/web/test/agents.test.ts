@@ -22,6 +22,7 @@ const a: Agent = {
   queuedCount: 0,
   runningTaskCount: 0,
   unfinishedTaskCount: 0,
+  chatWorking: false,
 };
 
 test("unchanged workspace snapshots retain node and agent references; status updates do not rebuild canvas nodes", async (t) => {

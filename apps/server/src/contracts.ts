@@ -327,6 +327,7 @@ export interface Agent {
   queuedCount: number;
   runningTaskCount: number;
   unfinishedTaskCount: number;
+  chatWorking: boolean;
 }
 export interface AgentTask {
   trigger?: { id: string; occurrenceId: string; name: string; scheduledAt: string; dispatchedAt: string | null };

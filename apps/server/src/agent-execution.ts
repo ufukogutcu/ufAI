@@ -159,7 +159,7 @@ export class AgentExecution {
   }
   requiredAgent(id: string, allowDeleting = false): Agent {
     const row = this.db.prepare("SELECT * FROM agents WHERE id = ?").get(id) as
-      | (Omit<Agent, "appearance" | "customConfiguration" | "state" | "queuedCount" | "runningTaskCount" | "unfinishedTaskCount" | "issueCounts" | "pendingUserInputCount"> & { appearance: string })
+      | (Omit<Agent, "appearance" | "customConfiguration" | "state" | "queuedCount" | "runningTaskCount" | "unfinishedTaskCount" | "chatWorking" | "issueCounts" | "pendingUserInputCount"> & { appearance: string })
       | undefined;
     if (!row) throw new ConnectionError("Agent not found.", 404);
     if (!allowDeleting)
@@ -176,15 +176,23 @@ export class AgentExecution {
         `SELECT count(DISTINCT r.taskId) AS count FROM agent_turns r JOIN agent_tasks t ON t.id=r.taskId WHERE r.agentId = ? AND t.kind='task' AND r.status = 'running'`,
       )
       .get(id) as { count: number };
+    const parkedPhases = "('waiting','agent_wait','agent_resume')";
     const waiting = this.db
       .prepare(
         `SELECT id FROM agent_turns WHERE agentId=? AND taskId IS NOT NULL
-          AND (status='waiting' OR (status='queued' AND phase IN ('waiting','agent_wait','agent_resume'))) LIMIT 1`,
+          AND (status='waiting' OR (status='queued' AND phase IN ${parkedPhases})) LIMIT 1`,
       )
       .get(id);
     const unfinished = this.db.prepare(
       "SELECT count(*) AS count FROM agent_tasks WHERE agentId=? AND kind='task' AND status IN ('queued','running','waiting','awaiting_user')",
     ).get(id) as { count: number };
+    const chatWorking = Boolean(this.db.prepare(
+      `SELECT 1 FROM agent_tasks chat WHERE chat.agentId=? AND chat.kind='chat'
+        AND (chat.status IN ('running','waiting') OR (chat.status='queued' AND EXISTS (
+          SELECT 1 FROM agent_turns turn WHERE turn.agentId=chat.agentId AND turn.taskId=chat.id
+            AND turn.status='queued' AND turn.phase IN ${parkedPhases}
+        )))`,
+    ).get(id));
     const issue = this.db
       .prepare(
         "SELECT status FROM agent_tasks WHERE agentId=? AND status IN ('blocked','failed') ORDER BY updatedAt DESC LIMIT 1",
@@ -200,6 +208,7 @@ export class AgentExecution {
       queuedCount: counts.queued,
       runningTaskCount: running.count,
       unfinishedTaskCount: unfinished.count,
+      chatWorking,
       state: this.db.prepare("SELECT 1 FROM agent_turns WHERE agentId=? AND taskId IS NOT NULL AND status='running' LIMIT 1").get(id)
         ? "running"
         : waiting
@@ -626,6 +635,7 @@ export class AgentExecution {
       .map((t) => this.active.get(t.id))
       .filter((a): a is Active => !!a);
     active.forEach((a) => a.controller.abort());
+    this.event(task.agentId);
     await Promise.allSettled(active.map((a) => a.promise));
     await this.tools?.processes.stopTask(id);
     this.messaging?.taskCancelled(id);

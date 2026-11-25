@@ -89,7 +89,7 @@ test("HTTP fallbacks are readable and retain status details and server field err
 test("a failed read after an accepted message retries only that read and unrelated snapshots do not clear it", async t => {
   const agent: Agent = { id: "one", workspaceId: "workspace", name: "Ava", instructions: "", presetId: null,
     appearance: { kind: "pebble", color: "sage", accessories: [] }, x: 0, y: 0, revision: 1,
-    createdAt: "now", updatedAt: "now", state: "idle", queuedCount: 0, runningTaskCount: 0, unfinishedTaskCount: 0,
+    createdAt: "now", updatedAt: "now", state: "idle", queuedCount: 0, runningTaskCount: 0, unfinishedTaskCount: 0, chatWorking: false,
     pendingUserInputCount: 0, issueCounts: { warning: 0, error: 0 } };
   let sent = 0, fail = true, reads = 0;
   t.mock.method(globalThis, "fetch", async (url: string, init?: RequestInit) => {

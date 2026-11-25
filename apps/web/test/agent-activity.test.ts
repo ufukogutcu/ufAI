@@ -7,10 +7,11 @@ const agent: Agent = {
   id: "agent", workspaceId: "workspace", name: "Assistant", instructions: "",
   presetId: null, x: 10, y: 20, revision: 1,
   createdAt: "now", updatedAt: "now", state: "idle", queuedCount: 0, runningTaskCount: 0, unfinishedTaskCount: 0,
+  chatWorking: false,
   appearance: { kind: "pebble", color: "sage", accessories: [] },
   pendingUserInputCount: 0, issueCounts: { warning: 1, error: 0 },
 };
-const running: Agent = { ...agent, state: "running", runningTaskCount: 1, unfinishedTaskCount: 3, pendingUserInputCount: 2, issueCounts: { warning: 0, error: 2 } };
+const running: Agent = { ...agent, state: "running", runningTaskCount: 1, unfinishedTaskCount: 3, chatWorking: true, pendingUserInputCount: 2, issueCounts: { warning: 0, error: 2 } };
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>(r => { resolve = r; });
@@ -72,6 +73,7 @@ for (const resource of ["workspace", "agent"] as const) {
     assert.equal(store.getState().agents.agent!.state, "running");
     assert.deepEqual(store.getState().agents.agent!.issueCounts, running.issueCounts);
     assert.equal(store.getState().agents.agent!.unfinishedTaskCount, 3);
+    assert.equal(store.getState().agents.agent!.chatWorking, true);
   });
 }
 
@@ -96,6 +98,7 @@ for (const older of ["workspace", "agent"] as const) {
     assert.equal(store.getState().agents.agent, record);
     assert.equal(store.getState().agents.agent!.pendingUserInputCount, 2);
     assert.equal(store.getState().agents.agent!.unfinishedTaskCount, 3);
+    assert.equal(store.getState().agents.agent!.chatWorking, true);
     assert.equal(store.getState().nodes.workspace, nodes);
   });
 }
@@ -140,6 +143,7 @@ test("pending position saves accept activity and their older responses cannot re
   await save;
   assert.equal(store.getState().agents.agent!.state, "running");
   assert.equal(store.getState().agents.agent!.unfinishedTaskCount, 3);
+  assert.equal(store.getState().agents.agent!.chatWorking, true);
   assert.equal(store.getState().agents.agent!.revision, 2);
   assert.equal(store.getState().nodes.workspace, nodes);
 });
@@ -158,10 +162,11 @@ test("failed position saves retain local layout through activity refreshes and r
   assert.equal(store.getState().agents.agent!.x, 100);
   assert.equal(store.getState().nodes.workspace, nodes);
   source.intercept((_url, init) => init?.method === "PATCH"
-    ? Promise.resolve(Response.json({ ...running, state: "completed", unfinishedTaskCount: 0, runningTaskCount: 0, x: 100, y: 120, revision: 2 })) : undefined);
+    ? Promise.resolve(Response.json({ ...running, state: "completed", unfinishedTaskCount: 0, runningTaskCount: 0, chatWorking: false, x: 100, y: 120, revision: 2 })) : undefined);
   await store.getState().retryPositions();
   assert.equal(store.getState().agents.agent!.state, "completed");
   assert.equal(store.getState().agents.agent!.unfinishedTaskCount, 0);
+  assert.equal(store.getState().agents.agent!.chatWorking, false);
   assert.equal(store.getState().positionError, "");
   assert.equal(store.getState().nodes.workspace, nodes);
 });

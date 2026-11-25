@@ -3,8 +3,8 @@ import { useNavigationGuard } from "../navigation-guard";
 import { Tooltip } from "./Tooltip";
 import styles from "./AgentTaskBubble.module.scss";
 
-export function AgentTaskBubble({ agentId, workspaceId, agentName, count }: {
-  agentId: string; workspaceId: string; agentName: string; count: number;
+export function AgentTaskBubble({ agentId, workspaceId, agentName, count, chatWorking }: {
+  agentId: string; workspaceId: string; agentName: string; count: number; chatWorking: boolean;
 }) {
   const store = useAgentStore();
   const guard = useNavigationGuard();
@@ -19,11 +19,11 @@ export function AgentTaskBubble({ agentId, workspaceId, agentName, count }: {
   function stopPointer(event: React.PointerEvent<HTMLButtonElement>) {
     event.stopPropagation();
   }
-  return <Tooltip content={`${label} · Running, queued or waiting, including awaiting input. Open Tasks.`} live>
+  return <Tooltip content={`${label} · Running, queued or waiting, including awaiting input.${chatWorking ? " Chat adds one while it is running or waiting." : ""} Open Tasks.`} live>
     <button type="button" className={`nodrag nopan ${styles.trigger}`}
-      aria-label={`${label} for ${agentName}: open Tasks`}
+      aria-label={`${label}${chatWorking ? " plus active Chat" : ""} for ${agentName}. Open Tasks`}
       onPointerDown={stopPointer} onClick={openTasks}>
-      <span className={styles.bubble} aria-hidden="true">{count}</span>
+      <span className={styles.bubble} aria-hidden="true">{chatWorking ? `${count} + 1` : count}</span>
     </button>
   </Tooltip>;
 }

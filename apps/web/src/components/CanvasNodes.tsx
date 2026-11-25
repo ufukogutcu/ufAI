@@ -117,7 +117,8 @@ export const AgentNode = memo(function AgentNode({
             <AgentIssueBubble key={severity} agentId={agent.id} agentName={agent.name} severity={severity} count={agent.issueCounts[severity]} />
           ))}
         </div>
-        <AgentTaskBubble agentId={agent.id} workspaceId={agent.workspaceId} agentName={agent.name} count={agent.unfinishedTaskCount} />
+        <AgentTaskBubble agentId={agent.id} workspaceId={agent.workspaceId} agentName={agent.name}
+          count={agent.unfinishedTaskCount} chatWorking={agent.chatWorking} />
       </div>
       {menu && <ContextMenu anchor={menu} label={`Actions for ${agent.name}`} onClose={closeMenu} items={[
         { id: "chat", label: "Open Chat", icon: <MessageSquare size={16} />, onSelect: () => openTab("Chat") },

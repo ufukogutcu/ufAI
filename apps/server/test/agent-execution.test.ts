@@ -148,21 +148,22 @@ test("agent activity combines Chat and tasks, prioritizes waits over fresh queue
   const setTurn = f.db.prepare("UPDATE agent_turns SET status=?,phase=? WHERE id=?");
   const setTask = f.db.prepare("UPDATE agent_tasks SET status=? WHERE id=?");
   const cases = [
-    ["queued", "queued", "queued", 0, 2],
-    ["running", "queued", "running", 1, 1],
-    ["queued", "running", "running", 0, 1],
-    ["running", "running", "running", 1, 0],
-    ["waiting", "running", "running", 0, 0],
-    ["running", "waiting", "running", 1, 0],
-    ["waiting", "queued", "waiting", 0, 1],
-    ["queued", "waiting", "waiting", 0, 1],
-    ["waiting", "waiting", "waiting", 0, 0],
-    ["completed", "completed", "idle", 0, 0],
-    ["cancelled", "cancelled", "idle", 0, 0],
-    ["failed", "completed", "failed", 0, 0],
-    ["completed", "blocked", "blocked", 0, 0],
+    ["queued", "queued", "queued", 0, 2, false],
+    ["running", "queued", "running", 1, 1, false],
+    ["queued", "running", "running", 0, 1, true],
+    ["running", "running", "running", 1, 0, true],
+    ["waiting", "running", "running", 0, 0, true],
+    ["running", "waiting", "running", 1, 0, true],
+    ["waiting", "queued", "waiting", 0, 1, false],
+    ["queued", "waiting", "waiting", 0, 1, true],
+    ["waiting", "waiting", "waiting", 0, 0, true],
+    ["running", "completed", "running", 1, 0, false],
+    ["completed", "completed", "idle", 0, 0, false],
+    ["cancelled", "cancelled", "idle", 0, 0, false],
+    ["failed", "completed", "failed", 0, 0, false],
+    ["completed", "blocked", "blocked", 0, 0, false],
   ] as const;
-  for (const [taskStatus, chatStatus, state, runningTaskCount, queuedCount] of cases) {
+  for (const [taskStatus, chatStatus, state, runningTaskCount, queuedCount, chatWorking] of cases) {
     setTurn.run(taskStatus, "generating", task.turnId);
     setTurn.run(chatStatus, "generating", chat.turnId);
     setTask.run(taskStatus, task.taskId);
@@ -170,7 +171,14 @@ test("agent activity combines Chat and tasks, prioritizes waits over fresh queue
     const actual = f.engine.requiredAgent("a");
     assert.deepEqual({ state: actual.state, runningTaskCount: actual.runningTaskCount, queuedCount: actual.queuedCount },
       { state, runningTaskCount, queuedCount }, `${taskStatus} task with ${chatStatus} Chat`);
+    assert.equal(actual.chatWorking, chatWorking, `${chatStatus} Chat`);
   }
+  setTurn.run("completed", "yielded", chat.turnId);
+  setTask.run("waiting", chat.taskId);
+  assert.equal(f.engine.requiredAgent("a").chatWorking, true, "Chat remains active while waiting after yielding");
+  setTask.run("awaiting_user", chat.taskId);
+  assert.equal(f.engine.requiredAgent("a").chatWorking, false, "an idle Chat awaiting a new message contributes no work");
+  assert.equal(f.engine.requiredAgent("b").chatWorking, false, "activity is scoped to the agent");
   setTask.run("queued", task.taskId);
   setTask.run("queued", chat.taskId);
   for (const parked of [task, chat]) {
@@ -182,6 +190,7 @@ test("agent activity combines Chat and tasks, prioritizes waits over fresh queue
       assert.equal(actual.state, "waiting", phase);
       assert.equal(actual.runningTaskCount, 0);
       assert.equal(actual.queuedCount, 2);
+      assert.equal(actual.chatWorking, parked === chat, phase);
     }
   }
 });
@@ -331,9 +340,15 @@ test("cancellation rejects late results and preserves partial output", async (t)
         .prepare("SELECT id FROM agent_messages WHERE role='assistant'")
         .get(),
   );
+  assert.equal(f.engine.requiredAgent("a").unfinishedTaskCount, 1);
+  let notifiedCount: number | undefined;
+  const onChange = () => { notifiedCount = f.engine.requiredAgent("a").unfinishedTaskCount; };
+  f.engine.events.on("change", onChange);
   const stopping = f.engine.cancelTask(x.taskId!);
+  f.engine.events.off("change", onChange);
   release();
   await stopping;
+  assert.equal(notifiedCount, 0, "the invalidation drops cancelled work before the active turn settles");
   assert.equal(f.engine.task(x.taskId!).status, "cancelled");
   const m = f.db
     .prepare("SELECT state FROM agent_messages WHERE role='assistant'")
@@ -806,9 +821,12 @@ test("Chat follow-ups remain ordered, Stop leaves work running, and Chat can res
   f.engine.submit("a", "chat", "Queued follow-up", "queued_chat_input");
   await delay(20);
   assert.deepEqual(started, ["Ordinary work", "Hold Chat"]);
+  assert.equal(f.engine.requiredAgent("a").chatWorking, true);
   await f.engine.cancelTask(chat.taskId!);
   assert.equal(f.engine.task(chat.taskId!).status, "cancelled");
   assert.equal(f.engine.task(work.taskId!).status, "running");
+  assert.equal(f.engine.requiredAgent("a").chatWorking, false);
+  assert.equal(f.engine.requiredAgent("a").unfinishedTaskCount, 1);
   const followup = f.engine.submit("a", "chat", "Fresh request", "fresh_chat_input");
   assert.equal(followup.taskId, chat.taskId);
   await until(() => f.engine.task(chat.taskId!).status === "completed");

@@ -47,7 +47,7 @@ test("successful creation replaces the preview and fences a late old suggestion"
   const old = deferred<Response>(), replacement = deferred<Response>();
   let reads = 0, failCreate = true;
   const agent: Agent = { id: "agent", workspaceId: "one", name: "Ava", instructions: "", presetId: null,
-    appearance: first, x: 0, y: 0, revision: 1, state: "idle", queuedCount: 0, runningTaskCount: 0, unfinishedTaskCount: 0,
+    appearance: first, x: 0, y: 0, revision: 1, state: "idle", queuedCount: 0, runningTaskCount: 0, unfinishedTaskCount: 0, chatWorking: false,
     pendingUserInputCount: 0, issueCounts: { warning: 0, error: 0 }, createdAt: "now", updatedAt: "now" };
   t.mock.method(globalThis, "fetch", async (_url: string, init?: RequestInit) => {
     if (init?.method === "POST") return failCreate

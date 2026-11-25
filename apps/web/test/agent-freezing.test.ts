@@ -10,7 +10,7 @@ const {useAgentFreeze,FrozenIndicator}=await import("../src/components/AgentFree
 const {LiveAgentCharacter}=await import("../src/components/LiveAgentCharacter");
 
 const control:AgentExecutionControl={state:"frozen",revision:2,requestedAt:"now",frozenAt:"now",queuedTriggerCount:8,backlogPending:false,workspaceHeld:false};
-const agent:Agent={id:"a",workspaceId:"w",name:"Ava",presetId:null,instructions:"",appearance:{kind:"pebble",color:"sage",accessories:[]},x:0,y:0,revision:1,createdAt:"now",updatedAt:"now",state:"queued",queuedCount:1,runningTaskCount:0,unfinishedTaskCount:1,pendingUserInputCount:0,issueCounts:{warning:0,error:0},executionControl:control};
+const agent:Agent={id:"a",workspaceId:"w",name:"Ava",presetId:null,instructions:"",appearance:{kind:"pebble",color:"sage",accessories:[]},x:0,y:0,revision:1,createdAt:"now",updatedAt:"now",state:"queued",queuedCount:1,runningTaskCount:0,unfinishedTaskCount:1,chatWorking:false,pendingUserInputCount:0,issueCounts:{warning:0,error:0},executionControl:control};
 
 for(const policy of ["all","skip","latest_per_trigger"] as const) test(`unfreeze offers an explicit ${policy} queue choice and restores focus`,async t=>{
   const store=createAgentStore();

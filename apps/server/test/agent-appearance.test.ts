@@ -74,6 +74,11 @@ test("agent appearance API isolates workspaces, permits manual duplicates and pr
   assert.equal((await app.inject(`/api/workspaces/${workspace}/agents`)).json().items[0].unfinishedTaskCount, 0);
   assert.equal((await app.inject({ method: "PATCH", url: `/api/agents/${first.id}`, payload: { unfinishedTaskCount: 9 } })).statusCode, 400);
   assert.equal((await create(workspace, { name: "Read-only count", unfinishedTaskCount: 9 })).statusCode, 400);
+  assert.equal(first.chatWorking, false);
+  assert.equal((await app.inject(`/api/agents/${first.id}`)).json().chatWorking, false);
+  assert.equal((await app.inject(`/api/workspaces/${workspace}/agents`)).json().items[0].chatWorking, false);
+  assert.equal((await app.inject({ method: "PATCH", url: `/api/agents/${first.id}`, payload: { chatWorking: true } })).statusCode, 400);
+  assert.equal((await create(workspace, { name: "Read-only Chat activity", chatWorking: true })).statusCode, 400);
   assert.equal((await app.inject(`/api/agents/${first.id}`)).json().runningTaskCount, 0);
   assert.equal((await app.inject(`/api/workspaces/${workspace}/agents`)).json().items[0].runningTaskCount, 0);
   assert.equal((await app.inject({ method: "PATCH", url: `/api/agents/${first.id}`, payload: { runningTaskCount: 9 } })).statusCode, 400);
