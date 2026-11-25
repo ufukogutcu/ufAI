@@ -14,7 +14,7 @@ import { ConnectionError } from "../src/model-providers.js";
 
 const round = (calls: ToolRound["calls"] = [], text = "Done"): ToolRound => ({calls,text,continuation:{saved:"opaque-signature"},usage:{outputTokens:3}});
 const write = (id:string,name:string) => ({id,name:"files_write",arguments:{path:name,text:id,expectedSha256:null}});
-async function setup(t:TestContext) {
+async function setup(t:TestContext, fetcher?: typeof fetch) {
   const root = await mkdtemp(join(tmpdir(),"ufai-freeze-"));
   const databasePath = join(root,"db.sqlite");
   const seed = openDatabase(databasePath);
@@ -26,8 +26,9 @@ async function setup(t:TestContext) {
   seed.close();
   let clock = Date.now();
   const open = async () => {
-    const app = createApp({databasePath,filesRoot:join(root,"files"),serveStatic:false,execution:{autoStart:false},triggers:{autoStart:false,now:()=>clock}});
+    const app = createApp({databasePath,filesRoot:join(root,"files"),serveStatic:false,execution:{autoStart:false},triggers:{autoStart:false,now:()=>clock},connections:{fetcher}});
     await app.ready();
+    if (fetcher) return app;
     const service = (app as any).triggers as Triggers;
     service.connections.countTokens = async ()=>100;
     service.connections.countTaskTokens = async ()=>null;
@@ -64,6 +65,97 @@ async function workspaceAction(s: Awaited<ReturnType<typeof setup>>, action: "pa
   assert.equal(response.statusCode,202,response.body);
   return response.json<WorkspaceExecutionControl>();
 }
+
+test("freeze cancels the title stream while the first reply reaches a safe checkpoint", async (t) => {
+  const firstInput = "Compare wind turbine designs";
+  const nextInput = "Summarize battery capacity trends";
+  const nextTitle = "Battery Capacity Trends";
+  const titleCancelled = Promise.withResolvers<void>();
+  const finishReply = Promise.withResolvers<void>();
+  const titleInputs: string[] = [];
+  let titleSignal: AbortSignal | null | undefined;
+  let replySignal: AbortSignal | null | undefined;
+  let replyCount = 0;
+  let maintenanceCount = 0;
+  const encoder = new TextEncoder();
+  const delta = (text: string) => `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`;
+  const terminal = 'data: {"choices":[{"finish_reason":"stop"}]}\n\n';
+  const headers = { "Content-Type": "text/event-stream" };
+  t.after(() => finishReply.resolve());
+  const s = await setup(t, async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    const instructions = body.messages[0].content as string;
+    if (instructions.startsWith("Generate a short title")) {
+      assert.equal(body.model, "m");
+      assert.equal(body.tools, undefined);
+      const input = body.messages[1].content as string;
+      assert.deepEqual(body.messages.slice(1), [{ role: "user", content: input }]);
+      titleInputs.push(input);
+      if (input === firstInput) {
+        titleSignal = init?.signal;
+        return new Response(new ReadableStream({
+          start(controller) { controller.enqueue(encoder.encode(delta('{"title":'))); },
+          cancel() { titleCancelled.resolve(); },
+        }), { headers });
+      }
+      return new Response(delta('{"title":') + delta(JSON.stringify(nextTitle) + "}") + terminal, { headers });
+    }
+    if (instructions.startsWith("Maintain this task")) {
+      maintenanceCount++;
+      return new Response(delta('{"status":"completed","summary":"Done","memories":[]}') + terminal, { headers });
+    }
+    replyCount++;
+    if (body.messages.at(-1).content === firstInput) {
+      replySignal = init?.signal;
+      await finishReply.promise;
+    }
+    return new Response(delta("Answer") + terminal, { headers });
+  });
+  s.db.prepare("UPDATE connections SET endpoint='http://127.0.0.1:8500/v1' WHERE id='c'").run();
+  async function submit(content: string) {
+    const response = await s.app.inject({
+      method: "POST",
+      url: "/api/agents/a/tasks",
+      payload: { content, requestId: randomUUID() },
+    });
+    assert.equal(response.statusCode, 202, response.body);
+    return response.json<{ taskId: string; turnId: string }>();
+  }
+
+  await s.action("freeze");
+  const first = await submit(firstInput);
+  s.engine.pump();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(titleInputs, []);
+  assert.equal(replyCount, 0);
+  assert.equal(s.engine.task(first.taskId).status, "queued");
+
+  await s.resume();
+  await s.until(() => !!titleSignal && !!replySignal);
+  await s.action("freeze");
+  assert.equal(titleSignal?.aborted, true);
+  assert.equal(replySignal?.aborted, false);
+  await titleCancelled.promise;
+  assert.equal(s.control().state, "freezing");
+  assert.equal(s.engine.task(first.taskId).title, firstInput);
+
+  finishReply.resolve();
+  await s.until(() => s.control().state === "frozen");
+  assert.equal(maintenanceCount, 0);
+  assert.deepEqual(s.db.prepare("SELECT safe FROM execution_checkpoints WHERE turnId=?").get(first.turnId), { safe: 1 });
+  await s.resume();
+  await s.until(() => s.engine.task(first.taskId).status === "completed");
+  assert.equal(replyCount, 1);
+  assert.equal(maintenanceCount, 1);
+  assert.deepEqual(titleInputs, [firstInput]);
+  assert.equal(s.engine.task(first.taskId).title, firstInput);
+
+  const next = await submit(nextInput);
+  await s.until(() => s.engine.task(next.taskId).status === "completed" && s.engine.task(next.taskId).title === nextTitle);
+  assert.deepEqual(titleInputs, [firstInput, nextInput]);
+  assert.equal((await s.app.inject(`/api/tasks/${next.taskId}`)).json().task.title, nextTitle);
+  assert.equal((await s.app.inject("/api/agents/a/tasks")).json().items.find((task: { id: string }) => task.id === next.taskId).title, nextTitle);
+});
 
 test("workspace pacing is validated, isolated, and retained across a restart while paused", async t => {
   const s = await setup(t);
